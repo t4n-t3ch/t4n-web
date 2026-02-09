@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { listConversations, getMessages, sendMessage, createConversation } from "@/lib/api";
+import { listConversations, getMessages, createConversation, streamMessage } from "@/lib/api";
 
 type Conversation = { id: string; updated_at: string };
 type Msg = { id: string; role: string; content: string };
@@ -12,6 +12,8 @@ export default function Home() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aiBanner, setAiBanner] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<null | (() => Promise<void>)>(null);
@@ -76,7 +78,9 @@ export default function Home() {
         setError(friendlyError(msg));
       } finally {
         setLoading(false);
+        setStreaming(false);
       }
+
     };
 
     setLastAction(() => action);
@@ -107,6 +111,66 @@ export default function Home() {
     await action();
   }
 
+  type StreamMeta = { llmMode?: string; model?: string; aiEnabled?: boolean };
+  type StreamDone = { conversationId?: string };
+  type StreamError = { error?: string; details?: string };
+
+  async function readSseStream(
+    res: Response,
+    onDelta: (delta: string) => void,
+    onDone: (data: StreamDone) => void,
+    onMeta?: (data: StreamMeta) => void,
+  ) {
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || res.statusText || `Request failed (${res.status})`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buf += decoder.decode(value, { stream: true });
+
+      let idx: number;
+      while ((idx = buf.indexOf("\n\n")) !== -1) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+
+        let event = "message";
+        let dataStr = "";
+
+        for (const line of frame.split("\n")) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          if (line.startsWith("data:")) dataStr += line.slice(5).trim();
+        }
+
+        if (!dataStr) continue;
+
+        const data = (() => {
+          try {
+            return JSON.parse(dataStr);
+          } catch {
+            return null;
+          }
+        })();
+
+        if (event === "meta" && onMeta) onMeta((data || {}) as StreamMeta);
+        if (event === "delta" && data?.delta) onDelta(String(data.delta));
+        if (event === "done") onDone((data || {}) as StreamDone);
+        if (event === "error") {
+          const err = (data || {}) as StreamError;
+          throw new Error(err.details || err.error || "Stream error");
+        }
+      }
+    }
+  }
+
+
   async function handleSend() {
     const text = input.trim();
     if (!text || loading) return;
@@ -124,57 +188,59 @@ export default function Home() {
     setInput("");
 
     const action = async () => {
-      // IMPORTANT:
-      // If activeId is null, we start a new conversation by sending without an id.
-      // Your API returns conversationId, so we can set it after the first request.
-      const res = await sendMessage(text, activeId ?? undefined);
-      if (!res.ok) throw new Error(res.error);
+      setStreaming(true);
 
-      const meta = res.data.meta;
-      if (meta && meta.aiEnabled === false) {
-        setAiBanner(
-          `AI replies are disabled on the public cloud demo. Run locally to use ${meta.model || "Llama/DeepSeek"} via Ollama.`,
-        );
-      } else {
-        setAiBanner(null);
-      }
+      // Create a blank assistant message we stream into
+      const assistantId = crypto.randomUUID();
+      setMessages((m) => [...m, { id: assistantId, role: "assistant", content: "" }]);
 
+      // Abort any previous stream
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
 
-      const newConversationId: string | undefined = res.data.conversationId;
+      const res = await streamMessage(text, activeId ?? undefined, controller.signal);
 
-      if (!activeId && newConversationId) {
-        setActiveId(newConversationId);
+      let streamed = "";
 
-        // Put it in the sidebar immediately (and refresh afterward)
-        setConversations((prev) => {
-          const exists = prev.some((c) => c.id === newConversationId);
-          if (exists) return prev;
-          return [{ id: newConversationId, updated_at: new Date().toISOString() }, ...prev];
-        });
-
-        void refreshConversations();
-      }
-
-      if (meta && meta.aiEnabled === false) {
-        // Show banner only; don't add the stub reply as a chat message
-        setAiBanner(
-          `AI replies are disabled on the public cloud demo. Run locally to use ${meta.model || "Llama/DeepSeek"} via Ollama.`,
-        );
-        return;
-      } else {
-        setAiBanner(null);
-      }
-
-      setMessages((m) => [
-        ...m,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: res.data.reply,
+      await readSseStream(
+        res,
+        (delta) => {
+          streamed += delta;
+          setMessages((m) =>
+            m.map((msg) => (msg.id === assistantId ? { ...msg, content: streamed } : msg)),
+          );
         },
-      ]);
+        (doneData) => {
+          const newConversationId = doneData?.conversationId;
 
+          if (!activeId && newConversationId) {
+            setActiveId(newConversationId);
+
+            setConversations((prev) => {
+              const exists = prev.some((c) => c.id === newConversationId);
+              if (exists) return prev;
+              return [{ id: newConversationId, updated_at: new Date().toISOString() }, ...prev];
+            });
+
+            void refreshConversations();
+          }
+        },
+        (meta) => {
+          if (meta?.aiEnabled === false) {
+            setAiBanner(
+              `AI replies are disabled on the public cloud demo. Run locally to use ${meta?.model || "Llama/DeepSeek"} via Ollama.`,
+            );
+          } else {
+            setAiBanner(null);
+          }
+        },
+      );
+
+      setStreaming(false);
+      abortRef.current = null;
     };
+
 
     setLastAction(() => action);
 
@@ -190,7 +256,9 @@ export default function Home() {
       ]);
     } finally {
       setLoading(false);
+      setStreaming(false);
     }
+
   }
 
   return (
@@ -284,9 +352,25 @@ export default function Home() {
             onChange={(e) => setInput(e.target.value)}
             disabled={loading}
           />
-          <button className="bg-black text-white px-4 rounded disabled:opacity-50" disabled={loading}>
-            Send
-          </button>
+          {streaming ? (
+            <button
+              type="button"
+              className="bg-black text-white px-4 rounded"
+              onClick={() => {
+                abortRef.current?.abort();
+                abortRef.current = null;
+                setStreaming(false);
+                setLoading(false);
+              }}
+            >
+              Stop
+            </button>
+          ) : (
+            <button className="bg-black text-white px-4 rounded disabled:opacity-50" disabled={loading}>
+              Send
+            </button>
+          )}
+
         </form>
       </main>
     </div>

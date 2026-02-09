@@ -124,9 +124,14 @@ export function sendMessage(
  * SSE streaming chat
  * Returns the raw Response so the caller can read the stream
  */
+/**
+ * SSE streaming chat
+ * Returns the raw Response so the caller can read the stream
+ */
 export async function streamMessage(
     message: string,
     conversationId?: string,
+    signal?: AbortSignal,
 ) {
     const API_BASE =
         (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
@@ -139,5 +144,7 @@ export async function streamMessage(
             "x-api-key": API_KEY,
         },
         body: JSON.stringify({ message, conversationId }),
+        signal,
     });
 }
+
