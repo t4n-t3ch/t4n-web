@@ -13,6 +13,7 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiBanner, setAiBanner] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<null | (() => Promise<void>)>(null);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -129,6 +130,16 @@ export default function Home() {
       const res = await sendMessage(text, activeId ?? undefined);
       if (!res.ok) throw new Error(res.error);
 
+      const meta = res.data.meta;
+      if (meta && meta.aiEnabled === false) {
+        setAiBanner(
+          `AI replies are disabled on the public cloud demo. Run locally to use ${meta.model || "Llama/DeepSeek"} via Ollama.`,
+        );
+      } else {
+        setAiBanner(null);
+      }
+
+
       const newConversationId: string | undefined = res.data.conversationId;
 
       if (!activeId && newConversationId) {
@@ -204,6 +215,13 @@ export default function Home() {
       </aside>
 
       <main className="flex-1 flex flex-col">
+        {aiBanner && (
+          <div className="border-b p-3 text-sm bg-yellow-50">
+            <div className="font-medium">AI disabled on cloud demo</div>
+            <div className="opacity-80">{aiBanner}</div>
+          </div>
+        )}
+
         {error && (
           <div className="border-b p-3 text-sm bg-red-50">
             <div className="font-medium">Request failed</div>

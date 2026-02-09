@@ -108,7 +108,13 @@ export function sendMessage(
     return apiFetch<{
         reply: string;
         conversationId: string;
+        meta?: {
+            llmMode: string;
+            model: string;
+            aiEnabled: boolean;
+        };
     }>("/api/chat", {
+
         method: "POST",
         body: JSON.stringify({ message, conversationId }),
     });
