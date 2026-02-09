@@ -155,6 +155,16 @@ export default function Home() {
         void refreshConversations();
       }
 
+      if (meta && meta.aiEnabled === false) {
+        // Show banner only; don't add the stub reply as a chat message
+        setAiBanner(
+          `AI replies are disabled on the public cloud demo. Run locally to use ${meta.model || "Llama/DeepSeek"} via Ollama.`,
+        );
+        return;
+      } else {
+        setAiBanner(null);
+      }
+
       setMessages((m) => [
         ...m,
         {
@@ -163,6 +173,7 @@ export default function Home() {
           content: res.data.reply,
         },
       ]);
+
     };
 
     setLastAction(() => action);
