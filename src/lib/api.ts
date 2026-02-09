@@ -79,7 +79,6 @@ export function createConversation() {
     });
 }
 
-
 export function listConversations() {
     return apiFetch<{
         conversations: {
@@ -115,3 +114,24 @@ export function sendMessage(
     });
 }
 
+/**
+ * SSE streaming chat
+ * Returns the raw Response so the caller can read the stream
+ */
+export async function streamMessage(
+    message: string,
+    conversationId?: string,
+) {
+    const API_BASE =
+        (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
+    const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
+
+    return fetch(`${API_BASE}/api/chat/stream`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "x-api-key": API_KEY,
+        },
+        body: JSON.stringify({ message, conversationId }),
+    });
+}
