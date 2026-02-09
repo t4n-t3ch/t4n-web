@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { listConversations, getMessages, sendMessage } from "@/lib/api";
+import { listConversations, getMessages, sendMessage, createConversation } from "@/lib/api";
 
 type Conversation = { id: string; updated_at: string };
 type Msg = { id: string; role: string; content: string };
@@ -16,6 +16,16 @@ export default function Home() {
   const [lastAction, setLastAction] = useState<null | (() => Promise<void>)>(null);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  function friendlyError(msg: string) {
+    const m = msg.toLowerCase();
+    if (m.includes("llm disabled") || m.includes("cloud mode") || m.includes("disabled in cloud")) {
+      return "AI is disabled on the free cloud deploy. To use Llama/DeepSeek, run t4n-api locally with Ollama enabled (local mode), then point the web app at your local API.";
+    }
+    return msg;
+  }
+
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -35,11 +45,43 @@ export default function Home() {
     void refreshConversations();
   }, []);
 
-  function startNewChat() {
-    setError(null);
-    setActiveId(null);
-    setMessages([]);
+  async function startNewChat() {
+    const action = async () => {
+      try {
+        setError(null);
+        setLoading(true);
+
+        // Create a real conversation immediately
+        const res = await createConversation();
+        if (!res.ok) throw new Error(res.error);
+
+        const id = res.data.conversationId;
+        setActiveId(id);
+        setMessages([]);
+
+        // Put it into the sidebar immediately
+        setConversations((prev) => {
+          const exists = prev.some((c) => c.id === id);
+          if (exists) return prev;
+          return [{ id, updated_at: new Date().toISOString() }, ...prev];
+        });
+
+        // Focus input for instant typing
+        setTimeout(() => inputRef.current?.focus(), 0);
+
+        void refreshConversations();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to create a new chat";
+        setError(friendlyError(msg));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    setLastAction(() => action);
+    await action();
   }
+
 
   async function openConversation(id: string) {
     const action = async () => {
@@ -119,10 +161,10 @@ export default function Home() {
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "⚠️ Failed to get a reply. Is the API running?";
-      setError(msg);
+      setError(friendlyError(msg));
       setMessages((m) => [
         ...m,
-        { id: crypto.randomUUID(), role: "assistant", content: `⚠️ ${msg}` },
+        { id: crypto.randomUUID(), role: "assistant", content: `⚠️ ${friendlyError(msg)}` },
       ]);
     } finally {
       setLoading(false);
@@ -206,6 +248,7 @@ export default function Home() {
           }}
         >
           <input
+            ref={inputRef}
             className="flex-1 border rounded px-3 py-2"
             placeholder="Type a message…"
             value={input}

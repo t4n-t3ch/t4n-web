@@ -33,12 +33,12 @@ async function apiFetch<T>(
         const text = await res.text();
         const data = text
             ? (() => {
-                  try {
-                      return JSON.parse(text);
-                  } catch {
-                      return null;
-                  }
-              })()
+                try {
+                    return JSON.parse(text);
+                } catch {
+                    return null;
+                }
+            })()
             : null;
 
         if (!res.ok) {
@@ -58,8 +58,8 @@ async function apiFetch<T>(
             err instanceof DOMException && err.name === "AbortError"
                 ? `Request timed out after ${timeoutMs}ms`
                 : err instanceof Error
-                ? err.message
-                : "Network error";
+                    ? err.message
+                    : "Network error";
 
         return { ok: false, error: msg };
     } finally {
@@ -70,6 +70,15 @@ async function apiFetch<T>(
 /* ============================
    API FUNCTIONS
    ============================ */
+
+export function createConversation() {
+    return apiFetch<{
+        conversationId: string;
+    }>("/api/conversations", {
+        method: "POST",
+    });
+}
+
 
 export function listConversations() {
     return apiFetch<{
