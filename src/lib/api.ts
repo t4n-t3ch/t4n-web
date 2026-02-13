@@ -148,3 +148,18 @@ export async function streamMessage(
     });
 }
 
+export async function executePlugin(
+    conversationId: string,
+    plugin: string,
+    args: Record<string, unknown> = {},
+) {
+    return apiFetch(`/api/plugins/execute`, {
+        method: "POST",
+        body: JSON.stringify({ conversationId, plugin, args }),
+    });
+}
+
+export async function getPluginRuns(conversationId: string, limit: number = 25) {
+    const qs = new URLSearchParams({ limit: String(limit) }).toString();
+    return apiFetch(`/api/conversations/${encodeURIComponent(conversationId)}/plugins?${qs}`);
+}
