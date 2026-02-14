@@ -63,7 +63,34 @@ export default function Home() {
   const [pluginResult, setPluginResult] = useState<unknown>(null);
   const [pluginRuns, setPluginRuns] = useState<PluginRun[]>([]);
 
+  const activeAssistantIdRef = useRef<string | null>(null);
 
+  function stopStreaming() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+
+    // Optional UX: mark the current assistant message as stopped
+    const aid = activeAssistantIdRef.current;
+    if (aid) {
+      setMessages((m) =>
+        m.map((msg) =>
+          msg.id === aid
+            ? {
+              ...msg,
+              content: (msg.content || "").trimEnd() + "\n\n[Stopped]",
+            }
+            : msg,
+        ),
+      );
+    }
+
+    setStreaming(false);
+    activeAssistantIdRef.current = null;
+
+    setLoading(false);
+    activeAssistantIdRef.current = null;
+
+  }
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -248,8 +275,8 @@ export default function Home() {
     onDone: (data: StreamDone) => void,
     onMeta?: (data: StreamMeta) => void,
     onTool?: (data: ToolEvent) => void,
+    signal?: AbortSignal,
   ) {
-
     if (!res.ok || !res.body) {
       const text = await res.text().catch(() => "");
       throw new Error(text || res.statusText || `Request failed (${res.status})`);
@@ -259,51 +286,72 @@ export default function Home() {
     const decoder = new TextDecoder();
     let buf = "";
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
+    const cancel = async () => {
+      try { await reader.cancel(); } catch { }
+    };
 
-      buf += decoder.decode(value, { stream: true });
+    if (signal) {
+      if (signal.aborted) {
+        await cancel();
+        return;
+      }
+      signal.addEventListener("abort", () => void cancel(), { once: true });
+    }
 
-      let idx: number;
-      while ((idx = buf.indexOf("\n\n")) !== -1) {
-        const frame = buf.slice(0, idx);
-        buf = buf.slice(idx + 2);
+    try {
+      while (true) {
+        if (signal?.aborted) return;
 
-        let event = "message";
-        let dataStr = "";
+        const { value, done } = await reader.read();
+        if (done) break;
 
-        for (const line of frame.split("\n")) {
-          if (line.startsWith("event:")) event = line.slice(6).trim();
-          if (line.startsWith("data:")) dataStr += line.slice(5).trim();
-        }
+        if (signal?.aborted) return;
 
-        if (!dataStr) continue;
+        buf += decoder.decode(value, { stream: true });
 
-        const data = (() => {
-          try {
-            return JSON.parse(dataStr);
-          } catch {
-            return null;
+        let idx: number;
+        while ((idx = buf.indexOf("\n\n")) !== -1) {
+          if (signal?.aborted) return;
+
+          const frame = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+
+          let event = "message";
+          let dataStr = "";
+
+          for (const line of frame.split("\n")) {
+            if (line.startsWith("event:")) event = line.slice(6).trim();
+            if (line.startsWith("data:")) dataStr += line.slice(5).trim();
           }
-        })();
 
-        if (event === "meta" && onMeta) onMeta((data || {}) as StreamMeta);
-        if (event === "tool" && onTool) onTool((data || {}) as ToolEvent);
-        if (event === "delta" && data?.delta) onDelta(String(data.delta));
-        if (event === "done") onDone((data || {}) as StreamDone);
-        if (event === "ping") {
-          // keep-alive ping from server; ignore
-          continue;
-        }
+          if (!dataStr) continue;
 
-        if (event === "error") {
-          const err = (data || {}) as StreamError;
-          throw new Error(err.details || err.error || "Stream error");
+          const data = (() => {
+            try {
+              return JSON.parse(dataStr);
+            } catch {
+              return null;
+            }
+          })();
+
+          if (event === "meta" && onMeta) onMeta((data || {}) as StreamMeta);
+          if (event === "tool" && onTool) onTool((data || {}) as ToolEvent);
+          if (event === "delta" && data?.delta) onDelta(String(data.delta));
+          if (event === "done") onDone((data || {}) as StreamDone);
+
+          if (event === "ping") continue;
+
+          if (event === "error") {
+            const err = (data || {}) as StreamError;
+            throw new Error(err.details || err.error || "Stream error");
+          }
         }
       }
+    } finally {
+      await cancel();
     }
   }
+
 
 
   async function handleSend() {
@@ -327,6 +375,7 @@ export default function Home() {
 
       // Create a blank assistant message we stream into
       const assistantId = globalThis.crypto.randomUUID();
+      activeAssistantIdRef.current = assistantId;
       setMessages((m) => [...m, { id: assistantId, role: "assistant", content: "" }]);
 
       // Abort any previous stream
@@ -349,6 +398,9 @@ export default function Home() {
         (doneData) => {
           const newConversationId = doneData?.conversationId;
 
+          // Existing convo: refresh runs at end of stream too
+          if (activeId) void refreshPluginRuns(activeId);
+
           // If this was the first message of a brand new chat, adopt the server-provided conversationId
           if (!activeId && newConversationId) {
             setActiveId(newConversationId);
@@ -361,16 +413,26 @@ export default function Home() {
             });
 
             void refreshConversations();
-            void refreshPluginRuns(newConversationId); // ✅ refresh runs for the new convo
-            return;
+            void refreshPluginRuns(newConversationId);
           }
-
-          // Existing convo: refresh runs at end of stream too
-          if (activeId) void refreshPluginRuns(activeId);
         },
-
-
+        (meta) => {
+          const mode = meta?.llmMode ?? "unknown";
+          const model = meta?.model ?? "unknown";
+          const enabled = meta?.aiEnabled === false ? "AI disabled" : "AI enabled";
+          setToolBanner(`Meta: ${enabled} • mode=${mode} • model=${model}`);
+        },
+        (tool) => {
+          const status = tool?.status ?? "ok";
+          const name = tool?.tool ?? "tool";
+          const runId = tool?.runId ? ` (${tool.runId})` : "";
+          const err = tool?.error ? ` — ${tool.error}` : "";
+          setToolBanner(`Tool used: ${name}${runId} • ${status}${err}`);
+        },
+        controller.signal,
       );
+
+
 
 
       setStreaming(false);
@@ -567,20 +629,19 @@ export default function Home() {
             <button
               type="button"
               className="bg-black text-white px-4 rounded"
-              onClick={() => {
-                abortRef.current?.abort();
-                abortRef.current = null;
-                setStreaming(false);
-                setLoading(false);
-              }}
+              onClick={stopStreaming}
             >
               Stop
             </button>
           ) : (
-            <button className="bg-black text-white px-4 rounded disabled:opacity-50" disabled={loading}>
+            <button
+              className="bg-black text-white px-4 rounded disabled:opacity-50"
+              disabled={loading}
+            >
               Send
             </button>
           )}
+
 
         </form>
       </main>
