@@ -65,6 +65,15 @@ export default function Home() {
 
   const activeAssistantIdRef = useRef<string | null>(null);
 
+  function cancelStreamSilently() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStreaming(false);
+    setLoading(false);
+    activeAssistantIdRef.current = null;
+  }
+
+
   function stopStreaming() {
     abortRef.current?.abort();
     abortRef.current = null;
@@ -85,12 +94,10 @@ export default function Home() {
     }
 
     setStreaming(false);
-    activeAssistantIdRef.current = null;
-
     setLoading(false);
     activeAssistantIdRef.current = null;
-
   }
+
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -141,6 +148,9 @@ export default function Home() {
     let createdId: string | null = null;
 
     const action = async () => {
+      // If a stream is in progress, cancel it before switching chats
+      if (streaming) cancelStreamSilently();
+
       try {
         setError(null);
         setLoading(true);
@@ -237,6 +247,9 @@ export default function Home() {
 
   async function openConversation(id: string) {
     const action = async () => {
+      // If a stream is in progress, cancel it before switching chats
+      if (streaming) cancelStreamSilently();
+
       try {
         setError(null);
         setLoading(true);
@@ -432,10 +445,9 @@ export default function Home() {
         controller.signal,
       );
 
-
-
-
       setStreaming(false);
+      activeAssistantIdRef.current = null;
+
       abortRef.current = null;
     };
 
