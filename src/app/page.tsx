@@ -9,35 +9,14 @@ import {
   streamMessage,
   executePlugin,
   getPluginRuns,
+  type PluginRun,
 } from "@/lib/api";
+
+
 
 
 type Conversation = { id: string; updated_at: string };
 type Msg = { id: string; role: string; content: string };
-type ApiOk<T> = { ok: true; data: T };
-type ApiErr = { ok: false; error: string };
-type ApiResult<T> = ApiOk<T> | ApiErr;
-
-type PluginRun = {
-  id: string;
-  pluginName: string;
-  input: unknown;
-  output: unknown;
-  status: "ok" | "error";
-  error?: string | null;
-  createdAt: string;
-};
-
-type PluginRunsResponse = { runs: PluginRun[] };
-
-type ExecutePluginResponse = {
-  ok: boolean;
-  runId: string;
-  conversationId: string;
-  plugin: string;
-  output: unknown;
-  requestId: string;
-};
 
 
 export default function Home() {
@@ -53,17 +32,18 @@ export default function Home() {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toolBanner, setToolBanner] = useState<string | null>(null);
-  const [lastAction, setLastAction] = useState<null | (() => Promise<void>)>(null);
+  const [pluginName, setPluginName] = useState<
+    "healthcheck" | "summariseConversation" | "exportConversation"
+  >("summariseConversation");
 
-  const [pluginName, setPluginName] = useState<"healthcheck" | "summariseConversation">(
-    "summariseConversation",
-  );
   const [pluginBusy, setPluginBusy] = useState(false);
 
   const [pluginResult, setPluginResult] = useState<unknown>(null);
   const [pluginRuns, setPluginRuns] = useState<PluginRun[]>([]);
 
   const activeAssistantIdRef = useRef<string | null>(null);
+
+  const lastSendRef = useRef<{ text: string; conversationId?: string } | null>(null);
 
   function cancelStreamSilently() {
     abortRef.current?.abort();
@@ -184,14 +164,13 @@ export default function Home() {
       }
     };
 
-    setLastAction(() => action);
     await action();
     return createdId;
   }
 
   async function refreshPluginRuns(conversationId: string) {
     try {
-      const res = (await getPluginRuns(conversationId, 25)) as ApiResult<PluginRunsResponse>;
+      const res = await getPluginRuns(conversationId, 25);
       if (res.ok) setPluginRuns(res.data.runs || []);
     } catch {
       // ignore plugin list failures (non-critical)
@@ -202,6 +181,59 @@ export default function Home() {
   useEffect(() => {
     if (activeId) void refreshPluginRuns(activeId);
   }, [activeId]);
+
+  async function summariseToChat() {
+    try {
+      setError(null);
+      setPluginBusy(true);
+      setToolBanner(null);
+
+      let cid = activeId;
+
+      // If no conversation yet, create one automatically
+      if (!cid) {
+        const newId = await startNewChat();
+        if (!newId) throw new Error("Failed to create conversation");
+        cid = newId;
+      }
+
+      // IMPORTANT: do NOT save as message in DB here — we append in UI
+      const args = { conversationId: cid, limit: 50, saveAsMessage: false };
+
+      const res = await executePlugin(cid, "summariseConversation", args);
+      if (!res.ok) throw new Error(res.error);
+
+      // Extract a readable summary string (no any)
+      const output: unknown = res.data.output;
+
+      const summary = (() => {
+        if (typeof output === "string") return output;
+
+        if (output && typeof output === "object" && !Array.isArray(output)) {
+          const maybe = output as Record<string, unknown>;
+          if (typeof maybe.summary === "string") return maybe.summary;
+        }
+
+        return JSON.stringify(output, null, 2);
+      })();
+
+      setMessages((m) => [
+        ...m,
+        {
+          id: globalThis.crypto.randomUUID(),
+          role: "assistant",
+          content: `🧾 Conversation summary\n\n${summary}`,
+        },
+      ]);
+
+      await refreshPluginRuns(cid);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Summary failed";
+      setError(friendlyError(msg));
+    } finally {
+      setPluginBusy(false);
+    }
+  }
 
   async function runSelectedPlugin() {
     try {
@@ -220,10 +252,13 @@ export default function Home() {
 
       const args =
         pluginName === "summariseConversation"
-          ? { conversationId: cid, limit: 30, saveAsMessage: true }
-          : {};
+          ? { conversationId: cid, limit: 30, saveAsMessage: false }
+          : pluginName === "exportConversation"
+            ? { conversationId: cid, limit: 200 }
+            : {};
 
-      const res = (await executePlugin(cid, pluginName, args)) as ApiResult<ExecutePluginResponse>;
+
+      const res = await executePlugin(cid, pluginName, args);
       if (!res.ok) throw new Error(res.error);
 
       setPluginResult(res.data);
@@ -267,7 +302,6 @@ export default function Home() {
       }
     };
 
-    setLastAction(() => action);
     await action();
   }
 
@@ -365,11 +399,70 @@ export default function Home() {
     }
   }
 
+  async function retryLastSend() {
+    const payload = lastSendRef.current;
+    if (!payload || !payload.text) return;
+
+    // show thinking + clear error
+    setLoading(true);
+    setError(null);
+
+    const action = async () => {
+      setStreaming(true);
+
+      const assistantId = activeAssistantIdRef.current ?? globalThis.crypto.randomUUID();
+      activeAssistantIdRef.current = assistantId;
+
+      setMessages((m) =>
+        m.some((x) => x.id === assistantId)
+          ? m
+          : [...m, { id: assistantId, role: "assistant", content: "" }],
+      );
+
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      const res = await streamMessage(payload.text, payload.conversationId, controller.signal);
+
+      let streamed = "";
+      await readSseStream(
+        res,
+        (delta) => {
+          streamed += delta;
+          setMessages((m) =>
+            m.map((msg) => (msg.id === assistantId ? { ...msg, content: streamed } : msg)),
+          );
+        },
+        () => { },
+        undefined,
+        undefined,
+        controller.signal,
+      );
+
+      setStreaming(false);
+      activeAssistantIdRef.current = null;
+      abortRef.current = null;
+    };
+
+    try {
+      await action();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Retry failed";
+      setError(friendlyError(msg));
+    } finally {
+      setLoading(false);
+      setStreaming(false);
+    }
+  }
 
 
   async function handleSend() {
     const text = input.trim();
     if (!text || loading) return;
+
+    lastSendRef.current = { text, conversationId: activeId ?? undefined };
+
 
     setLoading(true);
     setError(null);
@@ -387,16 +480,23 @@ export default function Home() {
       setStreaming(true);
 
       // Create a blank assistant message we stream into
-      const assistantId = globalThis.crypto.randomUUID();
+      const assistantId = activeAssistantIdRef.current ?? globalThis.crypto.randomUUID();
       activeAssistantIdRef.current = assistantId;
-      setMessages((m) => [...m, { id: assistantId, role: "assistant", content: "" }]);
+
+      // only add the assistant bubble once
+      setMessages((m) =>
+        m.some((x) => x.id === assistantId)
+          ? m
+          : [...m, { id: assistantId, role: "assistant", content: "" }],
+      );
 
       // Abort any previous stream
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
 
-      const res = await streamMessage(text, activeId ?? undefined, controller.signal);
+      const payload = lastSendRef.current ?? { text, conversationId: activeId ?? undefined };
+      const res = await streamMessage(payload.text, payload.conversationId, controller.signal);
 
       let streamed = "";
 
@@ -451,8 +551,6 @@ export default function Home() {
       abortRef.current = null;
     };
 
-
-    setLastAction(() => action);
 
     try {
       await action();
@@ -515,12 +613,17 @@ export default function Home() {
             className="border rounded px-2 py-1"
             value={pluginName}
             onChange={(e) =>
-              setPluginName(e.target.value as "healthcheck" | "summariseConversation")
+              setPluginName(
+                e.target.value as "healthcheck" | "summariseConversation" | "exportConversation",
+              )
             }
+
             disabled={pluginBusy}
           >
             <option value="healthcheck">healthcheck</option>
             <option value="summariseConversation">summariseConversation</option>
+            <option value="exportConversation">exportConversation</option>
+
           </select>
 
           <button
@@ -532,6 +635,17 @@ export default function Home() {
           >
             {pluginBusy ? "Running…" : "Run"}
           </button>
+
+          <button
+            type="button"
+            className="rounded border px-3 py-1 disabled:opacity-50"
+            onClick={() => void summariseToChat()}
+            disabled={pluginBusy}
+            title={!activeId ? "No conversation selected — will create one automatically" : ""}
+          >
+            Summarise → Chat
+          </button>
+
 
           <div className="ml-auto flex items-center gap-2">
             {activeId && (
@@ -590,13 +704,19 @@ export default function Home() {
           <div className="border-b p-3 text-sm bg-red-50">
             <div className="font-medium">Request failed</div>
             <div className="opacity-80">{error}</div>
-            {lastAction && (
-              <button className="mt-2 rounded border px-3 py-1" onClick={() => void lastAction()}>
-                Retry
-              </button>
-            )}
+
+            <button
+              className="mt-2 rounded border px-3 py-1"
+              onClick={() => {
+                cancelStreamSilently();
+                void retryLastSend();
+              }}
+            >
+              Retry
+            </button>
           </div>
         )}
+
 
         <div className="flex-1 p-4 overflow-y-auto space-y-3">
           {loading && <div className="text-xs opacity-60">Thinking…</div>}

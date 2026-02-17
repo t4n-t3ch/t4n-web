@@ -4,6 +4,29 @@ type ApiOk<T> = { ok: true; data: T };
 type ApiErr = { ok: false; error: string };
 type ApiResult<T> = ApiOk<T> | ApiErr;
 
+export type PluginRun = {
+    id: string;
+    pluginName: string;
+    input: unknown;
+    output: unknown;
+    status: "planned" | "running" | "ok" | "error";
+    error?: string | null;
+    createdAt: string;
+    updatedAt?: string;
+};
+
+export type PluginRunsResponse = { conversationId: string; runs: PluginRun[] };
+
+export type ExecutePluginResponse = {
+    ok: boolean;
+    runId: string;
+    conversationId: string;
+    plugin: string;
+    output: unknown;
+    requestId: string;
+};
+
+
 async function apiFetch<T>(
     path: string,
     options: RequestInit & { timeoutMs?: number } = {},
@@ -14,7 +37,7 @@ async function apiFetch<T>(
 
     const timeoutMs =
         options.timeoutMs ??
-        Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || 25000);
+        Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || 90000);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -108,16 +131,13 @@ export function sendMessage(
     return apiFetch<{
         reply: string;
         conversationId: string;
-        meta?: {
-            llmMode: string;
-            model: string;
-            aiEnabled: boolean;
-        };
+        meta?: { llmMode: string; model: string; aiEnabled: boolean };
     }>("/api/chat", {
-
         method: "POST",
+        timeoutMs: 90000,
         body: JSON.stringify({ message, conversationId }),
     });
+
 }
 
 /**
@@ -153,13 +173,19 @@ export async function executePlugin(
     plugin: string,
     args: Record<string, unknown> = {},
 ) {
-    return apiFetch(`/api/plugins/execute`, {
+    return apiFetch<ExecutePluginResponse>(`/api/plugins/execute`, {
         method: "POST",
+        timeoutMs: 90000,
         body: JSON.stringify({ conversationId, plugin, args }),
     });
+
 }
+
 
 export async function getPluginRuns(conversationId: string, limit: number = 25) {
     const qs = new URLSearchParams({ limit: String(limit) }).toString();
-    return apiFetch(`/api/conversations/${encodeURIComponent(conversationId)}/plugins?${qs}`);
+    return apiFetch<PluginRunsResponse>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/plugins?${qs}`,
+    );
 }
+
