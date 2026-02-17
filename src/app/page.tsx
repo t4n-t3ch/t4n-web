@@ -42,8 +42,10 @@ export default function Home() {
   const [pluginRuns, setPluginRuns] = useState<PluginRun[]>([]);
 
   const activeAssistantIdRef = useRef<string | null>(null);
+  const lastAssistantIdRef = useRef<string | null>(null);
 
   const lastSendRef = useRef<{ text: string; conversationId?: string } | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
 
   function cancelStreamSilently() {
     abortRef.current?.abort();
@@ -57,6 +59,8 @@ export default function Home() {
   function stopStreaming() {
     abortRef.current?.abort();
     abortRef.current = null;
+
+    setCanRetry(true);
 
     // Optional UX: mark the current assistant message as stopped
     const aid = activeAssistantIdRef.current;
@@ -410,8 +414,20 @@ export default function Home() {
     const action = async () => {
       setStreaming(true);
 
-      const assistantId = activeAssistantIdRef.current ?? globalThis.crypto.randomUUID();
+      const assistantId =
+        lastAssistantIdRef.current ?? globalThis.crypto.randomUUID();
+      lastAssistantIdRef.current = assistantId;
       activeAssistantIdRef.current = assistantId;
+
+      // Clear previous stopped content before retrying
+      setMessages((m) =>
+        m.map((msg) =>
+          msg.id === assistantId
+            ? { ...msg, content: "" }
+            : msg,
+        ),
+      );
+
 
       setMessages((m) =>
         m.some((x) => x.id === assistantId)
@@ -423,7 +439,13 @@ export default function Home() {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      const res = await streamMessage(payload.text, payload.conversationId, controller.signal);
+      const cid = payload.conversationId ?? activeId ?? undefined;
+
+      // keep lastSendRef up to date so future retries always have the cid
+      lastSendRef.current = { text: payload.text, conversationId: cid };
+
+      const res = await streamMessage(payload.text, cid, controller.signal);
+
 
       let streamed = "";
       await readSseStream(
@@ -462,7 +484,7 @@ export default function Home() {
     if (!text || loading) return;
 
     lastSendRef.current = { text, conversationId: activeId ?? undefined };
-
+    setCanRetry(true);
 
     setLoading(true);
     setError(null);
@@ -516,6 +538,10 @@ export default function Home() {
 
           // If this was the first message of a brand new chat, adopt the server-provided conversationId
           if (!activeId && newConversationId) {
+            // Make sure Retry uses the server-issued conversationId for the very first message
+            if (lastSendRef.current) {
+              lastSendRef.current = { text: lastSendRef.current.text, conversationId: newConversationId };
+            }
             setActiveId(newConversationId);
             router.push(`/?c=${encodeURIComponent(newConversationId)}`);
 
@@ -766,13 +792,29 @@ export default function Home() {
               Stop
             </button>
           ) : (
-            <button
-              className="bg-black text-white px-4 rounded disabled:opacity-50"
-              disabled={loading}
-            >
-              Send
-            </button>
+            <>
+              <button
+                type="button"
+                className="rounded border px-4 disabled:opacity-50"
+                disabled={loading || !canRetry}
+                onClick={() => {
+                  cancelStreamSilently();
+                  void retryLastSend();
+                }}
+                title={!canRetry ? "Nothing to retry yet" : "Retry last message"}
+              >
+                Retry
+              </button>
+
+              <button
+                className="bg-black text-white px-4 rounded disabled:opacity-50"
+                disabled={loading}
+              >
+                Send
+              </button>
+            </>
           )}
+
 
 
         </form>
