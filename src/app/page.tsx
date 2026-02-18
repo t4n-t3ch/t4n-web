@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
 import {
   listConversations,
   getMessages,
@@ -11,8 +12,6 @@ import {
   getPluginRuns,
   type PluginRun,
 } from "@/lib/api";
-
-
 
 
 type Conversation = { id: string; updated_at: string };
@@ -31,15 +30,29 @@ export default function Home() {
   const abortRef = useRef<AbortController | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [toolBanner, setToolBanner] = useState<string | null>(null);
   const [pluginName, setPluginName] = useState<
     "healthcheck" | "summariseConversation" | "exportConversation"
   >("summariseConversation");
 
   const [pluginBusy, setPluginBusy] = useState(false);
+  const [pluginsOpen, setPluginsOpen] = useState(false);
 
   const [pluginResult, setPluginResult] = useState<unknown>(null);
   const [pluginRuns, setPluginRuns] = useState<PluginRun[]>([]);
+
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  const [convSearch, setConvSearch] = useState("");
+
+  function makeTitleFromText(text: string) {
+    const cleaned = text.replace(/\s+/g, " ").trim();
+    if (!cleaned) return null;
+    return cleaned.length > 32 ? cleaned.slice(0, 32) + "…" : cleaned;
+  }
+
+  function makeTitleFromMessages(msgs: Msg[]) {
+    const firstUser = msgs.find((m) => m.role === "user")?.content ?? "";
+    return makeTitleFromText(firstUser);
+  }
 
   const activeAssistantIdRef = useRef<string | null>(null);
   const lastAssistantIdRef = useRef<string | null>(null);
@@ -146,8 +159,38 @@ export default function Home() {
   }
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem("t4n_conversation_titles");
+      if (raw) setTitles(JSON.parse(raw));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("t4n_conversation_titles", JSON.stringify(titles));
+    } catch {
+      // ignore
+    }
+  }, [titles]);
+
+
+  useEffect(() => {
     void refreshConversations();
   }, []);
+
+  const filteredConversations = (() => {
+    const q = convSearch.trim().toLowerCase();
+    if (!q) return conversations;
+
+    return conversations.filter((c) => {
+      const title = (titles[c.id] ?? "").toLowerCase();
+      const id = c.id.toLowerCase();
+      return title.includes(q) || id.includes(q);
+    });
+  })();
+
 
   async function startNewChat(): Promise<string | null> {
     let createdId: string | null = null;
@@ -159,8 +202,6 @@ export default function Home() {
       try {
         setError(null);
         setLoading(true);
-        setToolBanner(null); // reset “Tool used …” banner for this send
-
 
         const res = await createConversation();
         if (!res.ok) throw new Error(res.error);
@@ -207,59 +248,6 @@ export default function Home() {
     if (activeId) void refreshPluginRuns(activeId);
   }, [activeId]);
 
-  async function summariseToChat() {
-    try {
-      setError(null);
-      setPluginBusy(true);
-      setToolBanner(null);
-
-      let cid = activeId;
-
-      // If no conversation yet, create one automatically
-      if (!cid) {
-        const newId = await startNewChat();
-        if (!newId) throw new Error("Failed to create conversation");
-        cid = newId;
-      }
-
-      // IMPORTANT: do NOT save as message in DB here — we append in UI
-      const args = { conversationId: cid, limit: 50, saveAsMessage: false };
-
-      const res = await executePlugin(cid, "summariseConversation", args);
-      if (!res.ok) throw new Error(res.error);
-
-      // Extract a readable summary string (no any)
-      const output: unknown = res.data.output;
-
-      const summary = (() => {
-        if (typeof output === "string") return output;
-
-        if (output && typeof output === "object" && !Array.isArray(output)) {
-          const maybe = output as Record<string, unknown>;
-          if (typeof maybe.summary === "string") return maybe.summary;
-        }
-
-        return JSON.stringify(output, null, 2);
-      })();
-
-      setMessages((m) => [
-        ...m,
-        {
-          id: globalThis.crypto.randomUUID(),
-          role: "assistant",
-          content: `🧾 Conversation summary\n\n${summary}`,
-        },
-      ]);
-
-      await refreshPluginRuns(cid);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Summary failed";
-      setError(friendlyError(msg));
-    } finally {
-      setPluginBusy(false);
-    }
-  }
-
   async function runSelectedPlugin() {
     try {
       setError(null);
@@ -287,34 +275,6 @@ export default function Home() {
       if (!res.ok) throw new Error(res.error);
 
       setPluginResult(res.data);
-
-      // If exportConversation returns transcript, auto-download it
-      if (pluginName === "exportConversation") {
-        const out = res.data?.output ?? res.data;
-
-        const transcript =
-          out && typeof out === "object" && !Array.isArray(out)
-            ? (out as Record<string, unknown>).transcript
-            : null;
-
-        if (typeof transcript === "string" && transcript.length > 0) {
-          const blob = new Blob([transcript], {
-            type: "text/markdown;charset=utf-8",
-          });
-
-          const url = URL.createObjectURL(blob);
-
-          const a = document.createElement("a");
-          const safeId = (cid || "conversation").slice(0, 8);
-          a.href = url;
-          a.download = `conversation-${safeId}.md`;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-
-          URL.revokeObjectURL(url);
-        }
-      }
 
 
       // If exportConversation returns text content, auto-download it for the user
@@ -381,6 +341,9 @@ export default function Home() {
         if (!res.ok) throw new Error(res.error);
 
         setMessages(res.data.messages);
+        const t = makeTitleFromMessages(res.data.messages);
+        if (t) setTitles((prev) => ({ ...prev, [id]: t }));
+
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load messages");
       } finally {
@@ -582,6 +545,12 @@ export default function Home() {
     setLoading(true);
     setError(null);
 
+    // If this is the first message in this conversation, set a readable title
+    if (activeId && !titles[activeId]) {
+      const t = makeTitleFromText(text);
+      if (t) setTitles((prev) => ({ ...prev, [activeId]: t }));
+    }
+
     const userMsg: Msg = {
       id: globalThis.crypto.randomUUID(),
       role: "user",
@@ -641,6 +610,13 @@ export default function Home() {
             setActiveId(newConversationId);
             router.push(`/?c=${encodeURIComponent(newConversationId)}`);
 
+            // Set title for brand-new convo using the first message text
+            if (!titles[newConversationId]) {
+              const firstText = lastSendRef.current?.text ?? "";
+              const t = makeTitleFromText(firstText);
+              if (t) setTitles((prev) => ({ ...prev, [newConversationId]: t }));
+            }
+
             setConversations((prev) => {
               const exists = prev.some((c) => c.id === newConversationId);
               if (exists) return prev;
@@ -651,19 +627,9 @@ export default function Home() {
             void refreshPluginRuns(newConversationId);
           }
         },
-        (meta) => {
-          const mode = meta?.llmMode ?? "unknown";
-          const model = meta?.model ?? "unknown";
-          const enabled = meta?.aiEnabled === false ? "AI disabled" : "AI enabled";
-          setToolBanner(`Meta: ${enabled} • mode=${mode} • model=${model}`);
-        },
-        (tool) => {
-          const status = tool?.status ?? "ok";
-          const name = tool?.tool ?? "tool";
-          const runId = tool?.runId ? ` (${tool.runId})` : "";
-          const err = tool?.error ? ` — ${tool.error}` : "";
-          setToolBanner(`Tool used: ${name}${runId} • ${status}${err}`);
-        },
+        () => { },
+        () => { },
+
         controller.signal,
       );
 
@@ -697,34 +663,66 @@ export default function Home() {
 
   return (
     <div className="flex h-screen">
-      <aside className="w-64 border-r p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-bold">Conversations</h2>
+      <aside className="w-72 border-r p-4 overflow-y-auto">
+        <div className="flex items-center justify-between mb-3 pb-3 border-b">
+          <div className="flex items-center gap-2">
+            <Image
+              src="/t4n-logo.png"
+              alt="T4N"
+              width={24}
+              height={24}
+              className="h-6 w-6 object-contain"
+            />
+
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+              Conversations
+            </div>
+          </div>
+
           <button
+            type="button"
+            className="rounded border px-3 py-1 text-sm bg-white hover:bg-gray-100 shadow-sm leading-none"
             onClick={() => {
               // removed: startNewChat() will navigate to the new ?c=...
               void startNewChat();
             }}
-
           >
             New
           </button>
         </div>
 
-        <ul className="space-y-2 text-sm">
+        <div className="mb-3">
+          <input
+            className="w-full rounded border px-3 py-2 text-sm"
+            placeholder="Search conversations…"
+            value={convSearch}
+            onChange={(e) => setConvSearch(e.target.value)}
+          />
+        </div>
+
+        <ul className="space-y-1 text-sm">
           {conversations.length === 0 ? (
             <li className="text-gray-400">No conversations yet</li>
           ) : (
-            conversations.map((c) => (
+            filteredConversations.map((c) => (
               <li
                 key={c.id}
+                className={`cursor-pointer select-none rounded px-2 py-1 hover:bg-gray-100 ${activeId === c.id ? "bg-gray-200 font-medium" : ""
+                  }`}
                 onClick={() => {
                   router.push(`/?c=${encodeURIComponent(c.id)}`);
                   void openConversation(c.id);
                 }}
-
               >
-                {c.id.slice(0, 8)}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate">
+                    {titles[c.id] ?? c.id.slice(0, 8)}
+                  </span>
+                  <span className="shrink-0 text-[10px] opacity-50">
+                    {new Date(c.updated_at).toLocaleDateString()}
+                  </span>
+                </div>
+
               </li>
             ))
           )}
@@ -733,43 +731,12 @@ export default function Home() {
 
       <main className="flex-1 flex flex-col">
         <div className="border-b p-3 text-sm flex items-center gap-2">
-          <div className="font-medium">Plugins</div>
-
-          <select
-            className="border rounded px-2 py-1"
-            value={pluginName}
-            onChange={(e) =>
-              setPluginName(
-                e.target.value as "healthcheck" | "summariseConversation" | "exportConversation",
-              )
-            }
-
-            disabled={pluginBusy}
-          >
-            <option value="healthcheck">healthcheck</option>
-            <option value="summariseConversation">summariseConversation</option>
-            <option value="exportConversation">exportConversation</option>
-
-          </select>
-
           <button
             type="button"
-            className="rounded border px-3 py-1 disabled:opacity-50"
-            onClick={() => void runSelectedPlugin()}
-            disabled={pluginBusy}
-            title={!activeId ? "No conversation selected — will create one automatically" : ""}
+            className="rounded border px-3 py-1 hover:bg-gray-100"
+            onClick={() => setPluginsOpen(true)}
           >
-            {pluginBusy ? "Running…" : "Run"}
-          </button>
-
-          <button
-            type="button"
-            className="rounded border px-3 py-1 disabled:opacity-50"
-            onClick={() => void summariseToChat()}
-            disabled={pluginBusy}
-            title={!activeId ? "No conversation selected — will create one automatically" : ""}
-          >
-            Summarise → Chat
+            Plugins
           </button>
 
           <div className="ml-auto flex items-center gap-2">
@@ -785,125 +752,201 @@ export default function Home() {
           </div>
         </div>
 
-        {(pluginResult || pluginRuns.length > 0) && (
-          <div className="border-b p-3 text-xs bg-gray-50 space-y-2">
-            {!!pluginResult && (
-              <div>
-                <div className="font-medium mb-1">Last plugin result</div>
-
-                {(() => {
-                  const pr = pluginResult;
-
-                  const asObj =
-                    pr && typeof pr === "object" && !Array.isArray(pr)
-                      ? (pr as Record<string, unknown>)
-                      : null;
-
-                  const plugin = String(asObj?.plugin ?? "");
-                  const status = String(asObj?.status ?? "");
-                  const runId = String(asObj?.runId ?? "");
-                  const cid = String(asObj?.conversationId ?? activeId ?? "");
-
-                  const output = asObj && "output" in asObj ? (asObj.output as unknown) : null;
-
-                  if (plugin === "exportConversation") {
-                    const transcript = (() => {
-                      if (typeof output === "string") return output;
-
-                      if (output && typeof output === "object" && !Array.isArray(output)) {
-                        const o = output as Record<string, unknown>;
-                        if (typeof o.transcript === "string") return o.transcript;
-                      }
-
-                      return JSON.stringify(output, null, 2);
-                    })();
-
-                    const filename = cid ? `conversation-${cid.slice(0, 8)}.md` : "conversation.md";
-
-                    return (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="opacity-70">
-                            <span className="font-mono">{plugin}</span>
-                            {runId ? <span className="opacity-60"> • {runId.slice(0, 8)}</span> : null}
-                            {status ? <span className="opacity-60"> • {status}</span> : null}
-                          </div>
-
-                          <button
-                            type="button"
-                            className="rounded border px-3 py-1"
-                            onClick={() => downloadTextFile(filename, transcript)}
-                          >
-                            Download .md
-                          </button>
-                        </div>
-
-                        <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto max-h-64">
-                          {transcript}
-                        </pre>
-                      </div>
-                    );
-                  }
-
-                  if (plugin === "summariseConversation") {
-                    const summary = (() => {
-                      if (typeof output === "string") return output;
-
-                      if (output && typeof output === "object" && !Array.isArray(output)) {
-                        const o = output as Record<string, unknown>;
-                        if (typeof o.summary === "string") return o.summary;
-                      }
-
-                      return JSON.stringify(output, null, 2);
-                    })();
-
-                    return (
-                      <div className="space-y-2">
-                        <div className="opacity-70">
-                          <span className="font-mono">{plugin}</span>
-                          {runId ? <span className="opacity-60"> • {runId.slice(0, 8)}</span> : null}
-                          {status ? <span className="opacity-60"> • {status}</span> : null}
-                        </div>
-                        <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto max-h-64">
-                          {summary}
-                        </pre>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto max-h-64">
-                      {JSON.stringify(pluginResult, null, 2)}
-                    </pre>
-                  );
-                })()}
+        {pluginsOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+            onMouseDown={() => setPluginsOpen(false)}
+          >
+            <div
+              className="w-[780px] max-w-[95vw] rounded-lg bg-white shadow-lg"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b p-3">
+                <div className="font-semibold">Plugins</div>
+                <button
+                  type="button"
+                  className="rounded border px-3 py-1 hover:bg-gray-100"
+                  onClick={() => setPluginsOpen(false)}
+                >
+                  Close
+                </button>
               </div>
-            )}
 
-            {pluginRuns.length > 0 && (
-              <div>
-                <div className="font-medium mb-1">Recent plugin runs</div>
-                <div className="space-y-1">
-                  {pluginRuns.slice(0, 5).map((r) => (
-                    <div key={r.id} className="flex items-center justify-between gap-2">
-                      <div className="truncate">
-                        <span className="font-mono">{r.pluginName}</span>
-                        <span className="opacity-60"> — {r.status}</span>
-                        {r.error ? <span className="text-red-700"> — {r.error}</span> : null}
-                      </div>
-                      <div className="opacity-60">{r.createdAt}</div>
+              <div className="p-3 text-sm flex items-center gap-2">
+                <select
+                  className="border rounded px-2 py-1"
+                  value={pluginName}
+                  onChange={(e) =>
+                    setPluginName(
+                      e.target.value as
+                      | "healthcheck"
+                      | "summariseConversation"
+                      | "exportConversation",
+                    )
+                  }
+                  disabled={pluginBusy}
+                >
+                  <option value="healthcheck">healthcheck</option>
+                  <option value="summariseConversation">summariseConversation</option>
+                  <option value="exportConversation">exportConversation</option>
+                </select>
+
+                <button
+                  type="button"
+                  className="rounded border px-3 py-1 disabled:opacity-50"
+                  onClick={() => void runSelectedPlugin()}
+                  disabled={pluginBusy}
+                  title={!activeId ? "No conversation selected — will create one automatically" : ""}
+                >
+                  {pluginBusy ? "Running…" : "Run"}
+                </button>
+
+              </div>
+              {(pluginResult || pluginRuns.length > 0) && (
+                <div className="border-t p-3 text-xs bg-gray-50 space-y-2">
+                  {!!pluginResult && (
+                    <div>
+                      <div className="font-medium mb-1">Last plugin result</div>
+
+                      {(() => {
+                        const pr = pluginResult;
+
+                        const asObj =
+                          pr && typeof pr === "object" && !Array.isArray(pr)
+                            ? (pr as Record<string, unknown>)
+                            : null;
+
+                        const plugin = String(asObj?.plugin ?? "");
+                        const status = String(asObj?.status ?? "");
+                        const runId = String(asObj?.runId ?? "");
+                        const cid = String(asObj?.conversationId ?? activeId ?? "");
+
+                        const output = asObj && "output" in asObj ? (asObj.output as unknown) : null;
+
+                        if (plugin === "healthcheck") {
+                          // Minimal + safe UI: no model / llmMode exposure
+                          const ok =
+                            (asObj && "ok" in asObj && (asObj as Record<string, unknown>).ok === true) ||
+                            (output && typeof output === "object" && output !== null && "ok" in (output as Record<string, unknown>) && (output as Record<string, unknown>).ok === true);
+
+                          return (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="opacity-70">
+                                  <span className="font-mono">healthcheck</span>
+                                  {runId ? <span className="opacity-60"> • {runId.slice(0, 8)}</span> : null}
+                                </div>
+
+                                <span
+                                  className={`rounded px-2 py-0.5 text-[11px] font-medium border ${ok ? "bg-green-50 text-green-700 border-green-200" : "bg-yellow-50 text-yellow-800 border-yellow-200"
+                                    }`}
+                                >
+                                  {ok ? "OK" : "UNKNOWN"}
+                                </span>
+                              </div>
+
+                              <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto max-h-64">
+                                {JSON.stringify({ ok }, null, 2)}
+                              </pre>
+                            </div>
+                          );
+                        }
+
+
+                        if (plugin === "exportConversation") {
+                          const transcript = (() => {
+                            if (typeof output === "string") return output;
+
+                            if (output && typeof output === "object" && !Array.isArray(output)) {
+                              const o = output as Record<string, unknown>;
+                              if (typeof o.transcript === "string") return o.transcript;
+                            }
+
+                            return JSON.stringify(output, null, 2);
+                          })();
+
+                          const filename = cid ? `conversation-${cid.slice(0, 8)}.md` : "conversation.md";
+
+                          return (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="opacity-70">
+                                  <span className="font-mono">{plugin}</span>
+                                  {runId ? <span className="opacity-60"> • {runId.slice(0, 8)}</span> : null}
+                                  {status ? <span className="opacity-60"> • {status}</span> : null}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  className="rounded border px-3 py-1"
+                                  onClick={() => downloadTextFile(filename, transcript)}
+                                >
+                                  Download .md
+                                </button>
+                              </div>
+
+                              <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto max-h-64">
+                                {transcript}
+                              </pre>
+                            </div>
+                          );
+                        }
+
+                        if (plugin === "summariseConversation") {
+                          const summary = (() => {
+                            if (typeof output === "string") return output;
+
+                            if (output && typeof output === "object" && !Array.isArray(output)) {
+                              const o = output as Record<string, unknown>;
+                              if (typeof o.summary === "string") return o.summary;
+                            }
+
+                            return JSON.stringify(output, null, 2);
+                          })();
+
+                          return (
+                            <div className="space-y-2">
+                              <div className="opacity-70">
+                                <span className="font-mono">{plugin}</span>
+                                {runId ? <span className="opacity-60"> • {runId.slice(0, 8)}</span> : null}
+                                {status ? <span className="opacity-60"> • {status}</span> : null}
+                              </div>
+                              <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto max-h-64">
+                                {summary}
+                              </pre>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto max-h-64">
+                            {JSON.stringify(pluginResult, null, 2)}
+                          </pre>
+                        );
+                      })()}
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+                  )}
 
-        {toolBanner && (
-          <div className="border-b p-3 text-sm bg-blue-50">
-            <div className="font-medium">Tool call</div>
-            <div className="opacity-80">{toolBanner}</div>
+                  {pluginRuns.length > 0 && (
+                    <div>
+                      <div className="font-medium mb-1">Recent plugin runs</div>
+                      <div className="space-y-1">
+                        {pluginRuns.slice(0, 5).map((r) => (
+                          <div key={r.id} className="flex items-center justify-between gap-2">
+                            <div className="truncate">
+                              <span className="font-mono">{r.pluginName}</span>
+                              <span className="opacity-60"> — {r.status}</span>
+                              {r.error ? <span className="text-red-700"> — {r.error}</span> : null}
+                            </div>
+                            <div className="opacity-60">{r.createdAt}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -924,8 +967,16 @@ export default function Home() {
           </div>
         )}
 
+        <div className="flex-1 p-4 overflow-y-auto space-y-3 relative">
+          <Image
+            src="/t4n-logo.png"
+            alt=""
+            width={256}
+            height={256}
+            className="pointer-events-none select-none absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 opacity-[0.1]"
+            priority={false}
+          />
 
-        <div className="flex-1 p-4 overflow-y-auto space-y-3">
           {loading && <div className="text-xs opacity-60">Thinking…</div>}
 
           {messages.length === 0 && (
@@ -1014,9 +1065,6 @@ export default function Home() {
               </button>
             </>
           )}
-
-
-
         </form>
       </main>
     </div>
