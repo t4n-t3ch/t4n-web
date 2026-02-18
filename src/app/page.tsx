@@ -44,6 +44,8 @@ export default function Home() {
   const activeAssistantIdRef = useRef<string | null>(null);
   const lastAssistantIdRef = useRef<string | null>(null);
 
+  const stoppedByUserRef = useRef(false);
+
   const lastSendRef = useRef<{ text: string; conversationId?: string } | null>(null);
   const [canRetry, setCanRetry] = useState(false);
 
@@ -57,6 +59,8 @@ export default function Home() {
 
 
   function stopStreaming() {
+    stoppedByUserRef.current = true;
+
     abortRef.current?.abort();
     abortRef.current = null;
 
@@ -64,6 +68,8 @@ export default function Home() {
 
     // Optional UX: mark the current assistant message as stopped
     const aid = activeAssistantIdRef.current;
+    lastAssistantIdRef.current = aid;
+
     if (aid) {
       setMessages((m) =>
         m.map((msg) =>
@@ -414,10 +420,14 @@ export default function Home() {
     const action = async () => {
       setStreaming(true);
 
+      stoppedByUserRef.current = false;
+
       const assistantId =
         lastAssistantIdRef.current ?? globalThis.crypto.randomUUID();
       lastAssistantIdRef.current = assistantId;
       activeAssistantIdRef.current = assistantId;
+      lastAssistantIdRef.current = assistantId;
+
 
       // Clear previous stopped content before retrying
       setMessages((m) =>
@@ -448,6 +458,8 @@ export default function Home() {
 
 
       let streamed = "";
+      let sawDone = false;
+
       await readSseStream(
         res,
         (delta) => {
@@ -456,13 +468,18 @@ export default function Home() {
             m.map((msg) => (msg.id === assistantId ? { ...msg, content: streamed } : msg)),
           );
         },
-        () => { },
+        () => { sawDone = true; },
         undefined,
         undefined,
         controller.signal,
       );
 
       setStreaming(false);
+      // Successful retry completion -> nothing to retry
+      // Disable retry only if stream actually completed (got done event)
+      if (controller.signal.aborted || !sawDone) setCanRetry(true);
+      else setCanRetry(false);
+
       activeAssistantIdRef.current = null;
       abortRef.current = null;
     };
@@ -521,6 +538,8 @@ export default function Home() {
       const res = await streamMessage(payload.text, payload.conversationId, controller.signal);
 
       let streamed = "";
+      let sawDone = false;
+
 
       await readSseStream(
         res,
@@ -531,6 +550,7 @@ export default function Home() {
           );
         },
         (doneData) => {
+          sawDone = true;
           const newConversationId = doneData?.conversationId;
 
           // Existing convo: refresh runs at end of stream too
@@ -572,6 +592,10 @@ export default function Home() {
       );
 
       setStreaming(false);
+      // If we stopped (abort) or never saw "done", allow retry; otherwise disable it
+      setCanRetry(stoppedByUserRef.current || controller.signal.aborted || !sawDone);
+
+
       activeAssistantIdRef.current = null;
 
       abortRef.current = null;
@@ -753,16 +777,35 @@ export default function Home() {
             </div>
           )}
 
-          {messages.map((m) => (
-            <div key={m.id} className={`max-w-xl ${m.role === "user" ? "ml-auto text-right" : ""}`}>
-              <div
-                className={`rounded p-2 ${m.role === "user" ? "bg-blue-500 text-white" : "bg-gray-100"
-                  }`}
-              >
-                {m.content}
+          {messages.map((m) => {
+            const isUser = m.role === "user";
+            const isStopped = !isUser && /\[Stopped\]\s*$/.test(m.content || "");
+            const cleanText = isStopped
+              ? (m.content || "").replace(/\n?\n?\[Stopped\]\s*$/, "")
+              : (m.content || "");
+
+            const isActiveStreaming = !isUser && streaming && m.id === activeAssistantIdRef.current;
+
+            return (
+              <div key={m.id} className={`max-w-xl ${isUser ? "ml-auto text-right" : ""}`}>
+                <div
+                  className={`rounded p-2 whitespace-pre-wrap break-words ${isUser
+                    ? "bg-blue-500 text-white"
+                    : isStopped
+                      ? "bg-yellow-50 border border-yellow-300"
+                      : "bg-gray-100"
+                    }`}
+                >
+                  {!isUser && isStopped && (
+                    <div className="mb-1 text-xs font-medium opacity-70">Stopped</div>
+                  )}
+                  {cleanText}
+                  {isActiveStreaming ? " ▍" : ""}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
+
 
           <div ref={bottomRef} />
         </div>
