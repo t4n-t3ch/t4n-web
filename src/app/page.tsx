@@ -92,6 +92,21 @@ export default function Home() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  function downloadTextFile(filename: string, text: string, mime = "text/markdown") {
+    const blob = new Blob([text], { type: `${mime};charset=utf-8` });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    // cleanup
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   function friendlyError(msg: string) {
     const m = msg.toLowerCase();
     if (m.includes("llm disabled") || m.includes("cloud mode") || m.includes("disabled in cloud")) {
@@ -273,6 +288,67 @@ export default function Home() {
 
       setPluginResult(res.data);
 
+      // If exportConversation returns transcript, auto-download it
+      if (pluginName === "exportConversation") {
+        const out = res.data?.output ?? res.data;
+
+        const transcript =
+          out && typeof out === "object" && !Array.isArray(out)
+            ? (out as Record<string, unknown>).transcript
+            : null;
+
+        if (typeof transcript === "string" && transcript.length > 0) {
+          const blob = new Blob([transcript], {
+            type: "text/markdown;charset=utf-8",
+          });
+
+          const url = URL.createObjectURL(blob);
+
+          const a = document.createElement("a");
+          const safeId = (cid || "conversation").slice(0, 8);
+          a.href = url;
+          a.download = `conversation-${safeId}.md`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+
+          URL.revokeObjectURL(url);
+        }
+      }
+
+
+      // If exportConversation returns text content, auto-download it for the user
+      if (pluginName === "exportConversation") {
+        const out = res.data?.output ?? res.data;
+
+        const text = (() => {
+          if (typeof out === "string") return out;
+
+          if (out && typeof out === "object" && !Array.isArray(out)) {
+            const o = out as Record<string, unknown>;
+            if (typeof o.text === "string") return o.text;
+            if (typeof o.markdown === "string") return o.markdown;
+            if (typeof o.content === "string") return o.content;
+          }
+
+          return null;
+        })();
+
+        if (text) {
+          const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+
+          const a = document.createElement("a");
+          const safeId = (cid || "conversation").slice(0, 8);
+          a.href = url;
+          a.download = `conversation-${safeId}.txt`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+
+          URL.revokeObjectURL(url);
+        }
+      }
 
       // summariseConversation can write a new assistant message -> refresh messages
       if (pluginName === "summariseConversation") {
@@ -696,7 +772,6 @@ export default function Home() {
             Summarise → Chat
           </button>
 
-
           <div className="ml-auto flex items-center gap-2">
             {activeId && (
               <button
@@ -713,12 +788,95 @@ export default function Home() {
         {(pluginResult || pluginRuns.length > 0) && (
           <div className="border-b p-3 text-xs bg-gray-50 space-y-2">
             {!!pluginResult && (
-
               <div>
                 <div className="font-medium mb-1">Last plugin result</div>
-                <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto">
-                  {JSON.stringify(pluginResult, null, 2)}
-                </pre>
+
+                {(() => {
+                  const pr = pluginResult;
+
+                  const asObj =
+                    pr && typeof pr === "object" && !Array.isArray(pr)
+                      ? (pr as Record<string, unknown>)
+                      : null;
+
+                  const plugin = String(asObj?.plugin ?? "");
+                  const status = String(asObj?.status ?? "");
+                  const runId = String(asObj?.runId ?? "");
+                  const cid = String(asObj?.conversationId ?? activeId ?? "");
+
+                  const output = asObj && "output" in asObj ? (asObj.output as unknown) : null;
+
+                  if (plugin === "exportConversation") {
+                    const transcript = (() => {
+                      if (typeof output === "string") return output;
+
+                      if (output && typeof output === "object" && !Array.isArray(output)) {
+                        const o = output as Record<string, unknown>;
+                        if (typeof o.transcript === "string") return o.transcript;
+                      }
+
+                      return JSON.stringify(output, null, 2);
+                    })();
+
+                    const filename = cid ? `conversation-${cid.slice(0, 8)}.md` : "conversation.md";
+
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="opacity-70">
+                            <span className="font-mono">{plugin}</span>
+                            {runId ? <span className="opacity-60"> • {runId.slice(0, 8)}</span> : null}
+                            {status ? <span className="opacity-60"> • {status}</span> : null}
+                          </div>
+
+                          <button
+                            type="button"
+                            className="rounded border px-3 py-1"
+                            onClick={() => downloadTextFile(filename, transcript)}
+                          >
+                            Download .md
+                          </button>
+                        </div>
+
+                        <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto max-h-64">
+                          {transcript}
+                        </pre>
+                      </div>
+                    );
+                  }
+
+                  if (plugin === "summariseConversation") {
+                    const summary = (() => {
+                      if (typeof output === "string") return output;
+
+                      if (output && typeof output === "object" && !Array.isArray(output)) {
+                        const o = output as Record<string, unknown>;
+                        if (typeof o.summary === "string") return o.summary;
+                      }
+
+                      return JSON.stringify(output, null, 2);
+                    })();
+
+                    return (
+                      <div className="space-y-2">
+                        <div className="opacity-70">
+                          <span className="font-mono">{plugin}</span>
+                          {runId ? <span className="opacity-60"> • {runId.slice(0, 8)}</span> : null}
+                          {status ? <span className="opacity-60"> • {status}</span> : null}
+                        </div>
+                        <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto max-h-64">
+                          {summary}
+                        </pre>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto max-h-64">
+                      {JSON.stringify(pluginResult, null, 2)}
+                    </pre>
+                  );
+                })()}
               </div>
             )}
 
@@ -748,7 +906,6 @@ export default function Home() {
             <div className="opacity-80">{toolBanner}</div>
           </div>
         )}
-
 
         {error && (
           <div className="border-b p-3 text-sm bg-red-50">
