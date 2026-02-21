@@ -106,6 +106,7 @@ export function listConversations() {
     return apiFetch<{
         conversations: {
             id: string;
+            title: string | null;
             created_at: string;
             updated_at: string;
         }[];
@@ -122,6 +123,30 @@ export function getMessages(conversationId: string) {
             created_at: string;
         }[];
     }>(`/api/conversations/${conversationId}/messages`);
+}
+
+// ✅ Rename conversation title
+export function renameConversation(conversationId: string, title: string | null) {
+    return apiFetch<{
+        ok: boolean;
+        conversationId: string;
+        title: string | null;
+        requestId: string;
+    }>(`/api/conversations/${encodeURIComponent(conversationId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title }),
+    });
+}
+
+// ✅ Delete conversation
+export function deleteConversation(conversationId: string) {
+    return apiFetch<{
+        ok: boolean;
+        conversationId: string;
+        requestId: string;
+    }>(`/api/conversations/${encodeURIComponent(conversationId)}`, {
+        method: "DELETE",
+    });
 }
 
 export function sendMessage(
