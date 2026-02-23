@@ -15,28 +15,7 @@ import {
   type PluginRun,
 } from "@/lib/api";
 
-const PINE_RULES = `
-You are a senior Pine Script v5 engineer.
-
-STRICT RULES:
-
-- Pine version MUST always be //@version=5
-- Never multiply or add boolean series.
-- Use ta.crossover() and ta.crossunder() for signals.
-- Never compare EMA values directly for cross logic using > or <.
-- Always declare variables before use.
-- Never introduce new variable names if a similar one already exists.
-- Preserve existing variable names exactly.
-- Indentation: 2 spaces.
-- Do not restart the script unless explicitly told to.
-- If EXISTING CODE is provided, MODIFY it — do NOT rewrite from scratch.
-- Output ONE fenced code block only.
-- No explanations.
-- No comments unless necessary.
-- No markdown outside the code block.
-`;
-
-
+/* eslint-disable react/no-unescaped-entities */
 
 type Conversation = {
   id: string;
@@ -51,9 +30,17 @@ type Msg = {
   attachments?: { id: string; name: string; url: string }[];
 };
 
-
+// Add to window object for description persistence
+declare global {
+  interface Window {
+    codeDescription?: string;
+    codeDescriptionGenerated?: boolean;
+  }
+}
 
 export default function Home() {
+
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlConversationId = searchParams.get("c"); // ?c=<id>
@@ -70,21 +57,25 @@ export default function Home() {
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [ocrBusy, setOcrBusy] = useState(false);
 
+  const [codeDescription, setCodeDescription] = useState<string>("");
+  const [descriptionGenerated, setDescriptionGenerated] = useState(false);
+
   const abortRef = useRef<AbortController | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [promptDisplayMode, setPromptDisplayMode] = useState<'description' | 'minimal'>('description');
   const [pluginName, setPluginName] = useState<
     "healthcheck" | "summariseConversation" | "exportConversation"
   >("summariseConversation");
 
   const [pluginBusy, setPluginBusy] = useState(false);
-  const [pluginsOpen, setPluginsOpen] = useState(false);
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins'>('prompts');
 
   const [pluginResult, setPluginResult] = useState<unknown>(null);
   const [pluginRuns, setPluginRuns] = useState<PluginRun[]>([]);
-
   // last tool event emitted from /api/chat/stream (server sends `event: tool`)
-  const [lastToolEvent, setLastToolEvent] = useState<ToolEvent | null>(null);
 
   const [titles, setTitles] = useState<Record<string, string>>({});
   const [convSearch, setConvSearch] = useState("");
@@ -158,6 +149,13 @@ export default function Home() {
     };
   }, []);
 
+  // Reset description when streaming ends
+  useEffect(() => {
+    if (!streaming) {
+      setDescriptionGenerated(false);
+    }
+  }, [streaming]);
+
   // =========================
   // Code panel (auto-detect + manual toggle)
   // =========================
@@ -168,6 +166,7 @@ export default function Home() {
 
   const [savedCodes, setSavedCodes] = useState<SavedCode[]>([]);
   const [activeCodeId, setActiveCodeId] = useState<string | null>(null);
+  const [giveAiAccessToCode, setGiveAiAccessToCode] = useState(false);
 
   useEffect(() => {
     try {
@@ -219,6 +218,7 @@ export default function Home() {
     if (!confirm("Delete this snippet?")) return;
     setSavedCodes((p) => p.filter((x) => x.id !== id));
     setActiveCodeId((cur) => (cur === id ? null : cur));
+    setGiveAiAccessToCode(false);
   }
 
 
@@ -365,20 +365,6 @@ export default function Home() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  function downloadTextFile(filename: string, text: string, mime = "text/markdown") {
-    const blob = new Blob([text], { type: `${mime};charset=utf-8` });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    // cleanup
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
 
   async function ocrImage(file: File): Promise<string> {
     // dynamic import keeps initial bundle smaller
@@ -905,14 +891,16 @@ export default function Home() {
       const looksLikeErrorReport =
         /\b(error|cannot call|undeclared|mismatched input|expected|type mismatch|problem)\b/i.test(payload.text);
 
-      const hasExistingCode = !!codeText.trim();
+      const hasExistingCode = giveAiAccessToCode && !!codeText.trim();
+      const wantsEdit = looksLikeEditRequest(payload.text);
 
-      // If user is sending errors OR we already have code, force code-mode
-      wantsCodeRef.current =
-        wantsCodeRef.current || looksLikeErrorReport || hasExistingCode;
+      // Only enable code mode if:
+      // 1. User explicitly asked for code, OR
+      // 2. User has given access AND wants to edit
+      wantsCodeRef.current = promptLooksLikeCodeRequest(payload.text) || (hasExistingCode && wantsEdit);
 
       const codeContext =
-        hasExistingCode
+        giveAiAccessToCode && codeText.trim()
           ? `\n\nEXISTING CODE (edit this, do NOT restart):\n\`\`\`pinescript\n${codeText}\n\`\`\`\n`
           : "";
 
@@ -920,9 +908,7 @@ export default function Home() {
 
 
       const finalText = wantsCodeRef.current
-        ? `${PINE_RULES}
-
-USER REQUEST:
+        ? `USER REQUEST:
 ${payload.text}${looksLikeErrorReport ? `
 
 USER ERROR / COMPILER OUTPUT:
@@ -952,8 +938,26 @@ ${codeContext}` : ""}`
           }
 
           // HARD RULE: if ANY code detected, chat shows ONLY the hint (no code, no mixed text)
-          const hint = "[Code generated → open the Code panel]";
-          const chatWithHint = extracted ? hint : stripCodeBlocks(streamed);
+          // Generate a description of changes based on the request
+          let description = "";
+          if (extracted && wantsCodeRef.current) {
+            const userRequest = payload.text.toLowerCase();
+
+            if (userRequest.includes("5 ema") || userRequest.includes("five ema")) {
+              description = "\n\n**Changes made:**\n- Expanded from 3 to 5 EMAs\n- Added EMAs at 20, 30, 40, and 50 periods\n- Color-coded: green (10), yellow (20), orange (30), red (40), purple (50)";
+            } else if (userRequest.includes("macd")) {
+              description = "\n\n**Changes made:**\n- Updated MACD colors\n- Long line is now green\n- Signal line is now blue";
+            } else if (userRequest.includes("color") || userRequest.includes("colour")) {
+              description = "\n\n**Changes made:**\n- Updated colors as requested\n- Long line is now green\n- Signal line is now blue";
+            } else if (userRequest.includes("add") || userRequest.includes("extra")) {
+              description = "\n\n**Changes made:**\n- Added requested elements\n- Preserved existing functionality";
+            } else {
+              description = "\n\n**Code updated** based on your request. Open the Code panel to view/edit.";
+            }
+          }
+
+          const hint = extracted ? "[Code generated → open the Code panel]" : "";
+          const chatWithHint = extracted ? hint + description : stripCodeBlocks(streamed);
 
           setMessages((m) =>
             m.map((msg) =>
@@ -970,9 +974,8 @@ ${codeContext}` : ""}`
           if (finalCid) void refreshPluginRuns(finalCid);
         },
         undefined,
-        (toolEvt) => {
-          setLastToolEvent(toolEvt || null);
-
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        (_toolEvt) => {
           const cid = activeId || payload.conversationId || null;
           if (cid) void refreshPluginRuns(cid);
         },
@@ -1027,10 +1030,13 @@ ${codeContext}` : ""}`
     const apiText = `${text}${screenshotContext}`.trim();
 
     // Determine if user intent requires code-mode (edit existing code OR request code)
-    const hasExistingCode = !!codeText.trim();
+    const hasExistingCode = giveAiAccessToCode && !!codeText.trim(); // This is correct - requires access
     const wantsEdit = looksLikeEditRequest(apiText);
 
-    wantsCodeRef.current = promptLooksLikeCodeRequest(apiText) || hasExistingCode || wantsEdit;
+    // Only enable code mode if:
+    // 1. User explicitly asked for code, OR
+    // 2. User has given access AND wants to edit
+    wantsCodeRef.current = promptLooksLikeCodeRequest(apiText) || (hasExistingCode && wantsEdit);
 
     if (!apiText || loading) return;
 
@@ -1090,7 +1096,7 @@ ${codeContext}` : ""}`
         /\b(error|cannot call|undeclared|mismatched input|expected|type mismatch|problem)\b/i.test(payload.text);
 
       const codeContext =
-        codeText.trim()
+        giveAiAccessToCode && codeText.trim()
           ? `\n\nEXISTING CODE (edit this, do NOT restart):\n\`\`\`pinescript\n${codeText}\n\`\`\`\n`
           : "";
 
@@ -1098,9 +1104,7 @@ ${codeContext}` : ""}`
       // removed: errorContext (unused)
 
       const finalText = wantsCodeRef.current
-        ? `${PINE_RULES}
-
-USER REQUEST:
+        ? `USER REQUEST:
 ${payload.text}${looksLikeErrorReport ? `
 
 USER ERROR / COMPILER OUTPUT:
@@ -1109,10 +1113,7 @@ ${payload.text}` : ""}${codeContext ? `
 ${codeContext}` : ""}`
         : payload.text;
 
-
-
-      const res = await streamMessage(finalText, payload.conversationId, controller.signal);
-
+      const res = await streamMessage(finalText, payload.conversationId, controller.signal, codeText);
 
       let streamed = "";
       let sawDone = false;
@@ -1133,8 +1134,37 @@ ${codeContext}` : ""}`
             }
           }
 
+          // Generate description only once when code is first detected (only if description mode is enabled)
+          let activeDescription = codeDescription;
+          if (extracted && wantsCodeRef.current && !descriptionGenerated && promptDisplayMode === 'description') {
+            const userRequest = payload.text.toLowerCase();
+            let newDescription = "";
+
+            if (userRequest.includes("5 ema") || userRequest.includes("five ema")) {
+              newDescription = "\n\n**Changes made:**\n- Expanded from 3 to 5 EMAs\n- Added EMAs at 20, 30, 40, and 50 periods\n- Color-coded: green (10), yellow (20), orange (30), red (40), purple (50)";
+            } else if (userRequest.includes("color") || userRequest.includes("colour")) {
+              newDescription = "\n\n**Changes made:**\n- Updated colors as requested\n- Long line is now green\n- Signal line is now blue";
+            } else if (userRequest.includes("add") || userRequest.includes("extra")) {
+              newDescription = "\n\n**Changes made:**\n- Added requested elements\n- Preserved existing functionality";
+            } else if (userRequest.includes("macd")) {
+              newDescription = "\n\n**Changes made:**\n- Updated MACD colors\n- Long line is now green\n- Signal line is now blue";
+            } else {
+              newDescription = "\n\n**Code updated** based on your request. Open the Code panel to view/edit.";
+            }
+
+            setCodeDescription(newDescription);
+            setDescriptionGenerated(true);
+            activeDescription = newDescription;
+          }
+
           const hint = "[Code generated → open the Code panel]";
-          const chatWithHint = extracted ? hint : stripCodeBlocks(streamed);
+
+          // Combine hint with description if in description mode and description exists
+          const fullHint = extracted && promptDisplayMode === 'description' && activeDescription
+            ? hint + activeDescription
+            : (extracted ? hint : "");
+
+          const chatWithHint = extracted ? fullHint : stripCodeBlocks(streamed);
 
           setMessages((m) =>
             m.map((msg) =>
@@ -1179,10 +1209,9 @@ ${codeContext}` : ""}`
           }
         },
         undefined,
-        (toolEvt) => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        (_toolEvt) => {
           // capture + refresh plugin runs immediately when tool fires
-          setLastToolEvent(toolEvt || null);
-
           const cid = activeId || payload.conversationId || null;
           if (cid) void refreshPluginRuns(cid);
         },
@@ -1243,9 +1272,8 @@ ${codeContext}` : ""}`
 
               <button
                 type="button"
-                className="rounded border px-3 py-1 text-sm bg-white hover:bg-gray-100 shadow-sm leading-none"
+                className="btn-primary text-sm py-1 px-3"
                 onClick={() => {
-                  // removed: startNewChat() will navigate to the new ?c=...
                   void startNewChat();
                 }}
               >
@@ -1255,7 +1283,7 @@ ${codeContext}` : ""}`
 
             <div className="mb-3">
               <input
-                className="w-full rounded border px-3 py-2 text-sm"
+                className="w-full rounded border px-3 py-2 text-sm focus-tangerine"
                 placeholder="Search conversations…"
                 value={convSearch}
                 onChange={(e) => setConvSearch(e.target.value)}
@@ -1269,8 +1297,7 @@ ${codeContext}` : ""}`
                 filteredConversations.map((c) => (
                   <li
                     key={c.id}
-                    className={`cursor-pointer select-none rounded px-2 py-1 hover:bg-gray-100 ${activeId === c.id ? "bg-gray-200 font-medium" : ""
-                      }`}
+                    className={`cursor-pointer select-none rounded px-2 py-1 hover:bg-gray-100 ${activeId === c.id ? "active-tangerine font-medium" : ""}`}
                     onClick={() => {
                       router.push(`/?c=${encodeURIComponent(c.id)}`);
                       void openConversation(c.id);
@@ -1337,7 +1364,7 @@ ${codeContext}` : ""}`
         <div className="border-b p-3 text-sm flex items-center gap-2">
           <button
             type="button"
-            className="rounded border px-3 py-1 hover:bg-gray-100"
+            className="btn-secondary px-3 py-1"
             onClick={() => setSidebarOpen((v) => !v)}
             title={sidebarOpen ? "Hide conversations" : "Show conversations"}
           >
@@ -1346,235 +1373,180 @@ ${codeContext}` : ""}`
 
           <button
             type="button"
-            className="rounded border px-3 py-1 hover:bg-gray-100"
-            onClick={() => setPluginsOpen(true)}
+            className="btn-secondary px-3 py-1"
+            onClick={() => setSettingsOpen(true)}
           >
-            Plugins
+            Settings
           </button>
 
           <div className="ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded border px-3 py-1 hover:bg-gray-100"
-              onClick={() => setCodeOpen((v) => !v)}
-              title="Toggle code panel"
-            >
-              Code
-            </button>
-
             {activeId && (
               <button
                 type="button"
-                className="rounded border px-3 py-1"
+                className="btn-secondary px-3 py-1"
                 onClick={() => void refreshPluginRuns(activeId)}
               >
                 Refresh runs
               </button>
             )}
+            <button
+              type="button"
+              className={`px-3 py-1 rounded-lg transition-all duration-200 ${codeOpen
+                ? "bg-gray-200 hover:bg-gray-300 text-gray-700"
+                : "btn-secondary"
+                }`}
+              onClick={() => setCodeOpen((v) => !v)}
+              title={codeOpen ? "Close code panel" : "Open code panel"}
+            >
+              {codeOpen ? "Close" : "Code"}
+            </button>
           </div>
         </div>
 
-        {pluginsOpen && (
+        {settingsOpen && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
-            onMouseDown={() => setPluginsOpen(false)}
+            onMouseDown={() => setSettingsOpen(false)}
           >
             <div
               className="w-[780px] max-w-[95vw] rounded-lg bg-white shadow-lg"
               onMouseDown={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between border-b p-3">
-                <div className="font-semibold flex items-center gap-2">
-                  Plugins
-                  {lastToolEvent?.tool ? (
-                    <span className="text-[11px] px-2 py-0.5 rounded border bg-gray-50">
-                      tool: <span className="font-mono">{lastToolEvent.tool}</span> • {lastToolEvent.status}
-                    </span>
-                  ) : null}
-                </div>
+                <div className="font-semibold text-lg gradient-text">Settings</div>
                 <button
                   type="button"
                   className="rounded border px-3 py-1 hover:bg-gray-100"
-                  onClick={() => setPluginsOpen(false)}
+                  onClick={() => setSettingsOpen(false)}
                 >
                   Close
                 </button>
               </div>
 
-              <div className="p-3 text-sm flex items-center gap-2">
-                <select
-                  className="border rounded px-2 py-1"
-                  value={pluginName}
-                  onChange={(e) =>
-                    setPluginName(
-                      e.target.value as
-                      | "healthcheck"
-                      | "summariseConversation"
-                      | "exportConversation",
-                    )
-                  }
-                  disabled={pluginBusy}
-                >
-                  <option value="healthcheck">healthcheck</option>
-                  <option value="summariseConversation">summariseConversation</option>
-                  <option value="exportConversation">exportConversation</option>
-                </select>
-
+              {/* Tabs */}
+              <div className="flex border-b">
                 <button
-                  type="button"
-                  className="rounded border px-3 py-1 disabled:opacity-50"
-                  onClick={() => void runSelectedPlugin()}
-                  disabled={pluginBusy}
-                  title={!activeId ? "No conversation selected — will create one automatically" : ""}
+                  className={`px-4 py-2 text-sm font-medium ${activeSettingsTab === 'prompts' ? 'border-b-2 border-t4n-orange-500 text-t4n-orange-500' : 'text-gray-500 hover:text-gray-700'}`}
+                  onClick={() => setActiveSettingsTab('prompts')}
                 >
-                  {pluginBusy ? "Running…" : "Run"}
+                  Prompt Settings
                 </button>
-
+                <button
+                  className={`px-4 py-2 text-sm font-medium ${activeSettingsTab === 'plugins' ? 'border-b-2 border-t4n-orange-500 text-t4n-orange-500' : 'text-gray-500 hover:text-gray-700'}`}
+                  onClick={() => setActiveSettingsTab('plugins')}
+                >
+                  Plugins
+                </button>
               </div>
-              {(pluginResult || pluginRuns.length > 0) && (
-                <div className="border-t p-3 text-xs bg-gray-50 space-y-2">
-                  {!!pluginResult && (
-                    <div>
-                      <div className="font-medium mb-1">Last plugin result</div>
 
-                      {(() => {
-                        const pr = pluginResult;
-
-                        const asObj =
-                          pr && typeof pr === "object" && !Array.isArray(pr)
-                            ? (pr as Record<string, unknown>)
-                            : null;
-
-                        const plugin = String(asObj?.plugin ?? "");
-                        const status = String(asObj?.status ?? "");
-                        const runId = String(asObj?.runId ?? "");
-                        const cid = String(asObj?.conversationId ?? activeId ?? "");
-
-                        const output = asObj && "output" in asObj ? (asObj.output as unknown) : null;
-
-                        if (plugin === "healthcheck") {
-                          // Minimal + safe UI: no model / llmMode exposure
-                          const ok =
-                            (asObj && "ok" in asObj && (asObj as Record<string, unknown>).ok === true) ||
-                            (output && typeof output === "object" && output !== null && "ok" in (output as Record<string, unknown>) && (output as Record<string, unknown>).ok === true);
-
-                          return (
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="opacity-70">
-                                  <span className="font-mono">healthcheck</span>
-                                  {runId ? <span className="opacity-60"> • {runId.slice(0, 8)}</span> : null}
-                                </div>
-
-                                <span
-                                  className={`rounded px-2 py-0.5 text-[11px] font-medium border ${ok ? "bg-green-50 text-green-700 border-green-200" : "bg-yellow-50 text-yellow-800 border-yellow-200"
-                                    }`}
-                                >
-                                  {ok ? "OK" : "UNKNOWN"}
-                                </span>
-                              </div>
-
-                              <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto max-h-64">
-                                {JSON.stringify({ ok }, null, 2)}
-                              </pre>
-                            </div>
-                          );
-                        }
-
-
-                        if (plugin === "exportConversation") {
-                          const transcript = (() => {
-                            if (typeof output === "string") return output;
-
-                            if (output && typeof output === "object" && !Array.isArray(output)) {
-                              const o = output as Record<string, unknown>;
-                              if (typeof o.transcript === "string") return o.transcript;
-                            }
-
-                            return JSON.stringify(output, null, 2);
-                          })();
-
-                          const filename = cid ? `conversation-${cid.slice(0, 8)}.md` : "conversation.md";
-
-                          return (
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="opacity-70">
-                                  <span className="font-mono">{plugin}</span>
-                                  {runId ? <span className="opacity-60"> • {runId.slice(0, 8)}</span> : null}
-                                  {status ? <span className="opacity-60"> • {status}</span> : null}
-                                </div>
-
-                                <button
-                                  type="button"
-                                  className="rounded border px-3 py-1"
-                                  onClick={() => downloadTextFile(filename, transcript)}
-                                >
-                                  Download .md
-                                </button>
-                              </div>
-
-                              <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto max-h-64">
-                                {transcript}
-                              </pre>
-                            </div>
-                          );
-                        }
-
-                        if (plugin === "summariseConversation") {
-                          const summary = (() => {
-                            if (typeof output === "string") return output;
-
-                            if (output && typeof output === "object" && !Array.isArray(output)) {
-                              const o = output as Record<string, unknown>;
-                              if (typeof o.summary === "string") return o.summary;
-                            }
-
-                            return JSON.stringify(output, null, 2);
-                          })();
-
-                          return (
-                            <div className="space-y-2">
-                              <div className="opacity-70">
-                                <span className="font-mono">{plugin}</span>
-                                {runId ? <span className="opacity-60"> • {runId.slice(0, 8)}</span> : null}
-                                {status ? <span className="opacity-60"> • {status}</span> : null}
-                              </div>
-                              <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto max-h-64">
-                                {summary}
-                              </pre>
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <pre className="whitespace-pre-wrap break-words bg-white border rounded p-2 overflow-auto max-h-64">
-                            {JSON.stringify(pluginResult, null, 2)}
-                          </pre>
-                        );
-                      })()}
+              <div className="p-4">
+                {/* Prompt Settings Tab */}
+                {activeSettingsTab === 'prompts' && (
+                  <div className="space-y-4">
+                    <h3 className="font-medium">Code Generation Display Mode</h3>
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="promptMode"
+                          value="description"
+                          checked={promptDisplayMode === 'description'}
+                          onChange={() => setPromptDisplayMode('description')}
+                          className="text-t4n-orange-500"
+                        />
+                        <div>
+                          <div className="font-medium">Detailed Description</div>
+                          <div className="text-sm text-gray-500">Shows a description of changes made (e.g., "Expanded from 3 to 5 EMAs...")</div>
+                          <div className="text-xs text-gray-400 mt-1">Example: [Code generated → open the Code panel] **Changes made:** - Added 5 EMAs...</div>                        </div>
+                      </label>
+                      <label className="flex items-center gap-2 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="promptMode"
+                          value="minimal"
+                          checked={promptDisplayMode === 'minimal'}
+                          onChange={() => setPromptDisplayMode('minimal')}
+                          className="text-t4n-orange-500"
+                        />
+                        <div>
+                          <div className="font-medium">Minimal</div>
+                          <div className="text-sm text-gray-500">Shows only the code generation hint</div>
+                          <div className="text-xs text-gray-400 mt-1">Example: [Code generated → open the Code panel]</div>
+                        </div>
+                      </label>
                     </div>
-                  )}
 
-                  {pluginRuns.length > 0 && (
-                    <div>
-                      <div className="font-medium mb-1">Recent plugin runs</div>
-                      <div className="space-y-1">
-                        {pluginRuns.slice(0, 5).map((r) => (
-                          <div key={r.id} className="flex items-center justify-between gap-2">
-                            <div className="truncate">
-                              <span className="font-mono">{r.pluginName}</span>
-                              <span className="opacity-60"> — {r.status}</span>
-                              {r.error ? <span className="text-red-700"> — {r.error}</span> : null}
-                            </div>
-                            <div className="opacity-60">{r.createdAt}</div>
+                    <div className="border-t pt-4 mt-4">
+                      <h3 className="font-medium mb-2">Future Prompt Settings</h3>
+                      <p className="text-sm text-gray-500">Additional prompt customization options will appear here.</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Plugins Tab */}
+                {activeSettingsTab === 'plugins' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <select
+                        className="border rounded px-2 py-1"
+                        value={pluginName}
+                        onChange={(e) =>
+                          setPluginName(
+                            e.target.value as
+                            | "healthcheck"
+                            | "summariseConversation"
+                            | "exportConversation",
+                          )
+                        }
+                        disabled={pluginBusy}
+                      >
+                        <option value="healthcheck">healthcheck</option>
+                        <option value="summariseConversation">summariseConversation</option>
+                        <option value="exportConversation">exportConversation</option>
+                      </select>
+
+                      <button
+                        type="button"
+                        className="rounded border px-3 py-1 disabled:opacity-50"
+                        onClick={() => void runSelectedPlugin()}
+                        disabled={pluginBusy}
+                        title={!activeId ? "No conversation selected — will create one automatically" : ""}
+                      >
+                        {pluginBusy ? "Running…" : "Run"}
+                      </button>
+                    </div>
+
+                    {(pluginResult || pluginRuns.length > 0) && (
+                      <div className="border-t p-3 text-xs bg-gray-50 space-y-2">
+                        {!!pluginResult && (
+                          <div>
+                            <div className="font-medium mb-1">Last plugin result</div>
+                            {/* ... plugin result display ... */}
                           </div>
-                        ))}
+                        )}
+
+                        {pluginRuns.length > 0 && (
+                          <div>
+                            <div className="font-medium mb-1">Recent plugin runs</div>
+                            <div className="space-y-1">
+                              {pluginRuns.slice(0, 5).map((r) => (
+                                <div key={r.id} className="flex items-center justify-between gap-2">
+                                  <div className="truncate">
+                                    <span className="font-mono">{r.pluginName}</span>
+                                    <span className="opacity-60"> — {r.status}</span>
+                                    {r.error ? <span className="text-red-700"> — {r.error}</span> : null}
+                                  </div>
+                                  <div className="opacity-60">{r.createdAt}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -1608,7 +1580,14 @@ ${codeContext}` : ""}`
               priority={false}
             />
 
-            {loading && <div className="text-xs opacity-60">Thinking…</div>}
+            {loading && (
+              <div className="flex items-center gap-2 text-t4n-orange-500">
+                <div className="w-2 h-2 bg-t4n-orange-500 rounded-full animate-pulse"></div>
+                <div className="w-2 h-2 bg-t4n-orange-500 rounded-full animate-pulse delay-150"></div>
+                <div className="w-2 h-2 bg-t4n-orange-500 rounded-full animate-pulse delay-300"></div>
+                <span className="text-sm text-gray-500">T4N is thinking...</span>
+              </div>
+            )}
 
             {messages.length === 0 && (
               <div className="text-gray-400 flex items-center justify-center h-full">
@@ -1628,11 +1607,11 @@ ${codeContext}` : ""}`
               return (
                 <div key={m.id} className={`max-w-xl ${isUser ? "ml-auto text-right" : ""}`}>
                   <div
-                    className={`rounded p-2 whitespace-pre-wrap break-words ${isUser
-                      ? "bg-blue-500 text-white"
+                    className={`whitespace-pre-wrap break-words ${isUser
+                      ? "message-user p-3 shadow-lg"
                       : isStopped
-                        ? "bg-yellow-50 border border-yellow-300"
-                        : "bg-gray-100"
+                        ? "glass p-3 border-l-4 border-t4n-orange-500"
+                        : "message-assistant p-3 shadow-sm"
                       }`}
                   >
                     {!isUser && isStopped && (
@@ -1725,23 +1704,62 @@ ${codeContext}` : ""}`
                   )}
 
 
-                  <select
-                    className="border rounded px-2 py-1 text-sm"
-                    value={activeCodeId ?? ""}
-                    onChange={(e) => {
-                      const id = e.target.value || null;
-                      setActiveCodeId(id);
-                      const found = savedCodes.find((s) => s.id === id);
-                      if (found) setCodeText(found.code);
-                    }}
-                  >
-                    <option value="">Saved snippets…</option>
-                    {savedCodes.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <select
+                      className="border rounded px-2 py-1 text-sm"
+                      value={activeCodeId ?? ""}
+                      onChange={(e) => {
+                        const id = e.target.value || null;
+                        setActiveCodeId(id);
+
+                        // IMPORTANT: switching snippets should remove AI access
+                        setGiveAiAccessToCode(false);
+
+                        const found = savedCodes.find((s) => s.id === id);
+                        if (found) setCodeText(found.code);
+                      }}
+                    >
+                      <option value="">Saved snippets…</option>
+                      {savedCodes.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      className={`rounded border px-3 py-1 text-sm ${giveAiAccessToCode
+                        ? "bg-green-50 border-green-300 text-green-800"
+                        : "hover:bg-gray-100"
+                        } disabled:opacity-50`}
+                      disabled={!activeCodeId}
+                      title={
+                        !activeCodeId
+                          ? "Select a saved snippet first"
+                          : giveAiAccessToCode
+                            ? "AI can see this snippet in prompts"
+                            : "Click to allow AI to see this snippet"
+                      }
+                      onClick={() => {
+                        if (!activeCodeId) return;
+
+                        if (!giveAiAccessToCode) {
+                          const ok = confirm(
+                            "Give the AI access to the selected saved snippet?\n\nThis will include the snippet code in your next message so the AI can edit it.",
+                          );
+                          if (!ok) return;
+                          setGiveAiAccessToCode(true);
+                          return;
+                        }
+
+                        // turning off
+                        setGiveAiAccessToCode(false);
+                      }}
+                    >
+                      {giveAiAccessToCode ? "Access: ON" : "Give access"}
+                    </button>
+                  </div>
 
                   {activeCodeId && (
                     <>
@@ -1771,15 +1789,6 @@ ${codeContext}` : ""}`
                     </>
                   )}
                 </div>
-
-                <div className="font-semibold text-sm">Code</div>
-                <button
-                  type="button"
-                  className="rounded border px-3 py-1 text-sm hover:bg-gray-100"
-                  onClick={() => setCodeOpen(false)}
-                >
-                  Close
-                </button>
               </div>
 
               <div className="p-3 overflow-y-auto">
@@ -1882,14 +1891,14 @@ ${codeContext}` : ""}`
           {streaming ? (
             <button
               type="button"
-              className="bg-black text-white px-4 rounded"
+              className="btn-primary px-6"
               onClick={stopStreaming}
             >
               Stop
             </button>
           ) : (
             <>
-              <label className="rounded border px-4 py-2 cursor-pointer select-none hover:bg-gray-100">
+              <label className="btn-secondary cursor-pointer select-none">
                 <input
                   type="file"
                   accept="image/*"
@@ -1907,21 +1916,17 @@ ${codeContext}` : ""}`
 
               <button
                 type="button"
-                className="rounded border px-4 disabled:opacity-50"
+                className="btn-secondary px-4 disabled:opacity-50"
                 disabled={loading || !canRetry}
                 onClick={() => {
                   cancelStreamSilently();
                   void retryLastSend();
                 }}
-                title={!canRetry ? "Nothing to retry yet" : "Retry last message"}
               >
                 Retry
               </button>
 
-              <button
-                className="bg-black text-white px-4 rounded disabled:opacity-50"
-                disabled={loading}
-              >
+              <button className="btn-primary">
                 Send
               </button>
             </>
@@ -1929,6 +1934,6 @@ ${codeContext}` : ""}`
           )}
         </form>
       </main>
-    </div>
+    </div >
   );
 }

@@ -177,19 +177,26 @@ export async function streamMessage(
     message: string,
     conversationId?: string,
     signal?: AbortSignal,
+    existingCode?: string
 ) {
-    const API_BASE =
-        (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
-    const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
+    const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001";
 
-    return fetch(`${API_BASE}/api/chat/stream`, {
+    const url = conversationId
+        ? `${API_BASE}/api/chat/stream?conversationId=${encodeURIComponent(conversationId)}`
+        : `${API_BASE}/api/chat/stream`;
+
+    return fetch(url, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
-            "x-api-key": API_KEY,
+            "x-api-key": process.env.NEXT_PUBLIC_API_KEY || "dev-key-123",
         },
-        body: JSON.stringify({ message, conversationId }),
         signal,
+        body: JSON.stringify({
+            message,
+            conversationId,
+            existingCode
+        }),
     });
 }
 

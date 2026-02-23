@@ -1,0 +1,60 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-white text-gray-900 dark:bg-t4n-dark-200 dark:text-gray-100;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-100 dark:bg-t4n-dark-100;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-t4n-orange-300 rounded-full hover:bg-t4n-orange-400;
+  }
+}
+
+@layer components {
+  /* Glass morphism effect */
+  .glass {
+    @apply bg-white/80 dark:bg-t4n-dark-100/80 backdrop-blur-lg border border-gray-200 dark:border-gray-800;
+  }
+  
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-t4n-orange-500 to-t4n-purple-500 bg-clip-text text-transparent animate-gradient;
+    background-size: 200% 200%;
+  }
+  
+  /* Message bubbles */
+  .message-user {
+    @apply bg-gradient-to-r from-t4n-orange-500 to-t4n-orange-600 text-white rounded-2xl rounded-tr-none p-3 shadow-lg;
+  }
+  
+  .message-assistant {
+    @apply bg-gray-100 dark:bg-t4n-dark-100 rounded-2xl rounded-tl-none p-3 shadow-sm;
+  }
+  
+  /* Tangerine button */
+  .btn-primary {
+    @apply bg-t4n-orange-500 hover:bg-t4n-orange-600 text-white font-medium py-2 px-4 rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  /* Input styling */
+  .input-t4n {
+    @apply w-full px-4 py-2 bg-white dark:bg-t4n-dark-100 border border-gray-200 dark:border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-t4n-orange-500/50 focus:border-t4n-orange-500 transition-all;
+  }
+}
