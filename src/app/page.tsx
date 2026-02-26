@@ -12,8 +12,29 @@ import {
   getPluginRuns,
   renameConversation,
   deleteConversation,
+  getSnippets,
+  getSnippet,           // Add this if missing
+  createSnippet,
+  updateSnippet,
+  deleteSnippet as apiDeleteSnippet,
+  getSnippetVersions,
+  restoreSnippetVersion,
+  type Snippet,
   type PluginRun,
 } from "@/lib/api";
+
+
+
+// Import SnippetVersion type separately since it's not exported yet
+type SnippetVersion = {
+  id: string;
+  snippet_id: string;
+  code: string;
+  version_number: number;
+  change_summary: string | null;
+  source: 'ai_generated' | 'user_edit' | 'import' | 'restore';
+  created_at: string;
+};
 
 /* eslint-disable react/no-unescaped-entities */
 
@@ -59,7 +80,8 @@ export default function Home() {
 
   const [codeDescription, setCodeDescription] = useState<string>("");
   const [descriptionGenerated, setDescriptionGenerated] = useState(false);
-
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [lastEventType, setLastEventType] = useState<'generated' | 'updated' | 'streaming' | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,8 +92,28 @@ export default function Home() {
 
   const [pluginBusy, setPluginBusy] = useState(false);
 
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('t4n_theme') as 'dark' | 'light' | null;
+      if (saved) setTheme(saved);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('t4n_theme', theme);
+    } catch { /* ignore */ }
+    if (theme === 'light') {
+      document.documentElement.classList.add('light');
+    } else {
+      document.documentElement.classList.remove('light');
+    }
+  }, [theme]);
+
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins'>('prompts');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins' | 'appearance'>('prompts');
 
   const [pluginResult, setPluginResult] = useState<unknown>(null);
   const [pluginRuns, setPluginRuns] = useState<PluginRun[]>([]);
@@ -162,19 +204,43 @@ export default function Home() {
   const [codeOpen, setCodeOpen] = useState(false);
   const [codeText, setCodeText] = useState<string>("");
 
-  type SavedCode = { id: string; name: string; code: string; createdAt: string };
+  // Undo/Redo for code canvas
+  const [codeHistory, setCodeHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const MAX_HISTORY = 50;
 
-  const [savedCodes, setSavedCodes] = useState<SavedCode[]>([]);
+  // Using imported Snippet type
+
+  const [savedCodes, setSavedCodes] = useState<Snippet[]>([]);
   const [activeCodeId, setActiveCodeId] = useState<string | null>(null);
   const [giveAiAccessToCode, setGiveAiAccessToCode] = useState(false);
+  const [accessLockedSnippetId, setAccessLockedSnippetId] = useState<string | null>(null);
+  const [accessLockedCode, setAccessLockedCode] = useState<string>("");
+  const [loadingSnippets, setLoadingSnippets] = useState(false);
+  const [snippetVersions, setSnippetVersions] = useState<SnippetVersion[]>([]);
+  const [showVersions, setShowVersions] = useState(false);
 
+  // Unsaved snippet handling
+  const UNSAVED_ID = 'unsaved';
+  const [unsavedCode, setUnsavedCode] = useState<string>("");
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // Load snippets from API
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("t4n_saved_codes");
-      if (raw) setSavedCodes(JSON.parse(raw));
-    } catch {
-      // ignore
+    async function loadSnippets() {
+      setLoadingSnippets(true);
+      try {
+        const res = await getSnippets();
+        if (res.ok) {
+          setSavedCodes(res.data.snippets);
+        }
+      } catch (error) {
+        console.error("Failed to load snippets:", error);
+      } finally {
+        setLoadingSnippets(false);
+      }
     }
+    loadSnippets();
   }, []);
 
   useEffect(() => {
@@ -185,44 +251,114 @@ export default function Home() {
     }
   }, [savedCodes]);
 
-  function saveCurrentCode() {
-    if (!codeText.trim()) return;
-    const id = globalThis.crypto.randomUUID();
-    const item: SavedCode = {
-      id,
-      name: `Snippet ${savedCodes.length + 1}`,
-      code: codeText,
-      createdAt: new Date().toISOString(),
-    };
-    setSavedCodes((p) => [item, ...p]);
-    setActiveCodeId(id);
+  async function loadVersions(snippetId: string) {
+    try {
+      setLoadingSnippets(true);
+      const res = await getSnippetVersions(snippetId);
+      if (res.ok) {
+        setSnippetVersions(res.data.versions);
+      } else {
+        console.error("Failed to load versions:", res.error);
+      }
+    } catch (error) {
+      console.error("Failed to load versions:", error);
+    } finally {
+      setLoadingSnippets(false);
+    }
   }
 
-  function updateActiveSnippet() {
+  async function saveCurrentCode() {
+    if (!codeText.trim()) return;
+
+    try {
+      const res = await createSnippet({
+        name: `Snippet ${savedCodes.length + 1}`,
+        language: "pinescript", // You might want to detect this
+        code: codeText,
+        source: 'user_edit'
+      });
+
+      if (res.ok) {
+        // Refresh the list
+        const snippetsRes = await getSnippets();
+        if (snippetsRes.ok) {
+          setSavedCodes(snippetsRes.data.snippets);
+          setActiveCodeId(res.data.id);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to save snippet:", error);
+    }
+  }
+
+  async function updateActiveSnippet() {
     if (!activeCodeId) return;
     if (!codeText.trim()) return;
 
-    setSavedCodes((p) =>
-      p.map((x) => (x.id === activeCodeId ? { ...x, code: codeText } : x)),
-    );
+    try {
+      const res = await updateSnippet(activeCodeId!, {
+        code: codeText,
+        source: 'user_edit',
+        change_summary: 'Manual edit'
+      });
+
+      if (res.ok) {
+        // Refresh the snippets list
+        const snippetsRes = await getSnippets();
+        if (snippetsRes.ok) {
+          setSavedCodes(snippetsRes.data.snippets);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to update snippet:", error);
+    }
   }
 
+  async function renameSnippet(id: string) {
+    const current = savedCodes.find((s) => s.id === id)?.name ?? "";
+    const next = prompt("Rename snippet:", current);
+    if (!next || !next.trim()) return;
 
-  function renameSnippet(id: string) {
-    const next = prompt("Rename snippet:");
-    if (!next) return;
-    setSavedCodes((p) => p.map((x) => (x.id === id ? { ...x, name: next } : x)));
+    // Update local state immediately
+    setSavedCodes((p) => p.map((x) => (x.id === id ? { ...x, name: next.trim() } : x)));
+
+    // Call dedicated rename endpoint
+    try {
+      const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
+      const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
+
+      const res = await fetch(`${API_BASE}/api/snippets/${encodeURIComponent(id)}/rename`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-api-key": API_KEY },
+        body: JSON.stringify({ name: next.trim() }),
+      });
+
+      if (!res.ok) {
+        console.error("Failed to persist rename:", await res.text());
+      }
+    } catch (err) {
+      console.error("Rename API call failed:", err);
+    }
   }
 
-  function deleteSnippet(id: string) {
+  async function deleteSnippet(id: string) {
     if (!confirm("Delete this snippet?")) return;
-    setSavedCodes((p) => p.filter((x) => x.id !== id));
-    setActiveCodeId((cur) => (cur === id ? null : cur));
-    setGiveAiAccessToCode(false);
+
+    try {
+      const res = await apiDeleteSnippet(id);
+      if (res.ok) {
+        setSavedCodes((p) => p.filter((x) => x.id !== id));
+        setActiveCodeId((cur) => (cur === id ? null : cur));
+        setGiveAiAccessToCode(false);
+      }
+    } catch (error) {
+      console.error("Failed to delete snippet:", error);
+    }
   }
 
 
   const wantsCodeRef = useRef(false);
+  const descriptionRef = useRef<string>("");
 
   function promptLooksLikeCodeRequest(text: string) {
     return /(\bcode\b|\bscript\b|\btradingview\b|\bpine\b|\bpinescript\b|\bimplement\b|\bwrite\b|\btsx\b|\bts\b|\bjs\b|\bpython\b|\bsql\b|\bendpoint\b|\bapi\b)/i.test(
@@ -236,6 +372,169 @@ export default function Home() {
     );
   }
 
+  function applyPartialCodePatch(existingCode: string, newCode: string): string {
+    // Detect if AI returned a partial patch (truncated with comment)
+    const truncationMarkers = [
+      /\/\/\s*\.\.\.\s*\(rest of the code.*?\)/i,
+      /\/\/\s*\.\.\.\s*rest remains/i,
+      /\/\/\s*\.\.\.\s*\(remaining code/i,
+      /\/\/\s*rest of the (code|script|file) (remains|stays|unchanged)/i,
+      /\/\/\s*\.\.\.\s*unchanged/i,
+      /\/\/\s*\.\.\.\s*same as before/i,
+    ];
+
+    const markerMatch = truncationMarkers.reduce<RegExpExecArray | null>((found, re) => {
+      if (found) return found;
+      return re.exec(newCode) ?? null;
+    }, null);
+
+    if (!markerMatch || !existingCode.trim()) return newCode;
+
+    // Get the code before the truncation marker
+    const patchPart = newCode.slice(0, markerMatch.index).trimEnd();
+    if (!patchPart) return newCode;
+
+    // Find where in the existing code the patch ends
+    // Strategy: take last non-empty line of patch and find it in existing code
+    const patchLines = patchPart.split('\n').filter(l => l.trim());
+    const lastPatchLine = patchLines[patchLines.length - 1]?.trim();
+
+    if (!lastPatchLine) return newCode;
+
+    const existingLines = existingCode.split('\n');
+    let mergePoint = -1;
+
+    // Find the last occurrence of the last patch line in existing code
+    for (let i = existingLines.length - 1; i >= 0; i--) {
+      if (existingLines[i].trim() === lastPatchLine) {
+        mergePoint = i;
+        break;
+      }
+    }
+
+    if (mergePoint === -1) {
+      // Fallback: count patch lines and splice from that point in existing
+      const patchLineCount = patchPart.split('\n').length;
+      // Add a small overlap buffer — go back 3 lines in case of off-by-one
+      const spliceFrom = Math.max(0, patchLineCount - 3);
+      const rest = existingLines.slice(spliceFrom).join('\n');
+      // Only append if rest isn't already in patch
+      if (patchPart.includes(existingLines[spliceFrom]?.trim() ?? "NOMATCH")) {
+        return patchPart + '\n' + existingLines.slice(patchLineCount).join('\n');
+      }
+      return patchPart + '\n' + rest;
+    }
+
+    // Merge: patch + rest of existing from merge point + 1
+    const restOfExisting = existingLines.slice(mergePoint + 1).join('\n');
+    return patchPart + '\n' + restOfExisting;
+  }
+
+  function mergePatchWithExisting(existingCode: string, patchCode: string): string {
+    // Check if the patch uses the new marker format
+    const startMarker = "// --- REPLACE SECTION STARTING HERE ---";
+    const endMarker = "// --- REST OF CODE REMAINS UNCHANGED ---";
+
+    const hasStartMarker = patchCode.includes(startMarker);
+    const hasEndMarker = patchCode.includes(endMarker);
+
+    // If it's using the new marker format
+    if (hasStartMarker && hasEndMarker) {
+      const startIdx = patchCode.indexOf(startMarker) + startMarker.length;
+      const endIdx = patchCode.indexOf(endMarker);
+
+      // Extract just the changed section
+      const changedSection = patchCode.substring(startIdx, endIdx).trim();
+
+      if (!changedSection) return existingCode;
+
+      // Split into lines
+      const changedLines = changedSection.split('\n');
+      const existingLines = existingCode.split('\n');
+
+      // Try to find where to insert - look for a unique line from the changed section
+      if (changedLines.length > 0) {
+        // Get the first non-empty line of the changed section
+        const firstChangedLine = changedLines.find(line => line.trim().length > 0);
+
+        if (firstChangedLine) {
+          const trimmedFirstLine = firstChangedLine.trim();
+
+          // Find this line in the existing code
+          for (let i = 0; i < existingLines.length; i++) {
+            if (existingLines[i].trim().includes(trimmedFirstLine)) {
+              // Found the insertion point
+              const linesBefore = existingLines.slice(0, i);
+              const linesAfter = existingLines.slice(i + changedLines.length);
+
+              return [...linesBefore, ...changedLines, ...linesAfter].join('\n');
+            }
+          }
+        }
+      }
+
+      // Fallback: append the changed section with a warning
+      return existingCode + '\n\n// PATCH ADDED:\n' + changedSection;
+    }
+
+    // If no markers, fall back to the existing truncation marker logic
+    return applyPartialCodePatch(existingCode, patchCode);
+  }
+
+  function addToHistory(newCode: string) {
+    if (!newCode.trim()) return;
+
+    // Don't add duplicate consecutive entries
+    if (codeHistory[historyIndex] === newCode) return;
+
+    // Remove any future history if we're not at the end
+    const newHistory = codeHistory.slice(0, historyIndex + 1);
+
+    // Add new code
+    newHistory.push(newCode);
+
+    // Keep only last MAX_HISTORY items
+    if (newHistory.length > MAX_HISTORY) {
+      newHistory.shift();
+    }
+
+    setCodeHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+  }
+
+  function handleUndo() {
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      setCodeText(codeHistory[newIndex]);
+      setHasUnsavedChanges(true);
+    }
+  }
+
+  function handleRedo() {
+    if (historyIndex < codeHistory.length - 1) {
+      const newIndex = historyIndex + 1;
+      setHistoryIndex(newIndex);
+      setCodeText(codeHistory[newIndex]);
+      setHasUnsavedChanges(true);
+    }
+  }
+
+  function handleNewCode() {
+    if (codeText.trim() && !confirm("Create new code? Unsaved changes will be lost.")) {
+      return;
+    }
+
+    // Clear current code
+    setCodeText("");
+    setUnsavedCode("");
+    setHasUnsavedChanges(false);
+    setActiveCodeId(null);
+    setGiveAiAccessToCode(false);
+
+    // Add empty state to history
+    addToHistory("");
+  }
 
   function stripCodeBlocks(text: string) {
     return text
@@ -281,6 +580,9 @@ export default function Home() {
       }
 
     }
+
+    // Don't apply Pine heuristics if this looks like Ctrl+F instructions
+    if (/ctrl\+f:/i.test(text)) return "";
 
     // 3) Pine Script heuristics even without fences
     // Detect common Pine signatures
@@ -853,6 +1155,7 @@ export default function Home() {
     setError(null);
 
     const action = async () => {
+      descriptionRef.current = ""; // Add this line
       setStreaming(true);
 
       stoppedByUserRef.current = false;
@@ -897,28 +1200,31 @@ export default function Home() {
       // Only enable code mode if:
       // 1. User explicitly asked for code, OR
       // 2. User has given access AND wants to edit
-      wantsCodeRef.current = promptLooksLikeCodeRequest(payload.text) || (hasExistingCode && wantsEdit);
+      wantsCodeRef.current = promptLooksLikeCodeRequest(payload.text) || (hasExistingCode && wantsEdit) || (giveAiAccessToCode && !!codeText.trim());
 
+      // Use the locked snapshot when access was granted — not live codeText
+      // This prevents browsing other snippets from changing what gets sent
+      const codeForContext = (giveAiAccessToCode && accessLockedCode)
+        ? accessLockedCode
+        : codeText;
+      const trimmedForPrompt = codeForContext.slice(0, 120000);
       const codeContext =
-        giveAiAccessToCode && codeText.trim()
-          ? `\n\nEXISTING CODE (edit this, do NOT restart):\n\`\`\`pinescript\n${codeText}\n\`\`\`\n`
+        giveAiAccessToCode && codeForContext.trim()
+          ? `\n\nEXISTING CODE (you MUST either give Ctrl+F find-and-replace instructions OR output the FULL corrected file — NEVER output a partial truncated file):\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
           : "";
 
-      // removed: errorContext (unused)
-
-
-      const finalText = wantsCodeRef.current
+      const finalText = (wantsCodeRef.current || (giveAiAccessToCode && codeForContext.trim()))
         ? `USER REQUEST:
-${payload.text}${looksLikeErrorReport ? `
-
-USER ERROR / COMPILER OUTPUT:
-${payload.text}` : ""}${codeContext ? `
+${payload.text}${codeContext ? `
 
 ${codeContext}` : ""}`
         : payload.text;
 
 
-      const res = await streamMessage(finalText, cid, controller.signal);
+      // Send first 800 chars (structure/header) + last 400 chars (tail) 
+      // so AI knows the shape without seeing the full file
+      const codeToSend = undefined; // Code already sent inside finalText via codeContext
+      const res = await streamMessage(finalText, cid, controller.signal, codeToSend);
 
 
       let streamed = "";
@@ -932,36 +1238,57 @@ ${codeContext}` : ""}`
           const extracted = extractCodeBlocks(streamed);
 
           // If we detect code, push it to the code canvas and OPEN the code panel.
-          if (extracted) {
-            setCodeText(extracted);
+          if (extracted && !/ctrl\+f:/i.test(streamed)) {
+            const merged = (giveAiAccessToCode && accessLockedCode.trim())
+              ? mergePatchWithExisting(accessLockedCode, extracted)
+              : extracted;
+
+            setCodeText(merged);
+            addToHistory(merged);
+
+            if (!activeCodeId) {
+              setUnsavedCode(merged);
+              setHasUnsavedChanges(true);
+            }
+
+            if (giveAiAccessToCode) {
+              setAccessLockedCode(merged);
+            }
+
             setCodeOpen((v) => (v ? v : true));
           }
 
           // HARD RULE: if ANY code detected, chat shows ONLY the hint (no code, no mixed text)
-          // Generate a description of changes based on the request
-          let description = "";
-          if (extracted && wantsCodeRef.current) {
-            const userRequest = payload.text.toLowerCase();
-
-            if (userRequest.includes("5 ema") || userRequest.includes("five ema")) {
-              description = "\n\n**Changes made:**\n- Expanded from 3 to 5 EMAs\n- Added EMAs at 20, 30, 40, and 50 periods\n- Color-coded: green (10), yellow (20), orange (30), red (40), purple (50)";
-            } else if (userRequest.includes("macd")) {
-              description = "\n\n**Changes made:**\n- Updated MACD colors\n- Long line is now green\n- Signal line is now blue";
-            } else if (userRequest.includes("color") || userRequest.includes("colour")) {
-              description = "\n\n**Changes made:**\n- Updated colors as requested\n- Long line is now green\n- Signal line is now blue";
-            } else if (userRequest.includes("add") || userRequest.includes("extra")) {
-              description = "\n\n**Changes made:**\n- Added requested elements\n- Preserved existing functionality";
-            } else {
-              description = "\n\n**Code updated** based on your request. Open the Code panel to view/edit.";
-            }
+          // Set a simple neutral description when code is first detected
+          if (extracted && wantsCodeRef.current && !descriptionGenerated && promptDisplayMode === 'description') {
+            const newDescription = "\n\n**Code updated** — open the Code panel to review changes.";
+            descriptionRef.current = newDescription;
+            setCodeDescription(newDescription);
+            setDescriptionGenerated(true);
           }
 
-          const hint = extracted ? "[Code generated → open the Code panel]" : "";
-          const chatWithHint = extracted ? hint + description : stripCodeBlocks(streamed);
+          // Determine what message to show based on display mode and event type
+          let messageToShow = "";
+
+          // During streaming, use the ref value if available, otherwise use state
+          const currentDescription = descriptionRef.current || codeDescription;
+
+          const isCtrlFResponse = /ctrl\+f:/i.test(streamed);
+
+          if (isCtrlFResponse) {
+            // Always show Ctrl+F instructions as-is in chat, never touch them
+            messageToShow = streamed;
+          } else if (promptDisplayMode === 'description' && currentDescription && extracted) {
+            messageToShow = `[Code generated → open the Code panel]${currentDescription}`;
+          } else if (extracted) {
+            messageToShow = "[Code generated → open the Code panel]";
+          } else {
+            messageToShow = stripCodeBlocks(streamed);
+          }
 
           setMessages((m) =>
             m.map((msg) =>
-              msg.id === assistantId ? { ...msg, content: chatWithHint } : msg,
+              msg.id === assistantId ? { ...msg, content: messageToShow } : msg,
             ),
           );
 
@@ -1020,9 +1347,9 @@ ${codeContext}` : ""}`
 
     const screenshotContext =
       ocrParts.trim()
-        ? `\n\n[SCREENSHOT OCR]\n${ocrParts.trim()}\n`
+        ? `\n\n[PINE SCRIPT COMPILER ERROR - exact text from screenshot]\n${ocrParts.trim()}\n[END ERROR]\nFix ONLY the error shown above. Do not change anything else.`
         : attachments.length > 0
-          ? `\n\n[SCREENSHOT ATTACHED]\n${attachments.map((a) => a.file?.name || "image").join(", ")}\n`
+          ? `\n\n[SCREENSHOT ATTACHED - user is showing a compiler error]\n`
           : "";
 
     // What the user sees vs what the API receives
@@ -1033,10 +1360,15 @@ ${codeContext}` : ""}`
     const hasExistingCode = giveAiAccessToCode && !!codeText.trim(); // This is correct - requires access
     const wantsEdit = looksLikeEditRequest(apiText);
 
-    // Only enable code mode if:
+    // Enable code mode if:
     // 1. User explicitly asked for code, OR
-    // 2. User has given access AND wants to edit
-    wantsCodeRef.current = promptLooksLikeCodeRequest(apiText) || (hasExistingCode && wantsEdit);
+    // 2. User has given access AND wants to edit, OR
+    // 3. Access is ON and message contains error/fix keywords (screenshot error flow)
+    const looksLikeErrorFix = /\b(error|fix|wrong|broken|not working|compile|failed|issue|problem|incorrect|crash)\b/i.test(apiText);
+    wantsCodeRef.current = promptLooksLikeCodeRequest(apiText)
+      || (hasExistingCode && wantsEdit)
+      || (giveAiAccessToCode && !!codeText.trim())
+      || (giveAiAccessToCode && looksLikeErrorFix);
 
     if (!apiText || loading) return;
 
@@ -1070,6 +1402,7 @@ ${codeContext}` : ""}`
     clearAttachments({ revokeUrls: false });
 
     const action = async () => {
+      descriptionRef.current = ""; // Add this line
       setStreaming(true);
 
       // Create a blank assistant message we stream into
@@ -1095,26 +1428,28 @@ ${codeContext}` : ""}`
       const looksLikeErrorReport =
         /\b(error|cannot call|undeclared|mismatched input|expected|type mismatch|problem)\b/i.test(payload.text);
 
+      // Use locked snapshot if available, otherwise fall back to live codeText
+      const codeForContext = (giveAiAccessToCode && accessLockedCode)
+        ? accessLockedCode
+        : codeText;
+      const trimmedForPrompt = codeForContext.slice(0, 120000);
       const codeContext =
-        giveAiAccessToCode && codeText.trim()
-          ? `\n\nEXISTING CODE (edit this, do NOT restart):\n\`\`\`pinescript\n${codeText}\n\`\`\`\n`
+        giveAiAccessToCode && codeForContext.trim()
+          ? `\n\nEXISTING CODE (you MUST either output the FULL corrected file OR give Ctrl+F find-and-replace instructions — NEVER output a partial truncated file):\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
           : "";
 
-
-      // removed: errorContext (unused)
-
-      const finalText = wantsCodeRef.current
+      const finalText = (wantsCodeRef.current || (giveAiAccessToCode && codeForContext.trim()))
         ? `USER REQUEST:
-${payload.text}${looksLikeErrorReport ? `
-
-USER ERROR / COMPILER OUTPUT:
-${payload.text}` : ""}${codeContext ? `
+${payload.text}${codeContext ? `
 
 ${codeContext}` : ""}`
         : payload.text;
 
-      const res = await streamMessage(finalText, payload.conversationId, controller.signal, codeText);
-
+      // Hard cap code at 2000 chars client-side — server will trim further
+      // For large scripts, the AI only needs the relevant section anyway
+      // Send first 800 chars (structure/header) + last 400 chars (tail) 
+      // so AI knows the shape without seeing the full file
+      const res = await streamMessage(finalText, payload.conversationId, controller.signal);
       let streamed = "";
       let sawDone = false;
 
@@ -1126,49 +1461,65 @@ ${codeContext}` : ""}`
 
           const extracted = extractCodeBlocks(streamed);
 
-          if (extracted) {
-            setCodeText(extracted);
+          if (extracted && !/ctrl\+f:/i.test(streamed)) {
+            const merged = (giveAiAccessToCode && accessLockedCode.trim())
+              ? mergePatchWithExisting(accessLockedCode, extracted)
+              : extracted;
+
+            setCodeText(merged);
+            addToHistory(merged);
+
+            if (!activeCodeId) {
+              setUnsavedCode(merged);
+              setHasUnsavedChanges(true);
+            }
+
+            if (giveAiAccessToCode) {
+              setAccessLockedCode(merged);
+            }
 
             if (wantsCodeRef.current) {
               setCodeOpen(true);
             }
           }
 
-          // Generate description only once when code is first detected (only if description mode is enabled)
-          let activeDescription = codeDescription;
-          if (extracted && wantsCodeRef.current && !descriptionGenerated && promptDisplayMode === 'description') {
-            const userRequest = payload.text.toLowerCase();
-            let newDescription = "";
-
-            if (userRequest.includes("5 ema") || userRequest.includes("five ema")) {
-              newDescription = "\n\n**Changes made:**\n- Expanded from 3 to 5 EMAs\n- Added EMAs at 20, 30, 40, and 50 periods\n- Color-coded: green (10), yellow (20), orange (30), red (40), purple (50)";
-            } else if (userRequest.includes("color") || userRequest.includes("colour")) {
-              newDescription = "\n\n**Changes made:**\n- Updated colors as requested\n- Long line is now green\n- Signal line is now blue";
-            } else if (userRequest.includes("add") || userRequest.includes("extra")) {
-              newDescription = "\n\n**Changes made:**\n- Added requested elements\n- Preserved existing functionality";
-            } else if (userRequest.includes("macd")) {
-              newDescription = "\n\n**Changes made:**\n- Updated MACD colors\n- Long line is now green\n- Signal line is now blue";
-            } else {
-              newDescription = "\n\n**Code updated** based on your request. Open the Code panel to view/edit.";
-            }
-
-            setCodeDescription(newDescription);
-            setDescriptionGenerated(true);
-            activeDescription = newDescription;
+          // Set event type based on what's happening
+          if (extracted) {
+            setLastEventType('generated');
+          } else if (streaming) {
+            setLastEventType('streaming');
           }
 
-          const hint = "[Code generated → open the Code panel]";
+          // Generate description only once when code is first detected (only if description mode is enabled)
+          if (extracted && wantsCodeRef.current && !descriptionGenerated && promptDisplayMode === 'description') {
+            const newDescription = "\n\n**Code updated** — open the Code panel to review changes.";
+            descriptionRef.current = newDescription;
+            setCodeDescription(newDescription);
+            setDescriptionGenerated(true);
+          }
 
-          // Combine hint with description if in description mode and description exists
-          const fullHint = extracted && promptDisplayMode === 'description' && activeDescription
-            ? hint + activeDescription
-            : (extracted ? hint : "");
+          // Determine what message to show based on display mode and event type
+          let messageToShow = "";
 
-          const chatWithHint = extracted ? fullHint : stripCodeBlocks(streamed);
+          // During streaming, use the ref value if available, otherwise use state
+          const currentDescription = descriptionRef.current || codeDescription;
+
+          const isCtrlFResponse = /ctrl\+f:/i.test(streamed);
+
+          if (isCtrlFResponse) {
+            // Always show Ctrl+F instructions as-is in chat, never touch them
+            messageToShow = streamed;
+          } else if (promptDisplayMode === 'description' && currentDescription && extracted) {
+            messageToShow = `[Code generated → open the Code panel]${currentDescription}`;
+          } else if (extracted) {
+            messageToShow = "[Code generated → open the Code panel]";
+          } else {
+            messageToShow = stripCodeBlocks(streamed);
+          }
 
           setMessages((m) =>
             m.map((msg) =>
-              msg.id === assistantId ? { ...msg, content: chatWithHint } : msg,
+              msg.id === assistantId ? { ...msg, content: messageToShow } : msg,
             ),
           );
         },
@@ -1252,93 +1603,58 @@ ${codeContext}` : ""}`
       {sidebarOpen && (
         <>
           <aside
-            className="border-r p-4 overflow-y-auto shrink-0"
-            style={{ width: sidebarWidth }}
+            style={{ width: sidebarWidth, background: 'var(--bg-secondary)', borderRight: '1px solid var(--border-subtle)' }}
+            className="p-3 overflow-y-auto shrink-0 flex flex-col gap-3"
           >
-            <div className="flex items-center justify-between mb-3 pb-3 border-b">
+            <div className="flex items-center justify-between pb-3" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
               <div className="flex items-center gap-2">
-                <Image
-                  src="/t4n-logo.png"
-                  alt="T4N"
-                  width={24}
-                  height={24}
-                  className="h-6 w-6 object-contain"
-                />
-
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <Image src="/t4n-logo.png" alt="T4N" width={22} height={22} className="h-5 w-5 object-contain opacity-90" />
+                <span style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
                   Conversations
-                </div>
+                </span>
               </div>
-
-              <button
-                type="button"
-                className="btn-primary text-sm py-1 px-3"
-                onClick={() => {
-                  void startNewChat();
-                }}
-              >
-                New
+              <button type="button" className="btn-primary" style={{ padding: '4px 12px', fontSize: '12px' }} onClick={() => void startNewChat()}>
+                + New
               </button>
             </div>
 
-            <div className="mb-3">
-              <input
-                className="w-full rounded border px-3 py-2 text-sm focus-tangerine"
-                placeholder="Search conversations…"
-                value={convSearch}
-                onChange={(e) => setConvSearch(e.target.value)}
-              />
-            </div>
+            <input
+              className="w-full rounded border px-3 py-2 text-sm focus-tangerine"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
+              placeholder="Search…"
+              value={convSearch}
+              onChange={(e) => setConvSearch(e.target.value)}
+            />
 
-            <ul className="space-y-1 text-sm">
+            <ul className="space-y-0.5 text-sm flex-1">
               {conversations.length === 0 ? (
-                <li className="text-gray-400">No conversations yet</li>
+                <li style={{ color: 'var(--text-muted)', fontSize: '12px', padding: '8px 4px' }}>No conversations yet</li>
               ) : (
                 filteredConversations.map((c) => (
                   <li
                     key={c.id}
-                    className={`cursor-pointer select-none rounded px-2 py-1 hover:bg-gray-100 ${activeId === c.id ? "active-tangerine font-medium" : ""}`}
-                    onClick={() => {
-                      router.push(`/?c=${encodeURIComponent(c.id)}`);
-                      void openConversation(c.id);
-                    }}
+                    className={`cursor-pointer select-none rounded-md px-2 py-2 ${activeId === c.id ? "active-tangerine" : "conversation-item"}`}
+                    style={{ color: activeId === c.id ? 'var(--accent)' : 'var(--text-secondary)' }}
+                    onClick={() => { router.push(`/?c=${encodeURIComponent(c.id)}`); void openConversation(c.id); }}
                   >
                     <div className="flex items-center justify-between gap-2 group">
-                      <span className="truncate">
+                      <span className="truncate" style={{ fontSize: '13px' }}>
                         {titles[c.id] ?? c.title ?? c.id.slice(0, 8)}
                       </span>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        {/* Hover-only actions */}
+                      <div className="flex items-center gap-1 shrink-0">
                         <div className="hidden group-hover:flex items-center gap-1">
-                          <button
-                            type="button"
-                            className="rounded border px-2 py-0.5 text-[11px] bg-white hover:bg-gray-100"
-                            title="Rename"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              void handleRenameConversation(c.id);
-                            }}
-                          >
+                          <button type="button"
+                            style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', color: 'var(--text-secondary)' }}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); void handleRenameConversation(c.id); }}>
                             ✏️
                           </button>
-
-                          <button
-                            type="button"
-                            className="rounded border px-2 py-0.5 text-[11px] bg-white hover:bg-gray-100"
-                            title="Delete"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              void handleDeleteConversation(c.id);
-                            }}
-                          >
+                          <button type="button"
+                            style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', color: 'var(--text-secondary)' }}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); void handleDeleteConversation(c.id); }}>
                             🗑️
                           </button>
                         </div>
-
-                        <span className="text-[10px] opacity-50">
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                           {new Date(c.updated_at).toLocaleDateString()}
                         </span>
                       </div>
@@ -1349,56 +1665,44 @@ ${codeContext}` : ""}`
             </ul>
           </aside>
 
-          {/* drag handle between sidebar and chat */}
           <div
-            className="w-1 cursor-col-resize bg-transparent hover:bg-gray-200"
-            onPointerDown={() => {
-              draggingRef.current = "sidebar";
-            }}
-            title="Drag to resize conversations"
+            className="w-1 cursor-col-resize"
+            style={{ background: 'var(--border-subtle)' }}
+            onPointerDown={() => { draggingRef.current = "sidebar"; }}
           />
         </>
       )}
 
       <main className="flex-1 flex flex-col">
-        <div className="border-b p-3 text-sm flex items-center gap-2">
-          <button
-            type="button"
-            className="btn-secondary px-3 py-1"
+        <div className="p-3 text-sm flex items-center gap-2" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+          <button type="button" className="btn-secondary" style={{ padding: '5px 12px', fontSize: '12px' }}
             onClick={() => setSidebarOpen((v) => !v)}
-            title={sidebarOpen ? "Hide conversations" : "Show conversations"}
-          >
-            {sidebarOpen ? "Hide" : "Conversations"}
+            title={sidebarOpen ? "Hide conversations" : "Show conversations"}>
+            {sidebarOpen ? "← Hide" : "☰ Chats"}
           </button>
 
-          <button
-            type="button"
-            className="btn-secondary px-3 py-1"
-            onClick={() => setSettingsOpen(true)}
-          >
-            Settings
+          <button type="button" className="btn-secondary" style={{ padding: '5px 12px', fontSize: '12px' }}
+            onClick={() => setSettingsOpen(true)}>
+            ⚙ Settings
           </button>
 
           <div className="ml-auto flex items-center gap-2">
             {activeId && (
-              <button
-                type="button"
-                className="btn-secondary px-3 py-1"
-                onClick={() => void refreshPluginRuns(activeId)}
-              >
-                Refresh runs
+              <button type="button" className="btn-secondary" style={{ padding: '5px 12px', fontSize: '12px' }}
+                onClick={() => void refreshPluginRuns(activeId)}>
+                ↺ Runs
               </button>
             )}
-            <button
-              type="button"
-              className={`px-3 py-1 rounded-lg transition-all duration-200 ${codeOpen
-                ? "bg-gray-200 hover:bg-gray-300 text-gray-700"
-                : "btn-secondary"
-                }`}
-              onClick={() => setCodeOpen((v) => !v)}
-              title={codeOpen ? "Close code panel" : "Open code panel"}
-            >
-              {codeOpen ? "Close" : "Code"}
+            <button type="button"
+              style={{
+                padding: '5px 14px', fontSize: '12px', borderRadius: '6px', cursor: 'pointer',
+                fontFamily: 'DM Sans, sans-serif', fontWeight: 500, transition: 'all 0.15s',
+                background: codeOpen ? 'var(--accent-glow)' : 'var(--bg-elevated)',
+                color: codeOpen ? 'var(--accent)' : 'var(--text-secondary)',
+                border: codeOpen ? '1px solid rgba(249,115,22,0.3)' : '1px solid var(--border-default)',
+              }}
+              onClick={() => setCodeOpen((v) => !v)}>
+              {codeOpen ? "✕ Code" : `⌨ Code${hasUnsavedChanges ? ' •' : ''}`}
             </button>
           </div>
         </div>
@@ -1409,139 +1713,121 @@ ${codeContext}` : ""}`
             onMouseDown={() => setSettingsOpen(false)}
           >
             <div
-              className="w-[780px] max-w-[95vw] rounded-lg bg-white shadow-lg"
+              style={{ width: '720px', maxWidth: '95vw', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.6)' }}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between border-b p-3">
-                <div className="font-semibold text-lg gradient-text">Settings</div>
-                <button
-                  type="button"
-                  className="rounded border px-3 py-1 hover:bg-gray-100"
-                  onClick={() => setSettingsOpen(false)}
-                >
-                  Close
-                </button>
+              <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontWeight: 600, fontSize: '15px', color: 'var(--text-primary)' }}>Settings</span>
+                <button type="button" className="btn-secondary" style={{ padding: '4px 12px', fontSize: '12px' }} onClick={() => setSettingsOpen(false)}>✕ Close</button>
               </div>
 
-              {/* Tabs */}
-              <div className="flex border-b">
-                <button
-                  className={`px-4 py-2 text-sm font-medium ${activeSettingsTab === 'prompts' ? 'border-b-2 border-t4n-orange-500 text-t4n-orange-500' : 'text-gray-500 hover:text-gray-700'}`}
-                  onClick={() => setActiveSettingsTab('prompts')}
-                >
-                  Prompt Settings
-                </button>
-                <button
-                  className={`px-4 py-2 text-sm font-medium ${activeSettingsTab === 'plugins' ? 'border-b-2 border-t4n-orange-500 text-t4n-orange-500' : 'text-gray-500 hover:text-gray-700'}`}
-                  onClick={() => setActiveSettingsTab('plugins')}
-                >
-                  Plugins
-                </button>
+              <div className="flex" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                {(['prompts', 'plugins', 'appearance'] as const).map((tab) => (
+                  <button key={tab} onClick={() => setActiveSettingsTab(tab as 'prompts' | 'plugins')}
+                    style={{
+                      padding: '10px 20px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', background: 'none', border: 'none', fontFamily: 'DM Sans, sans-serif', transition: 'all 0.15s',
+                      color: activeSettingsTab === tab ? 'var(--accent)' : 'var(--text-muted)',
+                      borderBottom: activeSettingsTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
+                    }}>
+                    {tab === 'prompts' ? 'Prompt Settings' : tab === 'plugins' ? 'Plugins' : 'Appearance'}
+                  </button>
+                ))}
               </div>
 
               <div className="p-4">
-                {/* Prompt Settings Tab */}
                 {activeSettingsTab === 'prompts' && (
-                  <div className="space-y-4">
-                    <h3 className="font-medium">Code Generation Display Mode</h3>
-                    <div className="space-y-2">
-                      <label className="flex items-center gap-2 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="promptMode"
-                          value="description"
-                          checked={promptDisplayMode === 'description'}
-                          onChange={() => setPromptDisplayMode('description')}
-                          className="text-t4n-orange-500"
-                        />
+                  <div className="space-y-3">
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Code Generation Display</p>
+                    {([
+                      { value: 'description', label: 'Detailed Description', desc: 'Shows a summary of what changed in each response' },
+                      { value: 'minimal', label: 'Minimal', desc: 'Shows only the code-ready hint' },
+                    ] as const).map(({ value, label, desc }) => (
+                      <label key={value} className="flex items-start gap-3 p-3 cursor-pointer rounded-lg"
+                        style={{ border: `1px solid ${promptDisplayMode === value ? 'rgba(249,115,22,0.4)' : 'var(--border-default)'}`, background: promptDisplayMode === value ? 'var(--accent-glow)' : 'var(--bg-elevated)' }}>
+                        <input type="radio" name="promptMode" value={value} checked={promptDisplayMode === value} onChange={() => setPromptDisplayMode(value)} style={{ accentColor: 'var(--accent)', marginTop: '2px' }} />
                         <div>
-                          <div className="font-medium">Detailed Description</div>
-                          <div className="text-sm text-gray-500">Shows a description of changes made (e.g., "Expanded from 3 to 5 EMAs...")</div>
-                          <div className="text-xs text-gray-400 mt-1">Example: [Code generated → open the Code panel] **Changes made:** - Added 5 EMAs...</div>                        </div>
-                      </label>
-                      <label className="flex items-center gap-2 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="promptMode"
-                          value="minimal"
-                          checked={promptDisplayMode === 'minimal'}
-                          onChange={() => setPromptDisplayMode('minimal')}
-                          className="text-t4n-orange-500"
-                        />
-                        <div>
-                          <div className="font-medium">Minimal</div>
-                          <div className="text-sm text-gray-500">Shows only the code generation hint</div>
-                          <div className="text-xs text-gray-400 mt-1">Example: [Code generated → open the Code panel]</div>
+                          <div style={{ fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }}>{label}</div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{desc}</div>
                         </div>
                       </label>
-                    </div>
+                    ))}
+                  </div>
+                )}
 
-                    <div className="border-t pt-4 mt-4">
-                      <h3 className="font-medium mb-2">Future Prompt Settings</h3>
-                      <p className="text-sm text-gray-500">Additional prompt customization options will appear here.</p>
+                {activeSettingsTab === 'appearance' && (
+                  <div className="space-y-3">
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Theme</p>
+                    <div className="flex gap-3">
+                      {([
+                        { value: 'dark', label: 'Dark', preview: ['#0f0f11', '#1e1e24', '#f97316'] },
+                        { value: 'light', label: 'Light', preview: ['#ffffff', '#f0f0f0', '#f97316'] },
+                      ] as const).map(({ value, label, preview }) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setTheme(value)}
+                          style={{
+                            flex: 1, padding: '16px', borderRadius: '10px', cursor: 'pointer',
+                            border: `2px solid ${theme === value ? 'var(--accent)' : 'var(--border-default)'}`,
+                            background: theme === value ? 'var(--accent-glow)' : 'var(--bg-elevated)',
+                            transition: 'all 0.15s',
+                          }}
+                        >
+                          {/* Mini preview */}
+                          <div style={{ borderRadius: '6px', overflow: 'hidden', marginBottom: '10px', border: '1px solid var(--border-subtle)' }}>
+                            <div style={{ background: preview[0], padding: '8px 10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: preview[2] }} />
+                              <div style={{ height: '4px', borderRadius: '2px', background: preview[1], flex: 1 }} />
+                            </div>
+                            <div style={{ background: preview[1], padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <div style={{ height: '4px', borderRadius: '2px', background: preview[2], width: '60%' }} />
+                              <div style={{ height: '3px', borderRadius: '2px', background: value === 'dark' ? '#333' : '#ddd', width: '80%' }} />
+                              <div style={{ height: '3px', borderRadius: '2px', background: value === 'dark' ? '#333' : '#ddd', width: '50%' }} />
+                            </div>
+                          </div>
+                          <div style={{ fontSize: '13px', fontWeight: 600, color: theme === value ? 'var(--accent)' : 'var(--text-primary)', textAlign: 'center' }}>
+                            {label}
+                          </div>
+                          {theme === value && (
+                            <div style={{ fontSize: '11px', color: 'var(--accent)', textAlign: 'center', marginTop: '4px' }}>✓ Active</div>
+                          )}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}
 
-                {/* Plugins Tab */}
                 {activeSettingsTab === 'plugins' && (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Run Plugin</p>
                     <div className="flex items-center gap-2">
-                      <select
-                        className="border rounded px-2 py-1"
-                        value={pluginName}
-                        onChange={(e) =>
-                          setPluginName(
-                            e.target.value as
-                            | "healthcheck"
-                            | "summariseConversation"
-                            | "exportConversation",
-                          )
-                        }
-                        disabled={pluginBusy}
-                      >
+                      <select className="border rounded px-2 py-1" value={pluginName}
+                        onChange={(e) => setPluginName(e.target.value as "healthcheck" | "summariseConversation" | "exportConversation")}
+                        disabled={pluginBusy}>
                         <option value="healthcheck">healthcheck</option>
                         <option value="summariseConversation">summariseConversation</option>
                         <option value="exportConversation">exportConversation</option>
                       </select>
-
-                      <button
-                        type="button"
-                        className="rounded border px-3 py-1 disabled:opacity-50"
-                        onClick={() => void runSelectedPlugin()}
-                        disabled={pluginBusy}
-                        title={!activeId ? "No conversation selected — will create one automatically" : ""}
-                      >
-                        {pluginBusy ? "Running…" : "Run"}
+                      <button type="button" className="btn-primary" style={{ padding: '6px 16px', fontSize: '13px' }}
+                        onClick={() => void runSelectedPlugin()} disabled={pluginBusy}>
+                        {pluginBusy ? "Running…" : "▶ Run"}
                       </button>
                     </div>
 
-                    {(pluginResult || pluginRuns.length > 0) && (
-                      <div className="border-t p-3 text-xs bg-gray-50 space-y-2">
-                        {!!pluginResult && (
-                          <div>
-                            <div className="font-medium mb-1">Last plugin result</div>
-                            {/* ... plugin result display ... */}
-                          </div>
-                        )}
-
-                        {pluginRuns.length > 0 && (
-                          <div>
-                            <div className="font-medium mb-1">Recent plugin runs</div>
-                            <div className="space-y-1">
-                              {pluginRuns.slice(0, 5).map((r) => (
-                                <div key={r.id} className="flex items-center justify-between gap-2">
-                                  <div className="truncate">
-                                    <span className="font-mono">{r.pluginName}</span>
-                                    <span className="opacity-60"> — {r.status}</span>
-                                    {r.error ? <span className="text-red-700"> — {r.error}</span> : null}
-                                  </div>
-                                  <div className="opacity-60">{r.createdAt}</div>
-                                </div>
-                              ))}
+                    {pluginRuns.length > 0 && (
+                      <div className="space-y-1 mt-2">
+                        <p style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Recent runs</p>
+                        {pluginRuns.slice(0, 5).map((r) => (
+                          <div key={r.id} className="flex items-center justify-between gap-2 rounded px-2 py-1.5"
+                            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', fontSize: '12px' }}>
+                            <div className="truncate">
+                              <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent)' }}>{r.pluginName}</span>
+                              <span style={{ color: 'var(--text-muted)' }}> — {r.status}</span>
+                              {r.error && <span style={{ color: '#f87171' }}> — {r.error}</span>}
                             </div>
+                            <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{r.createdAt}</span>
                           </div>
-                        )}
+                        ))}
                       </div>
                     )}
                   </div>
@@ -1552,45 +1838,41 @@ ${codeContext}` : ""}`
         )}
 
         {error && (
-          <div className="border-b p-3 text-sm bg-red-50">
-            <div className="font-medium">Request failed</div>
-            <div className="opacity-80">{error}</div>
-
-            <button
-              className="mt-2 rounded border px-3 py-1"
-              onClick={() => {
-                cancelStreamSilently();
-                void retryLastSend();
-              }}
-            >
-              Retry
+          <div className="p-3 text-sm flex items-center gap-3" style={{ background: 'rgba(239,68,68,0.08)', borderBottom: '1px solid rgba(239,68,68,0.2)' }}>
+            <span style={{ color: '#f87171', fontWeight: 500 }}>⚠ {error}</span>
+            <button className="btn-secondary" style={{ padding: '4px 12px', fontSize: '12px', marginLeft: 'auto', flexShrink: 0 }}
+              onClick={() => { cancelStreamSilently(); void retryLastSend(); }}>
+              ↺ Retry
             </button>
           </div>
         )}
 
         <div className="flex-1 flex overflow-hidden">
           {/* Chat area */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-3 relative">
+          <div className="flex-1 p-5 overflow-y-auto space-y-4 relative" style={{ background: 'var(--bg-primary)' }}>
             <Image
               src="/t4n-logo.png"
               alt=""
               width={256}
               height={256}
-              className="pointer-events-none select-none absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 opacity-[0.1]"
+              className="pointer-events-none select-none absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2"
+              style={{ opacity: 0.03 }}
               priority={false}
             />
 
             {loading && (
-              <div className="flex items-center gap-2 text-t4n-orange-500">
-                <div className="w-2 h-2 bg-t4n-orange-500 rounded-full animate-pulse"></div>
-                <div className="w-2 h-2 bg-t4n-orange-500 rounded-full animate-pulse delay-150"></div>
-                <div className="w-2 h-2 bg-t4n-orange-500 rounded-full animate-pulse delay-300"></div>
-                <span className="text-sm text-gray-500">T4N is thinking...</span>
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1">
+                  <div className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--accent)', animationDelay: '0ms' }}></div>
+                  <div className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--accent)', animationDelay: '150ms' }}></div>
+                  <div className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--accent)', animationDelay: '300ms' }}></div>
+                </div>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>T4N is thinking…</span>
               </div>
             )}
 
             {messages.length === 0 && (
-              <div className="text-gray-400 flex items-center justify-center h-full">
+              <div className="flex items-center justify-center h-full" style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
                 {activeId ? "No messages yet" : "Start a new chat below"}
               </div>
             )}
@@ -1605,19 +1887,107 @@ ${codeContext}` : ""}`
               const isActiveStreaming = !isUser && streaming && m.id === activeAssistantIdRef.current;
 
               return (
-                <div key={m.id} className={`max-w-xl ${isUser ? "ml-auto text-right" : ""}`}>
+                <div key={m.id} className={`max-w-2xl ${isUser ? "ml-auto" : ""}`}>
                   <div
                     className={`whitespace-pre-wrap break-words ${isUser
-                      ? "message-user p-3 shadow-lg"
+                      ? "message-user p-3 selection-blue"
                       : isStopped
-                        ? "glass p-3 border-l-4 border-t4n-orange-500"
-                        : "message-assistant p-3 shadow-sm"
+                        ? "glass p-3"
+                        : "message-assistant p-3"
                       }`}
+                    style={isStopped && !isUser ? { borderLeft: '2px solid var(--accent)' } : {}}
                   >
                     {!isUser && isStopped && (
-                      <div className="mb-1 text-xs font-medium opacity-70">Stopped</div>
+                      <div className="mb-1" style={{ fontSize: '10px', fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Stopped</div>
                     )}
-                    {cleanText}
+                    {(() => {
+                      if (!/ctrl\+f:/i.test(cleanText)) return cleanText;
+
+                      // Parse into prose and Ctrl+F instruction blocks
+                      const lines = cleanText.split('\n');
+                      const segments: React.ReactNode[] = [];
+                      let i = 0;
+                      let segKey = 0;
+
+                      while (i < lines.length) {
+                        const line = lines[i];
+
+                        // Detect start of a Ctrl+F block
+                        if (/^ctrl\+f:/i.test(line.trim())) {
+                          // Extract the FIND value (rest of this line, strip backticks/fences)
+                          const findVal = line.replace(/^ctrl\+f:\s*/i, '').replace(/```[\w]*/g, '').trim();
+                          const findLines = findVal ? [findVal] : [];
+                          i++;
+
+                          // Collect continuation lines until "Replace with:" or blank+next-instruction
+                          while (i < lines.length && !/^replace with:/i.test(lines[i].trim()) && !/^ctrl\+f:/i.test(lines[i].trim()) && !/^add (above|below):/i.test(lines[i].trim())) {
+                            const l = lines[i].replace(/```[\w]*/g, '').replace(/^```$/, '').trim();
+                            if (l) findLines.push(l);
+                            i++;
+                          }
+
+                          // Detect action type
+                          let actionLabel = 'REPLACE';
+                          if (i < lines.length && /^replace with:/i.test(lines[i].trim())) {
+                            actionLabel = 'REPLACE';
+                          } else if (i < lines.length && /^add above:/i.test(lines[i].trim())) {
+                            actionLabel = 'ADD ABOVE';
+                          } else if (i < lines.length && /^add below:/i.test(lines[i].trim())) {
+                            actionLabel = 'ADD BELOW';
+                          }
+                          i++; // skip the "Replace with:" line
+
+                          // Collect replace lines
+                          const replaceLines: string[] = [];
+                          while (i < lines.length && !/^ctrl\+f:/i.test(lines[i].trim()) && !/^```$/.test(lines[i].trim()) || (lines[i].trim() === '```' && replaceLines.length === 0)) {
+                            const l = lines[i].replace(/```[\w]*/g, '').replace(/^```$/, '');
+                            // Stop at closing fence only after we have content
+                            if (lines[i].trim() === '```' && replaceLines.length > 0) { i++; break; }
+                            if (l.trim() || replaceLines.length > 0) replaceLines.push(l);
+                            i++;
+                          }
+
+                          const findText = findLines.join('\n').trim();
+                          const replaceText = replaceLines.join('\n').trim();
+
+                          segments.push(
+                            <div key={segKey++} style={{ margin: '10px 0' }}>
+                              {/* FIND box */}
+                              <div style={{ borderRadius: '6px 6px 0 0', overflow: 'hidden', border: '1px solid rgba(249,115,22,0.35)', borderBottom: 'none' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 10px', background: 'rgba(249,115,22,0.1)' }}>
+                                  <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>FIND</span>
+                                  <button type="button"
+                                    style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.3)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer' }}
+                                    onClick={async () => { try { await navigator.clipboard.writeText(findText); } catch { } }}>
+                                    Copy
+                                  </button>
+                                </div>
+                                <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{findText}</pre>
+                              </div>
+                              {/* REPLACE/ADD box */}
+                              <div style={{ borderRadius: '0 0 6px 6px', overflow: 'hidden', border: '1px solid rgba(99,102,241,0.35)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 10px', background: 'rgba(99,102,241,0.1)' }}>
+                                  <span style={{ fontSize: '10px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{actionLabel}</span>
+                                  <button type="button"
+                                    style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(99,102,241,0.3)', background: 'transparent', color: '#818cf8', cursor: 'pointer' }}
+                                    onClick={async () => { try { await navigator.clipboard.writeText(replaceText); } catch { } }}>
+                                    Copy
+                                  </button>
+                                </div>
+                                <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{replaceText || '(empty — delete the found line)'}</pre>
+                              </div>
+                            </div>
+                          );
+                        } else {
+                          // Prose line — strip backtick fences, collect until next ctrl+f
+                          const proseLine = line.replace(/```[\w]*/g, '').replace(/^```$/, '').trim();
+                          if (proseLine) segments.push(<div key={segKey++} style={{ marginBottom: '4px', fontSize: '13px', color: 'var(--text-primary)' }}>{proseLine}</div>);
+                          i++;
+                        }
+                      }
+
+                      return segments;
+                    })()}
 
                     {!!m.attachments?.length && (
                       <div className={`mt-2 flex flex-wrap gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
@@ -1659,24 +2029,86 @@ ${codeContext}` : ""}`
 
           {codeOpen && (
             <aside
-              className="max-w-[45vw] border-l bg-white flex flex-col shrink-0"
-              style={{ width: codeWidth }}
+              className="max-w-[45vw] flex flex-col shrink-0 overflow-hidden"
+              style={{ width: codeWidth, background: 'var(--bg-secondary)', borderLeft: '1px solid var(--border-subtle)' }}
             >
-              <div className="flex items-center justify-between gap-2 border-b p-3">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 p-2 flex-wrap" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)' }}>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* New Code Button */}
                   <button
                     type="button"
-                    className="rounded border px-3 py-1 text-sm hover:bg-gray-100"
-                    onClick={saveCurrentCode}
-                    disabled={!codeText.trim()}
-                    title="Save current code"
+                    className="btn-secondary"
+                    style={{ padding: '4px 10px', fontSize: '12px' }}
+                    onClick={handleNewCode}
+                    title="Create new code"
                   >
-                    Save
+                    📄 New
                   </button>
 
+                  {/* Undo Button */}
                   <button
                     type="button"
-                    className="rounded border px-3 py-1 text-sm hover:bg-gray-100"
+                    className="btn-secondary"
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '12px',
+                      opacity: historyIndex > 0 ? 1 : 0.5
+                    }}
+                    onClick={handleUndo}
+                    disabled={historyIndex <= 0}
+                    title="Undo"
+                  >
+                    ↩ Undo
+                  </button>
+
+                  {/* Redo Button */}
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '12px',
+                      opacity: historyIndex < codeHistory.length - 1 ? 1 : 0.5
+                    }}
+                    onClick={handleRedo}
+                    disabled={historyIndex >= codeHistory.length - 1}
+                    title="Redo"
+                  >
+                    ↪ Redo
+                  </button>
+
+                  {/* Save Button - UPDATED to update current snippet */}
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '12px',
+                      background: hasUnsavedChanges ? 'rgba(34,197,94,0.1)' : undefined
+                    }}
+                    onClick={() => {
+                      if (activeCodeId) {
+                        // Update existing snippet (keeps same ID)
+                        updateActiveSnippet();
+                        setHasUnsavedChanges(false);
+                      } else if (hasUnsavedChanges) {
+                        // Save as new snippet
+                        saveCurrentCode();
+                        setHasUnsavedChanges(false);
+                        setUnsavedCode("");
+                      }
+                    }}
+                    disabled={!codeText.trim() || !hasUnsavedChanges}
+                    title={activeCodeId ? "Save changes to current snippet" : "Save as new snippet"}
+                  >
+                    {activeCodeId ? "Update" : "Save"}
+                  </button>
+
+                  {/* Copy Button */}
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ padding: '4px 10px', fontSize: '12px' }}
                     onClick={async () => {
                       try {
                         await navigator.clipboard.writeText(codeText || "");
@@ -1691,54 +2123,70 @@ ${codeContext}` : ""}`
                   </button>
 
 
-                  {activeCodeId && (
-                    <button
-                      type="button"
-                      className="rounded border px-3 py-1 text-sm hover:bg-gray-100"
-                      onClick={updateActiveSnippet}
-                      disabled={!codeText.trim()}
-                      title="Overwrite selected snippet"
-                    >
-                      Update
-                    </button>
-                  )}
-
-
                   <div className="flex items-center gap-2">
                     <select
                       className="border rounded px-2 py-1 text-sm"
-                      value={activeCodeId ?? ""}
-                      onChange={(e) => {
+                      value={activeCodeId ?? (hasUnsavedChanges ? UNSAVED_ID : "")}
+                      onChange={async (e) => {
                         const id = e.target.value || null;
-                        setActiveCodeId(id);
 
-                        // IMPORTANT: switching snippets should remove AI access
+                        // Handle unsaved selection
+                        if (id === UNSAVED_ID) {
+                          setActiveCodeId(null);
+                          setCodeText(unsavedCode);
+                          setGiveAiAccessToCode(false);
+                          setShowVersions(false);
+                          return;
+                        }
+
+                        // If we had unsaved changes, ask user before switching
+                        if (hasUnsavedChanges && codeText !== unsavedCode) {
+                          const confirmSwitch = confirm(
+                            "You have unsaved changes. Switch to saved snippet anyway?"
+                          );
+                          if (!confirmSwitch) {
+                            // Reset dropdown to current selection
+                            e.target.value = activeCodeId ?? (hasUnsavedChanges ? UNSAVED_ID : "");
+                            return;
+                          }
+                        }
+
+                        setActiveCodeId(id);
                         setGiveAiAccessToCode(false);
+                        setHasUnsavedChanges(false); // Switching to saved snippet clears unsaved flag
 
                         const found = savedCodes.find((s) => s.id === id);
-                        if (found) setCodeText(found.code);
+                        if (found && id) {
+                          setCodeText(found.code);
+                          addToHistory(found.code); // Add to history
+                          await loadVersions(id);
+                        }
                       }}
                     >
                       <option value="">Saved snippets…</option>
+                      {hasUnsavedChanges && (
+                        <option value={UNSAVED_ID}>📝 Unsaved (new)</option>
+                      )}
                       {savedCodes.map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.name}
+                          {s.name} {activeCodeId === s.id && hasUnsavedChanges ? '✏️' : ''}
                         </option>
                       ))}
                     </select>
 
                     <button
                       type="button"
-                      className={`rounded border px-3 py-1 text-sm ${giveAiAccessToCode
-                        ? "bg-green-50 border-green-300 text-green-800"
-                        : "hover:bg-gray-100"
-                        } disabled:opacity-50`}
+                      className="btn-secondary"
+                      style={{
+                        padding: '4px 10px', fontSize: '12px',
+                        ...(giveAiAccessToCode ? { background: 'rgba(34,197,94,0.1)', borderColor: 'rgba(34,197,94,0.4)', color: '#4ade80' } : {})
+                      }}
                       disabled={!activeCodeId}
                       title={
                         !activeCodeId
                           ? "Select a saved snippet first"
                           : giveAiAccessToCode
-                            ? "AI can see this snippet in prompts"
+                            ? "AI sees first ~200 lines. For deep changes, describe the section by name (e.g. 'edit the ENTRY CONDITIONS section')"
                             : "Click to allow AI to see this snippet"
                       }
                       onClick={() => {
@@ -1750,11 +2198,16 @@ ${codeContext}` : ""}`
                           );
                           if (!ok) return;
                           setGiveAiAccessToCode(true);
+                          // Lock the snippet id + code at the moment access is granted
+                          setAccessLockedSnippetId(activeCodeId);
+                          setAccessLockedCode(codeText);
                           return;
                         }
 
                         // turning off
                         setGiveAiAccessToCode(false);
+                        setAccessLockedSnippetId(null);
+                        setAccessLockedCode("");
                       }}
                     >
                       {giveAiAccessToCode ? "Access: ON" : "Give access"}
@@ -1765,7 +2218,8 @@ ${codeContext}` : ""}`
                     <>
                       <button
                         type="button"
-                        className="rounded border px-3 py-1 text-sm hover:bg-gray-100"
+                        className="btn-secondary"
+                        style={{ padding: '4px 10px', fontSize: '12px' }}
                         onClick={() => {
                           if (!activeCodeId) return;
                           renameSnippet(activeCodeId);
@@ -1774,16 +2228,32 @@ ${codeContext}` : ""}`
                         Rename
                       </button>
 
-
                       <button
                         type="button"
-                        className="rounded border px-3 py-1 text-sm hover:bg-gray-100"
+                        className="btn-secondary"
+                        style={{ padding: '4px 10px', fontSize: '12px', color: '#f87171' }}
                         onClick={() => {
-                          if (!activeCodeId) return;
-                          deleteSnippet(activeCodeId);
+                          if (activeCodeId) {
+                            void deleteSnippet(activeCodeId);
+                          }
                         }}
                       >
                         Delete
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ padding: '4px 10px', fontSize: '12px' }}
+                        onClick={async () => {
+                          const newState = !showVersions;
+                          setShowVersions(newState);
+                          if (newState && activeCodeId) {
+                            await loadVersions(activeCodeId);
+                          }
+                        }}
+                      >
+                        History {snippetVersions.length > 0 ? `(${snippetVersions.length})` : ''}
                       </button>
 
                     </>
@@ -1791,12 +2261,37 @@ ${codeContext}` : ""}`
                 </div>
               </div>
 
-              <div className="p-3 overflow-y-auto">
+              <div className="p-3 overflow-y-auto pb-8">
                 {codeText ? (
                   <textarea
-                    className="w-full h-[70vh] whitespace-pre font-mono break-words bg-gray-50 border rounded p-2 text-xs overflow-auto"
+                    className="w-full h-[55vh] whitespace-pre font-mono break-words overflow-auto"
+                    style={{ background: '#0d0d10', color: '#e2e2e8', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '10px', fontSize: '12px', lineHeight: '1.7', fontFamily: 'JetBrains Mono, monospace', resize: 'none' }}
                     value={codeText}
-                    onChange={(e) => setCodeText(e.target.value)}
+                    readOnly={false}
+                    placeholder="Paste code here or wait for AI to generate..."
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      setCodeText(newValue);
+                      addToHistory(newValue); // Add to history on manual edit
+                      if (activeCodeId) {
+                        setHasUnsavedChanges(true);
+                      } else if (newValue.trim()) {
+                        setUnsavedCode(newValue);
+                        setHasUnsavedChanges(true);
+                        setActiveCodeId(null);
+                      }
+                    }}
+                    onPaste={(e) => {
+                      const pastedText = e.clipboardData?.getData("text") ?? "";
+                      setTimeout(() => {
+                        if (pastedText.trim()) {
+                          setUnsavedCode(pastedText);
+                          setHasUnsavedChanges(true);
+                          setActiveCodeId(null);
+                          addToHistory(pastedText); // Add to history on paste
+                        }
+                      }, 0);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Tab") {
                         e.preventDefault();
@@ -1806,16 +2301,121 @@ ${codeContext}` : ""}`
                         const insert = "  "; // 2 spaces
                         const next = codeText.slice(0, start) + insert + codeText.slice(end);
                         setCodeText(next);
+                        addToHistory(next); // Add to history on tab
                         requestAnimationFrame(() => {
                           el.selectionStart = el.selectionEnd = start + insert.length;
                         });
                       }
                     }}
                   />
-
                 ) : (
-                  <div className="text-sm text-gray-500">
-                    No code detected yet. Ask for code or wait for a ``` block to appear.
+                  <div style={{ padding: '24px 0', textAlign: 'center' }}>
+                    <div style={{ fontSize: '24px', marginBottom: '8px', opacity: 0.3 }}>⌨</div>
+                    <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '4px' }}>No code yet</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', opacity: 0.7 }}>
+                      Paste code here, ask the AI, or type directly
+                    </div>
+                  </div>
+                )}
+
+                {showVersions && activeCodeId && (
+                  <div className="mt-2 pt-2 pb-4" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Version History</h4>
+                      <button
+                        type="button"
+                        style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
+                        onClick={() => setShowVersions(false)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    {loadingSnippets ? (
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '4px 0' }}>Loading...</div>
+                    ) : snippetVersions.length > 0 ? (
+                      <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                        {snippetVersions.map((version) => (
+                          <div
+                            key={version.id}
+                            className="group relative"
+                            style={{ fontSize: '12px', padding: '6px 8px', border: '1px solid var(--border-subtle)', borderRadius: '6px', background: 'var(--bg-elevated)' }}
+                          >
+                            <div className="flex justify-between items-start">
+                              <div
+                                className="flex-1 cursor-pointer"
+                                onClick={async () => {
+                                  if (!activeCodeId) return;
+                                  if (confirm(`Restore version ${version.version_number}?`)) {
+                                    try {
+                                      setLoadingSnippets(true);
+                                      const res = await restoreSnippetVersion(activeCodeId, version.version_number);
+
+                                      if (res.ok) {
+                                        const snippetsRes = await getSnippets();
+                                        if (snippetsRes.ok) setSavedCodes(snippetsRes.data.snippets);
+                                        await loadVersions(activeCodeId);
+                                        const snippetRes = await getSnippet(activeCodeId);
+                                        if (snippetRes.ok) {
+                                          // Load restored code WITHOUT adding to history (avoids creating a new version entry)
+                                          setCodeText(snippetRes.data.snippet.code);
+                                          setHasUnsavedChanges(false);
+                                        }
+                                      }
+                                    } catch (error) {
+                                      console.error("Error restoring version:", error);
+                                    } finally {
+                                      setLoadingSnippets(false);
+                                    }
+                                  }
+                                }}
+                              >
+                                <div className="flex justify-between">
+                                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>v{version.version_number}</span>
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                    {new Date(version.created_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <div className="truncate pr-12" style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                  {version.change_summary || version.source}
+                                </div>
+                              </div>
+
+                              <div className="hidden group-hover:flex items-center gap-0.5 ml-1 shrink-0">
+                                <button
+                                  type="button"
+                                  style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '2px 5px', fontSize: '10px', cursor: 'pointer' }}
+                                  title="Edit description"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    const newSummary = prompt("Edit description:", version.change_summary || "");
+                                    if (newSummary !== null) {
+                                      alert("Version description update coming soon!");
+                                    }
+                                  }}
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  type="button"
+                                  style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '2px 5px', fontSize: '10px', cursor: 'pointer', color: '#f87171' }}
+                                  title="Delete version"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    if (confirm(`Delete version ${version.version_number}?`)) {
+                                      alert("Version deletion coming soon!");
+                                    }
+                                  }}
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '4px 0' }}>No history</div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1826,7 +2426,8 @@ ${codeContext}` : ""}`
 
         {/* ALWAYS SHOW COMPOSER */}
         <form
-          className="border-t p-4 flex gap-2"
+          className="p-3 flex gap-2"
+          style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}
           onSubmit={(e) => {
             e.preventDefault();
             void handleSend();
@@ -1836,7 +2437,7 @@ ${codeContext}` : ""}`
             {attachments.length > 0 && (
               <div className="flex items-center gap-2 flex-wrap">
                 {attachments.map((a) => (
-                  <div key={a.id} className="flex items-center gap-2 border rounded p-1 bg-white">
+                  <div key={a.id} className="flex items-center gap-2 rounded p-1" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)' }}>
                     {/* thumbnail */}
                     <Image
                       src={a.url}
@@ -1856,7 +2457,7 @@ ${codeContext}` : ""}`
 
                     <button
                       type="button"
-                      className="rounded border px-2 py-1 text-xs hover:bg-gray-100"
+                      style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '3px 7px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer' }}
                       onClick={() => removeAttachment(a.id)}
                       title="Remove"
                     >
@@ -1869,8 +2470,9 @@ ${codeContext}` : ""}`
 
             <input
               ref={inputRef}
-              className="w-full border rounded px-3 py-2"
-              placeholder="Type a message…"
+              className="w-full"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '10px 14px', color: 'var(--text-primary)', fontSize: '13px' }}
+              placeholder="Message T4N…"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onPaste={(e) => {
@@ -1880,8 +2482,27 @@ ${codeContext}` : ""}`
                   .filter((f): f is File => !!f && f.type.startsWith("image/"));
 
                 if (files.length > 0) {
-                  e.preventDefault(); // prevent weird “[object Object]” paste
+                  e.preventDefault();
                   void handleAttachArray(files);
+                  return;
+                }
+
+                // Detect code pasted as text — if it looks like code, route it to the code panel
+                const text = e.clipboardData?.getData("text") ?? "";
+                const looksLikeCode =
+                  /```[\s\S]*```/.test(text) ||
+                  /(^|\n)\s*\/\/@version=\d+/i.test(text) ||
+                  /(^|\n)\s*(indicator|strategy|function|const |let |var |def |import |export |class )\s*/m.test(text) ||
+                  (text.includes("{") && text.includes("}") && text.split("\n").length > 4);
+
+                if (looksLikeCode && text.trim().length > 80) {
+                  e.preventDefault();
+                  // Put it in the code panel as unsaved, open the panel
+                  setCodeText(text);
+                  setUnsavedCode(text);
+                  setHasUnsavedChanges(true);
+                  setActiveCodeId(null);
+                  setCodeOpen(true);
                 }
               }}
               disabled={loading}

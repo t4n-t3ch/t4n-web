@@ -2,45 +2,164 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500&display=swap');
+
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --primary: 24 96% 53%; /* Tangerine orange #f97316 */
-    --primary-foreground: 0 0% 100%;
+    --bg-primary: #0f0f11;
+    --bg-secondary: #16161a;
+    --bg-elevated: #1e1e24;
+    --bg-hover: #26262e;
+    --border-subtle: #28282f;
+    --border-default: #32323c;
+    --border-strong: #42424f;
+    --text-primary: #ededf0;
+    --text-secondary: #8e8ea0;
+    --text-muted: #52526a;
+    --accent: #f97316;
+    --accent-dim: #c45c0e;
+    --accent-glow: rgba(249, 115, 22, 0.12);
   }
 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 0 0% 100%;
-    --primary: 24 96% 53%;
-    --primary-foreground: 0 0% 100%;
+  :root.light {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f8f8;
+    --bg-elevated: #f0f0f0;
+    --bg-hover: #e8e8e8;
+    --border-subtle: #e2e2e2;
+    --border-default: #d0d0d0;
+    --border-strong: #b0b0b0;
+    --text-primary: #111111;
+    --text-secondary: #444444;
+    --text-muted: #888888;
+    --accent: #f97316;
+    --accent-dim: #c45c0e;
+    --accent-glow: rgba(249, 115, 22, 0.12);
+  }
+
+  html, body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  * { box-sizing: border-box; }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+  ::selection { background: var(--accent-glow); color: var(--text-primary); }
+
+  .selection-blue::selection,
+  .selection-blue *::selection {
+    background: #3b82f6 !important;
+    color: #fff !important;
   }
 }
 
 @layer components {
-  /* Tangerine button */
   .btn-primary {
-    @apply bg-[#f97316] hover:bg-[#ea580c] text-white font-medium py-2 px-4 rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center font-medium transition-all duration-150 select-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 16px;
+    font-size: 13px;
+    font-family: 'DM Sans', sans-serif;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 0 0 1px rgba(249,115,22,0.25);
   }
-  
-  /* Secondary button (like Hide/Show) */
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-dim);
+    box-shadow: 0 2px 10px rgba(249,115,22,0.3), 0 0 0 1px rgba(249,115,22,0.4);
+    transform: translateY(-1px);
+  }
+  .btn-primary:active:not(:disabled) { transform: translateY(0); }
+
   .btn-secondary {
-    @apply bg-white hover:bg-gray-100 text-gray-700 font-medium py-2 px-4 rounded-lg border border-gray-200 transition-all duration-200;
+    @apply inline-flex items-center justify-center font-medium transition-all duration-150 select-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-family: 'DM Sans', sans-serif;
   }
-  
-  /* Tangerine accent for active items */
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+
   .active-tangerine {
-    @apply bg-[#f97316]/10 text-[#f97316] border-l-4 border-[#f97316];
+    background: var(--accent-glow) !important;
+    color: var(--accent) !important;
+    border-left: 2px solid var(--accent) !important;
   }
-  
-  /* Tangerine focus rings */
+
   .focus-tangerine {
-    @apply focus:outline-none focus:ring-2 focus:ring-[#f97316]/50 focus:border-[#f97316];
+    @apply focus:outline-none;
+    --tw-ring-color: var(--accent-glow);
   }
-  
-  /* Tangerine hover effect for conversation items */
+  .focus-tangerine:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px var(--accent-glow) !important;
+  }
+
   .conversation-item {
-    @apply hover:bg-[#f97316]/5 transition-colors duration-150;
+    transition: background 0.15s;
+  }
+  .conversation-item:hover {
+    background: var(--bg-hover);
+  }
+
+  .message-user {
+    background: var(--accent);
+    color: #fff;
+    border-radius: 14px 14px 4px 14px;
+    font-size: 13px;
+  }
+
+  .message-assistant {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px 14px 14px 4px;
+    font-size: 13px;
+  }
+
+  .glass {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-default);
+    border-radius: 10px;
+  }
+
+  /* Override all inputs/selects/textareas to dark theme */
+  input:not([type="radio"]):not([type="checkbox"]):not([type="file"]),
+  textarea,
+  select {
+    background: var(--bg-elevated) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-default) !important;
+    border-radius: 6px !important;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+  }
+  input:focus:not([type="radio"]):not([type="checkbox"]):not([type="file"]),
+  textarea:focus,
+  select:focus {
+    outline: none !important;
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px var(--accent-glow) !important;
+  }
+  select option {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
   }
 }
