@@ -105,13 +105,38 @@ async function fetchWithRetry(
     }
 }
 
+function getApiBase(): string {
+    const raw = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+    // In production, NEVER fall back to localhost (this is what forces PowerShell)
+    if (process.env.NODE_ENV === "production") {
+        if (!raw) {
+            throw new Error("NEXT_PUBLIC_API_BASE_URL is not set (required in production)");
+        }
+        return raw.replace(/\/$/, "");
+    }
+
+    // Local dev fallback is ok
+    return (raw || "http://127.0.0.1:3001").replace(/\/$/, "");
+}
+
+function getApiKey(): string {
+    const key = process.env.NEXT_PUBLIC_API_KEY;
+
+    // Optional: force API key in production too (recommended)
+    if (process.env.NODE_ENV === "production" && !key) {
+        throw new Error("NEXT_PUBLIC_API_KEY is not set (required in production)");
+    }
+
+    return key || "dev-key-123";
+}
+
 async function apiFetch<T>(
     path: string,
     options: RequestInit & { timeoutMs?: number } = {},
 ): Promise<ApiResult<T>> {
-    const API_BASE =
-        (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
-    const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
+    const API_BASE = getApiBase();
+    const API_KEY = getApiKey();
 
     const timeoutMs =
         options.timeoutMs ??
@@ -257,7 +282,7 @@ export async function streamMessage(
     signal?: AbortSignal,
     existingCode?: string
 ) {
-    const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001";
+    const API_BASE = getApiBase();
 
     const url = conversationId
         ? `${API_BASE}/api/chat/stream?conversationId=${encodeURIComponent(conversationId)}`
@@ -269,7 +294,7 @@ export async function streamMessage(
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "x-api-key": process.env.NEXT_PUBLIC_API_KEY || "dev-key-123",
+                "x-api-key": getApiKey(),
             },
             signal,
             body: JSON.stringify({

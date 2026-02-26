@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import {
@@ -60,6 +60,14 @@ declare global {
 }
 
 export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeInner />
+    </Suspense>
+  );
+}
+
+function HomeInner() {
 
 
   const router = useRouter();
