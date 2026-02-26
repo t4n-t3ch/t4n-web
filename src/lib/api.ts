@@ -1,4 +1,5 @@
 // t4n-web/src/lib/api.ts
+import { supabase } from "./supabase";
 
 type ApiOk<T> = { ok: true; data: T };
 type ApiErr = { ok: false; error: string };
@@ -146,12 +147,22 @@ async function apiFetch<T>(
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
+        // Debug log to see what's being sent
+        console.log(`🌐 API Request: ${API_BASE}${path}`, {
+            method: options.method || 'GET',
+            headers: {
+                "x-api-key": API_KEY ? `${API_KEY.substring(0, 4)}...` : 'missing',
+                "Authorization": (await supabase.auth.getSession()).data.session?.access_token ? 'present' : 'missing'
+            }
+        });
+        
         const res = await fetchWithRetry(`${API_BASE}${path}`, {
             ...options,
             signal: controller.signal,
             headers: {
                 "Content-Type": "application/json",
                 "x-api-key": API_KEY,
+                "Authorization": `Bearer ${(await supabase.auth.getSession()).data.session?.access_token ?? ""}`,
                 ...(options.headers || {}),
             },
         });
@@ -295,6 +306,7 @@ export async function streamMessage(
             headers: {
                 "Content-Type": "application/json",
                 "x-api-key": getApiKey(),
+                "Authorization": `Bearer ${(await supabase.auth.getSession()).data.session?.access_token ?? ""}`,
             },
             signal,
             body: JSON.stringify({
