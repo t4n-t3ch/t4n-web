@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Session } from "@supabase/supabase-js";
 import Image from "next/image";
 import {
     listConversations,
@@ -61,7 +62,23 @@ declare global {
 }
 
 export default function HomeClient() {
+    const [session, setSession] = useState<Session | null>(null);
+    const [authLoading, setAuthLoading] = useState(true);
+    const [authEmail, setAuthEmail] = useState("");
+    const [authPassword, setAuthPassword] = useState("");
+    const [authError, setAuthError] = useState<string | null>(null);
+    const [authMode, setAuthMode] = useState<"login" | "signup">("login");
 
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setSession(session);
+            setAuthLoading(false);
+        });
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session);
+        });
+        return () => subscription.unsubscribe();
+    }, []);
 
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -228,6 +245,7 @@ export default function HomeClient() {
 
     // Load snippets from API
     useEffect(() => {
+        if (!session) return;
         async function loadSnippets() {
             setLoadingSnippets(true);
             try {
@@ -242,7 +260,7 @@ export default function HomeClient() {
             }
         }
         loadSnippets();
-    }, []);
+    }, [session]);
 
     useEffect(() => {
         try {
@@ -823,8 +841,9 @@ export default function HomeClient() {
 
 
     useEffect(() => {
+        if (!session) return;
         void refreshConversations();
-    }, []);
+    }, [session]);
 
     const filteredConversations = (() => {
         const q = convSearch.trim().toLowerCase();
@@ -1599,6 +1618,69 @@ ${codeContext}` : ""}`
         }
 
     }
+
+    if (authLoading) return (
+        <div className="flex h-screen items-center justify-center" style={{ background: '#0f0f11', color: '#9ca3af' }}>
+            Loading…
+        </div>
+    );
+
+    if (!session) return (
+        <div className="flex h-screen items-center justify-center" style={{ background: '#0f0f11' }}>
+            <div style={{ width: 360, background: '#1e1e24', border: '1px solid #2a2a35', borderRadius: 12, padding: 32 }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#f97316', marginBottom: 8 }}>T4N</div>
+                <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 24 }}>
+                    {authMode === "login" ? "Sign in to continue" : "Create your account"}
+                </div>
+                {authError && (
+                    <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, padding: '8px 12px', fontSize: 12, color: '#f87171', marginBottom: 16 }}>
+                        {authError}
+                    </div>
+                )}
+                <input 
+                    type="email" 
+                    placeholder="Email" 
+                    value={authEmail} 
+                    onChange={e => setAuthEmail(e.target.value)}
+                    style={{ width: '100%', background: '#0f0f11', border: '1px solid #2a2a35', borderRadius: 6, padding: '10px 12px', color: '#e2e2e8', fontSize: 13, marginBottom: 10, boxSizing: 'border-box' }} 
+                />
+                <input 
+                    type="password" 
+                    placeholder="Password" 
+                    value={authPassword} 
+                    onChange={e => setAuthPassword(e.target.value)}
+                    style={{ width: '100%', background: '#0f0f11', border: '1px solid #2a2a35', borderRadius: 6, padding: '10px 12px', color: '#e2e2e8', fontSize: 13, marginBottom: 16, boxSizing: 'border-box' }} 
+                />
+                <button 
+                    style={{ width: '100%', background: '#f97316', border: 'none', borderRadius: 6, padding: '10px 0', color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer', marginBottom: 12 }}
+                    onClick={async () => {
+                        setAuthError(null);
+                        if (authMode === "login") {
+                            const { error } = await supabase.auth.signInWithPassword({ 
+                                email: authEmail, 
+                                password: authPassword 
+                            });
+                            if (error) setAuthError(error.message);
+                        } else {
+                            const { error } = await supabase.auth.signUp({ 
+                                email: authEmail, 
+                                password: authPassword 
+                            });
+                            if (error) setAuthError(error.message);
+                        }
+                    }}>
+                    {authMode === "login" ? "Sign In" : "Sign Up"}
+                </button>
+                <div style={{ textAlign: 'center', fontSize: 12, color: '#6b7280' }}>
+                    {authMode === "login" ? (
+                        <>No account? <button onClick={() => { setAuthMode("signup"); setAuthError(null); }} style={{ color: '#f97316', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>Sign up</button></>
+                    ) : (
+                        <>Have an account? <button onClick={() => { setAuthMode("login"); setAuthError(null); }} style={{ color: '#f97316', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>Sign in</button></>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 
     return (
         <div className="flex h-screen overflow-hidden">
