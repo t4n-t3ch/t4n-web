@@ -1667,7 +1667,6 @@ ${codeContext}` : ""}`
                                 password: authPassword 
                             });
                             if (error) setAuthError(error.message);
-                            else { setAuthError("✅ Check your email and click the confirmation link, then come back and sign in."); setAuthMode("login"); }
                         }
                     }}>
                     {authMode === "login" ? "Sign In" : "Sign Up"}
