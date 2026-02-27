@@ -123,10 +123,15 @@ function getApiBase(): string {
 
 function getApiKey(): string {
     const key = process.env.NEXT_PUBLIC_API_KEY;
-
-    // Optional: force API key in production too (recommended)
-    if (process.env.NODE_ENV === "production" && !key) {
-        throw new Error("NEXT_PUBLIC_API_KEY is not set (required in production)");
+    
+    console.log("🔑 API Key from env:", key ? `${key.substring(0,4)}...` : 'missing');
+    
+    // In production, we MUST have a key
+    if (process.env.NODE_ENV === "production") {
+        if (!key) {
+            throw new Error("NEXT_PUBLIC_API_KEY is not set (required in production)");
+        }
+        return key;
     }
 
     return key || "dev-key-123";
