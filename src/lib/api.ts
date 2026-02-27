@@ -125,16 +125,21 @@ function getApiKey(): string {
     const key = process.env.NEXT_PUBLIC_API_KEY;
     
     console.log("🔑 API Key from env:", key ? `${key.substring(0,4)}...` : 'missing');
+    console.log("🔑 NODE_ENV:", process.env.NODE_ENV);
     
     // In production, we MUST have a key
     if (process.env.NODE_ENV === "production") {
         if (!key) {
+            console.error("❌ NEXT_PUBLIC_API_KEY is not set in production!");
             throw new Error("NEXT_PUBLIC_API_KEY is not set (required in production)");
         }
+        console.log("✅ Using production API key");
         return key;
     }
 
-    return key || "dev-key-123";
+    const finalKey = key || "dev-key-123";
+    console.log("✅ Using API key:", finalKey.substring(0,4) + "...");
+    return finalKey;
 }
 
 async function apiFetch<T>(
