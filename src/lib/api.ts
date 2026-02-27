@@ -166,6 +166,15 @@ async function apiFetch<T>(
             }
         });
         
+        // Additional debug logs
+        console.log("🔑 API_KEY value check:", API_KEY ? `Present (${API_KEY.substring(0,4)}...)` : 'MISSING');
+        console.log("🔑 API_KEY length:", API_KEY ? API_KEY.length : 0);
+        console.log("🔑 Full headers being sent:", {
+            "Content-Type": "application/json",
+            "x-api-key": API_KEY ? `${API_KEY.substring(0,4)}...` : 'missing',
+            "Authorization": (await supabase.auth.getSession()).data.session?.access_token ? 'present' : 'missing'
+        });
+        
         const res = await fetchWithRetry(`${API_BASE}${path}`, {
             ...options,
             signal: controller.signal,
