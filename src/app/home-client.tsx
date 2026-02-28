@@ -23,6 +23,15 @@ import {
     restoreSnippetVersion,
     type Snippet,
     type PluginRun,
+    getProjects as apiGetProjects,
+    createProject as apiCreateProject,
+    updateProject as apiUpdateProject,
+    deleteProject as apiDeleteProject,
+    addProjectFile as apiAddProjectFile,
+    deleteProjectFile as apiDeleteProjectFile,
+    getProjectDetail,
+    type Project as ApiProject,
+    type ProjectFile as ApiProjectFile,
 } from "@/lib/api";
 
 
@@ -43,7 +52,21 @@ type SnippetVersion = {
 type Project = {
     id: string;
     name: string;
+    description: string | null;
+    ai_instructions: string | null;
+    emoji: string | null;
     color: string;
+    created_at: string;
+    updated_at: string;
+};
+
+type ProjectFile = {
+    id: string;
+    project_id: string;
+    name: string;
+    content: string;
+    file_type: string;
+    size_bytes: number;
     created_at: string;
 };
 
@@ -153,6 +176,13 @@ export default function HomeClient() {
     const [activeProjectFilter, setActiveProjectFilter] = useState<string | null>(null);
     const [showProjectsPage, setShowProjectsPage] = useState(false);
     const [convProjects, setConvProjects] = useState<Record<string, string>>({}); // convId -> projectId
+    const [activeProjectDetail, setActiveProjectDetail] = useState<string | null>(null); // project id being viewed
+    const [projectFiles, setProjectFiles] = useState<Record<string, ProjectFile[]>>({}); // projectId -> files
+    const [projectDetailTab, setProjectDetailTab] = useState<'overview' | 'files' | 'instructions'>('overview');
+    const [editingProject, setEditingProject] = useState<Partial<Project> & { id: string } | null>(null);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [projectsLoading, setProjectsLoading] = useState(false);
+    const [projectsSynced, setProjectsSynced] = useState(false); // have we loaded from API yet?
 
     // =========================
     // Layout: resizable panels
@@ -874,6 +904,7 @@ function cancelStreamSilently() {
     useEffect(() => {
         if (!session) return;
         void refreshConversations();
+        void syncProjectsFromApi();
     }, [session]);
 
     const filteredConversations = (() => {
@@ -1715,15 +1746,38 @@ ${codeContext}` : ""}`
 
     const PROJECT_COLORS = ['#f97316','#3b82f6','#10b981','#8b5cf6','#ec4899','#f59e0b','#06b6d4','#ef4444'];
 
-    function createProject() {
+    async function createProject() {
         const name = prompt("Project name:");
         if (!name?.trim()) return;
         const color = PROJECT_COLORS[projects.length % PROJECT_COLORS.length];
-        const project: Project = { id: globalThis.crypto.randomUUID(), name: name.trim(), color, created_at: new Date().toISOString() };
+        const emoji = '📁';
+
+        // Optimistic local add
+        const tempId = globalThis.crypto.randomUUID();
+        const project: Project = {
+            id: tempId,
+            name: name.trim(),
+            description: null,
+            ai_instructions: null,
+            emoji,
+            color,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        };
         setProjects(p => [...p, project]);
+
+        try {
+            const res = await apiCreateProject({ name: name.trim(), emoji, color });
+            if (res.ok) {
+                // Replace temp id with real id
+                setProjects(p => p.map(x => x.id === tempId ? { ...x, id: res.data.id } : x));
+            }
+        } catch (e) {
+            console.error("Failed to create project:", e);
+        }
     }
 
-    function deleteProject(id: string) {
+    async function deleteProject(id: string) {
         if (!confirm("Delete project? Conversations will be unassigned.")) return;
         setProjects(p => p.filter(x => x.id !== id));
         setConvProjects(prev => {
@@ -1732,6 +1786,67 @@ ${codeContext}` : ""}`
             return next;
         });
         if (activeProjectFilter === id) setActiveProjectFilter(null);
+        if (activeProjectDetail === id) setActiveProjectDetail(null);
+
+        try {
+            await apiDeleteProject(id);
+        } catch (e) {
+            console.error("Failed to delete project:", e);
+        }
+    }
+
+    async function saveProjectEdits() {
+        if (!editingProject) return;
+        const { id, ...fields } = editingProject;
+
+        // Optimistic update
+        setProjects(p => p.map(x => x.id === id ? { ...x, ...fields } : x));
+        setEditingProject(null);
+
+        try {
+            await apiUpdateProject(id, fields);
+        } catch (e) {
+            console.error("Failed to update project:", e);
+        }
+    }
+
+    async function uploadProjectFile(projectId: string, file: File) {
+        const text = await file.text();
+        const ext = file.name.split('.').pop()?.toLowerCase() ?? 'txt';
+        const fileType = ['ts','tsx','js','jsx','py','sql','md','txt','json','yaml','yml','sh'].includes(ext) ? ext : 'text';
+
+        // Optimistic local add
+        const tempFile: ProjectFile = {
+            id: `temp-${globalThis.crypto.randomUUID()}`,
+            project_id: projectId,
+            name: file.name,
+            content: text,
+            file_type: fileType,
+            size_bytes: text.length,
+            created_at: new Date().toISOString(),
+        };
+        setProjectFiles(prev => ({ ...prev, [projectId]: [...(prev[projectId] ?? []), tempFile] }));
+
+        try {
+            const res = await apiAddProjectFile(projectId, { name: file.name, content: text, file_type: fileType });
+            if (res.ok) {
+                setProjectFiles(prev => ({
+                    ...prev,
+                    [projectId]: (prev[projectId] ?? []).map(f => f.id === tempFile.id ? { ...f, id: res.data.id } : f),
+                }));
+            }
+        } catch (e) {
+            console.error("Failed to upload file:", e);
+        }
+    }
+
+    async function removeProjectFile(projectId: string, fileId: string) {
+        setProjectFiles(prev => ({ ...prev, [projectId]: (prev[projectId] ?? []).filter(f => f.id !== fileId) }));
+        try {
+            await apiDeleteProjectFile(projectId, fileId);
+        } catch (e) {
+            console.error("Failed to delete file:", e);
+        }
     }
 
     function assignToProject(convId: string, projectId: string | null) {
@@ -1742,46 +1857,364 @@ ${codeContext}` : ""}`
         });
     }
 
+    async function syncProjectsFromApi() {
+        if (projectsSynced) return;
+        try {
+            setProjectsLoading(true);
+            const res = await apiGetProjects();
+            if (res.ok) {
+                setProjects(res.data.projects.map((p: ApiProject) => ({
+                    id: p.id,
+                    name: p.name,
+                    description: p.description,
+                    ai_instructions: p.ai_instructions,
+                    emoji: p.emoji,
+                    color: p.color,
+                    created_at: p.created_at,
+                    updated_at: p.updated_at,
+                })));
+                setProjectsSynced(true);
+            }
+        } catch (e) {
+            console.error("Failed to sync projects:", e);
+        } finally {
+            setProjectsLoading(false);
+        }
+    }
+
+    async function loadProjectDetail(projectId: string) {
+        try {
+            const res = await getProjectDetail(projectId);
+            if (res.ok) {
+                setProjectFiles(prev => ({ ...prev, [projectId]: res.data.files }));
+                // Sync any conversation-project assignments
+                for (const c of res.data.conversations) {
+                    setConvProjects(prev => ({ ...prev, [c.id]: projectId }));
+                }
+            }
+        } catch (e) {
+            console.error("Failed to load project detail:", e);
+        }
+    }
+
     return (
         <div className="flex h-screen overflow-hidden">
             {/* Projects Page Overlay */}
             {showProjectsPage && (
                 <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'var(--bg-primary)' }}>
+                    {/* Header */}
                     <div className="flex items-center gap-3 p-4" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}>
                         <Image src="/t4n-logo.png" alt="T4N" width={22} height={22} className="h-5 w-5 object-contain opacity-90" />
-                        <span style={{ fontWeight: 700, fontSize: '18px', color: 'var(--text-primary)' }}>Projects</span>
+                        <span style={{ fontWeight: 700, fontSize: '18px', color: 'var(--text-primary)' }}>
+                            {activeProjectDetail ? (projects.find(p => p.id === activeProjectDetail)?.name ?? 'Project') : 'Projects'}
+                        </span>
+                        {activeProjectDetail && (
+                            <button type="button" onClick={() => { setActiveProjectDetail(null); setShowEmojiPicker(false); }}
+                                style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                ← All projects
+                            </button>
+                        )}
                         <div className="ml-auto flex items-center gap-2">
-                            <button type="button" className="btn-primary" style={{ padding: '6px 16px', fontSize: '13px' }} onClick={createProject}>+ New project</button>
-                            <button type="button" className="btn-secondary" style={{ padding: '6px 14px', fontSize: '13px' }} onClick={() => setShowProjectsPage(false)}>✕ Close</button>
+                            {!activeProjectDetail && (
+                                <button type="button" className="btn-primary" style={{ padding: '6px 16px', fontSize: '13px' }} onClick={createProject}>
+                                    + New project
+                                </button>
+                            )}
+                            <button type="button" className="btn-secondary" style={{ padding: '6px 14px', fontSize: '13px' }} onClick={() => { setShowProjectsPage(false); setActiveProjectDetail(null); setShowEmojiPicker(false); }}>
+                                ✕ Close
+                            </button>
                         </div>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-6">
-                        {projects.length === 0 ? (
-                            <div style={{ textAlign: 'center', paddingTop: '80px', color: 'var(--text-muted)', fontSize: '14px' }}>
-                                <div style={{ fontSize: '40px', marginBottom: '12px', opacity: 0.3 }}>📁</div>
-                                <div style={{ fontWeight: 600, marginBottom: '6px' }}>No projects yet</div>
-                                <div style={{ fontSize: '12px', opacity: 0.7 }}>Create a project to organise your conversations</div>
-                            </div>
-                        ) : (
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', maxWidth: '960px', margin: '0 auto' }}>
-                                {projects.map(p => {
-                                    const convCount = Object.values(convProjects).filter(v => v === p.id).length;
-                                    return (
-                                        <div key={p.id} style={{ borderRadius: '12px', background: 'var(--bg-secondary)', border: `1px solid var(--border-default)`, padding: '20px', cursor: 'pointer', transition: 'all 0.15s', position: 'relative' }}
-                                            onClick={() => { setActiveProjectFilter(p.id); setShowProjectsPage(false); }}>
-                                            <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: p.color, marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>📁</div>
-                                            <div style={{ fontWeight: 600, fontSize: '15px', color: 'var(--text-primary)', marginBottom: '4px' }}>{p.name}</div>
-                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{convCount} conversation{convCount !== 1 ? 's' : ''}</div>
-                                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', opacity: 0.6 }}>Updated {new Date(p.created_at).toLocaleDateString()}</div>
-                                            <button type="button" onClick={(e) => { e.stopPropagation(); deleteProject(p.id); }}
-                                                style={{ position: 'absolute', top: '12px', right: '12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.4, padding: '2px 4px' }}
-                                                title="Delete project">🗑️</button>
+
+                    {/* Body */}
+                    {!activeProjectDetail ? (
+                        // ── Projects grid ────────────────────────────────────
+                        <div className="flex-1 overflow-y-auto p-6">
+                            {projectsLoading ? (
+                                <div style={{ textAlign: 'center', paddingTop: '80px', color: 'var(--text-muted)', fontSize: '13px' }}>Loading projects…</div>
+                            ) : projects.length === 0 ? (
+                                <div style={{ textAlign: 'center', paddingTop: '80px', color: 'var(--text-muted)', fontSize: '14px' }}>
+                                    <div style={{ fontSize: '40px', marginBottom: '12px', opacity: 0.3 }}>📁</div>
+                                    <div style={{ fontWeight: 600, marginBottom: '6px' }}>No projects yet</div>
+                                    <div style={{ fontSize: '12px', opacity: 0.7 }}>Create a project to organise your conversations</div>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', maxWidth: '960px', margin: '0 auto' }}>
+                                    {projects.map(p => {
+                                        const convCount = Object.values(convProjects).filter(v => v === p.id).length;
+                                        const fileCount = (projectFiles[p.id] ?? []).length;
+                                        return (
+                                            <div key={p.id}
+                                                style={{ borderRadius: '12px', background: 'var(--bg-secondary)', border: `1px solid var(--border-default)`, padding: '20px', cursor: 'pointer', transition: 'all 0.15s', position: 'relative' }}
+                                                onClick={() => { setActiveProjectDetail(p.id); setProjectDetailTab('overview'); void loadProjectDetail(p.id); }}>
+                                                {/* Logo */}
+                                                <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: p.color, marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>
+                                                    {p.emoji ?? '📁'}
+                                                </div>
+                                                <div style={{ fontWeight: 600, fontSize: '15px', color: 'var(--text-primary)', marginBottom: '4px' }}>{p.name}</div>
+                                                {p.description && (
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }}>
+                                                        {p.description}
+                                                    </div>
+                                                )}
+                                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px', display: 'flex', gap: '10px' }}>
+                                                    <span>💬 {convCount} chat{convCount !== 1 ? 's' : ''}</span>
+                                                    <span>📄 {fileCount} file{fileCount !== 1 ? 's' : ''}</span>
+                                                </div>
+                                                <button type="button" onClick={(e) => { e.stopPropagation(); void deleteProject(p.id); }}
+                                                    style={{ position: 'absolute', top: '12px', right: '12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.3, padding: '2px 4px' }}
+                                                    title="Delete project">🗑️</button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        // ── Project detail view ──────────────────────────────
+                        (() => {
+                            const proj = projects.find(p => p.id === activeProjectDetail);
+                            if (!proj) return null;
+                            const files = projectFiles[activeProjectDetail] ?? [];
+                            const projConvs = Object.entries(convProjects)
+                                .filter(([, pid]) => pid === activeProjectDetail)
+                                .map(([cid]) => conversations.find(c => c.id === cid))
+                                .filter(Boolean);
+
+                            const isEditing = editingProject?.id === activeProjectDetail;
+
+                            return (
+                                <div className="flex flex-1 overflow-hidden">
+                                    {/* Left sidebar - project info */}
+                                    <div style={{ width: '300px', borderRight: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', padding: '24px', overflowY: 'auto', flexShrink: 0 }}>
+                                        {/* Emoji/colour editor */}
+                                        <div style={{ position: 'relative', marginBottom: '20px' }}>
+                                            <div
+                                                style={{ width: '64px', height: '64px', borderRadius: '16px', background: isEditing ? (editingProject.color ?? proj.color) : proj.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', cursor: isEditing ? 'pointer' : 'default', border: isEditing ? '2px dashed rgba(255,255,255,0.2)' : 'none' }}
+                                                onClick={() => isEditing && setShowEmojiPicker(v => !v)}
+                                                title={isEditing ? 'Click to change emoji' : ''}>
+                                                {(isEditing ? editingProject.emoji : proj.emoji) ?? '📁'}
+                                            </div>
+
+                                            {/* Emoji picker dropdown */}
+                                            {isEditing && showEmojiPicker && (
+                                                <div style={{ position: 'absolute', top: '70px', left: 0, zIndex: 100, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '10px', width: '220px' }}>
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: 600 }}>Choose emoji</div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '10px' }}>
+                                                        {['📁','🚀','💡','🎯','🔧','📊','🤖','🧪','💻','🎨','📝','⚡','🔬','🌐','🏗️','🎮','📈','🛡️','🔑','💎'].map(em => (
+                                                            <button key={em} type="button"
+                                                                style={{ fontSize: '20px', padding: '4px', background: editingProject?.emoji === em ? 'var(--accent-glow)' : 'none', border: 'none', cursor: 'pointer', borderRadius: '4px' }}
+                                                                onClick={() => { setEditingProject(prev => prev ? { ...prev, emoji: em } : prev); setShowEmojiPicker(false); }}>
+                                                                {em}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Colour</div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                        {['#f97316','#3b82f6','#10b981','#8b5cf6','#ec4899','#f59e0b','#06b6d4','#ef4444','#84cc16','#6366f1'].map(c => (
+                                                            <button key={c} type="button"
+                                                                style={{ width: '24px', height: '24px', borderRadius: '50%', background: c, border: editingProject?.color === c ? '2px solid white' : '2px solid transparent', cursor: 'pointer' }}
+                                                                onClick={() => setEditingProject(prev => prev ? { ...prev, color: c } : prev)} />
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
+
+                                        {/* Name */}
+                                        {isEditing ? (
+                                            <input
+                                                style={{ width: '100%', fontWeight: 700, fontSize: '18px', color: 'var(--text-primary)', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '6px 10px', marginBottom: '12px', boxSizing: 'border-box' }}
+                                                value={editingProject.name ?? proj.name}
+                                                onChange={e => setEditingProject(prev => prev ? { ...prev, name: e.target.value } : prev)}
+                                            />
+                                        ) : (
+                                            <div style={{ fontWeight: 700, fontSize: '18px', color: 'var(--text-primary)', marginBottom: '12px' }}>{proj.name}</div>
+                                        )}
+
+                                        {/* Description */}
+                                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Description</div>
+                                        {isEditing ? (
+                                            <textarea
+                                                style={{ width: '100%', fontSize: '12px', color: 'var(--text-primary)', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', marginBottom: '16px', resize: 'vertical', minHeight: '80px', fontFamily: 'DM Sans, sans-serif', boxSizing: 'border-box' }}
+                                                placeholder="What is this project about?"
+                                                value={editingProject.description ?? ''}
+                                                onChange={e => setEditingProject(prev => prev ? { ...prev, description: e.target.value } : prev)}
+                                            />
+                                        ) : (
+                                            <div style={{ fontSize: '13px', color: proj.description ? 'var(--text-secondary)' : 'var(--text-muted)', marginBottom: '16px', fontStyle: proj.description ? 'normal' : 'italic' }}>
+                                                {proj.description || 'No description yet'}
+                                            </div>
+                                        )}
+
+                                        {/* Action buttons */}
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                            {isEditing ? (
+                                                <>
+                                                    <button type="button" className="btn-primary" style={{ padding: '6px 14px', fontSize: '12px', flex: 1 }}
+                                                        onClick={() => void saveProjectEdits()}>
+                                                        ✓ Save
+                                                    </button>
+                                                    <button type="button" className="btn-secondary" style={{ padding: '6px 14px', fontSize: '12px' }}
+                                                        onClick={() => { setEditingProject(null); setShowEmojiPicker(false); }}>
+                                                        Cancel
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <button type="button" className="btn-secondary" style={{ padding: '6px 14px', fontSize: '12px' }}
+                                                        onClick={() => setEditingProject({ id: proj.id, name: proj.name, description: proj.description, ai_instructions: proj.ai_instructions, emoji: proj.emoji, color: proj.color })}>
+                                                        ✏️ Edit
+                                                    </button>
+                                                    <button type="button" onClick={() => { setActiveProjectFilter(proj.id); setShowProjectsPage(false); setActiveProjectDetail(null); }}
+                                                        className="btn-secondary" style={{ padding: '6px 14px', fontSize: '12px' }}>
+                                                        Filter chats
+                                                    </button>
+                                                    <button type="button" className="btn-secondary" style={{ padding: '6px 14px', fontSize: '12px', color: '#f87171' }}
+                                                        onClick={() => void deleteProject(proj.id)}>
+                                                        🗑️
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+
+                                        {/* Stats */}
+                                        <div style={{ marginTop: '24px', padding: '12px', background: 'var(--bg-elevated)', borderRadius: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                                <span>Conversations</span><span style={{ color: 'var(--text-primary)' }}>{projConvs.length}</span>
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                <span>Files</span><span style={{ color: 'var(--text-primary)' }}>{files.length}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Right content area */}
+                                    <div className="flex-1 flex flex-col overflow-hidden">
+                                        {/* Tabs */}
+                                        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', padding: '0 24px' }}>
+                                            {(['overview', 'files', 'instructions'] as const).map(tab => (
+                                                <button key={tab} type="button"
+                                                    style={{ padding: '12px 16px', fontSize: '13px', fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', color: projectDetailTab === tab ? 'var(--accent)' : 'var(--text-muted)', borderBottom: projectDetailTab === tab ? '2px solid var(--accent)' : '2px solid transparent', transition: 'all 0.15s' }}
+                                                    onClick={() => setProjectDetailTab(tab)}>
+                                                    {tab === 'overview' ? '💬 Chats' : tab === 'files' ? '📄 Files' : '🤖 AI Instructions'}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        <div className="flex-1 overflow-y-auto p-6">
+                                            {/* OVERVIEW TAB — conversations */}
+                                            {projectDetailTab === 'overview' && (
+                                                <div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                                                        Conversations in this project
+                                                    </div>
+                                                    {projConvs.length === 0 ? (
+                                                        <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: '13px' }}>
+                                                            <div style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.3 }}>💬</div>
+                                                            No conversations assigned yet.<br />
+                                                            <span style={{ fontSize: '12px', opacity: 0.7 }}>Use the project dropdown in the sidebar to assign chats.</span>
+                                                        </div>
+                                                    ) : (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                            {projConvs.map(c => c && (
+                                                                <div key={c.id}
+                                                                    style={{ padding: '12px 16px', background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-subtle)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                                                                    onClick={() => { setShowProjectsPage(false); setActiveProjectDetail(null); void openConversation(c.id); }}>
+                                                                    <span style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{titles[c.id] ?? c.title ?? c.id.slice(0, 8)}</span>
+                                                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{new Date(c.updated_at).toLocaleDateString()}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* FILES TAB */}
+                                            {projectDetailTab === 'files' && (
+                                                <div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                                        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                                            Upload text/code files as context for this project
+                                                        </div>
+                                                        <label style={{ cursor: 'pointer' }}>
+                                                            <input type="file" className="hidden"
+                                                                accept=".ts,.tsx,.js,.jsx,.py,.sql,.md,.txt,.json,.yaml,.yml,.sh,.csv"
+                                                                multiple
+                                                                onChange={async (e) => {
+                                                                    const files = Array.from(e.target.files ?? []);
+                                                                    for (const f of files) await uploadProjectFile(activeProjectDetail!, f);
+                                                                    e.target.value = '';
+                                                                }} />
+                                                            <span className="btn-primary" style={{ padding: '6px 14px', fontSize: '12px' }}>+ Add files</span>
+                                                        </label>
+                                                    </div>
+
+                                                    {files.length === 0 ? (
+                                                        <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: '13px' }}>
+                                                            <div style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.3 }}>📄</div>
+                                                            No files yet.<br />
+                                                            <span style={{ fontSize: '12px', opacity: 0.7 }}>Files are included as context when you chat in this project.</span>
+                                                        </div>
+                                                    ) : (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                            {files.map(f => (
+                                                                <div key={f.id} style={{ padding: '12px 16px', background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                    <div>
+                                                                        <div style={{ fontSize: '13px', color: 'var(--text-primary)', fontWeight: 500 }}>{f.name}</div>
+                                                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                                                            {f.file_type.toUpperCase()} · {(f.size_bytes / 1024).toFixed(1)}KB · {new Date(f.created_at).toLocaleDateString()}
+                                                                        </div>
+                                                                    </div>
+                                                                    <button type="button"
+                                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.4, padding: '4px' }}
+                                                                        onClick={() => void removeProjectFile(activeProjectDetail!, f.id)}>
+                                                                        🗑️
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* AI INSTRUCTIONS TAB */}
+                                            {projectDetailTab === 'instructions' && (
+                                                <div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                                                        These instructions are prepended to every AI message in this project, like a system prompt.
+                                                    </div>
+                                                    <textarea
+                                                        style={{ width: '100%', minHeight: '300px', fontSize: '13px', color: 'var(--text-primary)', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '12px', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', lineHeight: '1.6', boxSizing: 'border-box' }}
+                                                        placeholder={"Example:\n- Always respond in Pine Script v5\n- Prefer efficiency over readability\n- When I say 'fix it', look for the most likely error first"}
+                                                        value={isEditing ? (editingProject.ai_instructions ?? '') : (proj.ai_instructions ?? '')}
+                                                        onChange={e => {
+                                                            if (!isEditing) {
+                                                                setEditingProject({ id: proj.id, name: proj.name, description: proj.description, ai_instructions: e.target.value, emoji: proj.emoji, color: proj.color });
+                                                            } else {
+                                                                setEditingProject(prev => prev ? { ...prev, ai_instructions: e.target.value } : prev);
+                                                            }
+                                                        }}
+                                                    />
+                                                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+                                                        <button type="button" className="btn-primary" style={{ padding: '8px 20px', fontSize: '13px' }}
+                                                            onClick={() => {
+                                                                if (!editingProject) {
+                                                                    setEditingProject({ id: proj.id, name: proj.name, description: proj.description, ai_instructions: proj.ai_instructions, emoji: proj.emoji, color: proj.color });
+                                                                }
+                                                                void saveProjectEdits();
+                                                            }}>
+                                                            Save instructions
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()
+                    )}
                 </div>
             )}
 

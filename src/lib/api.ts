@@ -123,10 +123,10 @@ function getApiBase(): string {
 
 function getApiKey(): string {
     const key = process.env.NEXT_PUBLIC_API_KEY;
-    
-    console.log("🔑 API Key from env:", key ? `${key.substring(0,4)}...` : 'missing');
+
+    console.log("🔑 API Key from env:", key ? `${key.substring(0, 4)}...` : 'missing');
     console.log("🔑 NODE_ENV:", process.env.NODE_ENV);
-    
+
     // In production, we MUST have a key
     if (process.env.NODE_ENV === "production") {
         if (!key) {
@@ -138,7 +138,7 @@ function getApiKey(): string {
     }
 
     const finalKey = key || "dev-key-123";
-    console.log("✅ Using API key:", finalKey.substring(0,4) + "...");
+    console.log("✅ Using API key:", finalKey.substring(0, 4) + "...");
     return finalKey;
 }
 
@@ -165,16 +165,16 @@ async function apiFetch<T>(
                 "Authorization": (await supabase.auth.getSession()).data.session?.access_token ? 'present' : 'missing'
             }
         });
-        
+
         // Additional debug logs
-        console.log("🔑 API_KEY value check:", API_KEY ? `Present (${API_KEY.substring(0,4)}...)` : 'MISSING');
+        console.log("🔑 API_KEY value check:", API_KEY ? `Present (${API_KEY.substring(0, 4)}...)` : 'MISSING');
         console.log("🔑 API_KEY length:", API_KEY ? API_KEY.length : 0);
         console.log("🔑 Full headers being sent:", {
             "Content-Type": "application/json",
-            "x-api-key": API_KEY ? `${API_KEY.substring(0,4)}...` : 'missing',
+            "x-api-key": API_KEY ? `${API_KEY.substring(0, 4)}...` : 'missing',
             "Authorization": (await supabase.auth.getSession()).data.session?.access_token ? 'present' : 'missing'
         });
-        
+
         const res = await fetchWithRetry(`${API_BASE}${path}`, {
             ...options,
             signal: controller.signal,
@@ -381,6 +381,102 @@ export type SnippetVersion = {
     source: 'ai_generated' | 'user_edit' | 'import' | 'restore';
     created_at: string;
 };
+
+export type Project = {
+    id: string;
+    user_id: string;
+    name: string;
+    description: string | null;
+    ai_instructions: string | null;
+    emoji: string | null;
+    color: string;
+    created_at: string;
+    updated_at: string;
+};
+
+export type ProjectFile = {
+    id: string;
+    project_id: string;
+    user_id: string;
+    name: string;
+    content: string;
+    file_type: string;
+    size_bytes: number;
+    created_at: string;
+    updated_at: string;
+};
+
+// ============================================
+// PROJECT API FUNCTIONS
+// ============================================
+
+export async function getProjects() {
+    return apiFetch<{ projects: Project[] }>("/api/projects");
+}
+
+export async function createProject(params: {
+    name: string;
+    description?: string | null;
+    ai_instructions?: string | null;
+    emoji?: string | null;
+    color?: string;
+}) {
+    return apiFetch<{ id: string }>("/api/projects", {
+        method: "POST",
+        body: JSON.stringify(params),
+    });
+}
+
+export async function updateProject(
+    projectId: string,
+    params: {
+        name?: string;
+        description?: string | null;
+        ai_instructions?: string | null;
+        emoji?: string | null;
+        color?: string;
+    }
+) {
+    return apiFetch<{ ok: true }>(`/api/projects/${encodeURIComponent(projectId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(params),
+    });
+}
+
+export async function deleteProject(projectId: string) {
+    return apiFetch<{ ok: true }>(`/api/projects/${encodeURIComponent(projectId)}`, {
+        method: "DELETE",
+    });
+}
+
+export async function addProjectFile(
+    projectId: string,
+    params: {
+        name: string;
+        content: string;
+        file_type?: string;
+    }
+) {
+    return apiFetch<{ id: string }>(`/api/projects/${encodeURIComponent(projectId)}/files`, {
+        method: "POST",
+        body: JSON.stringify(params),
+    });
+}
+
+export async function deleteProjectFile(projectId: string, fileId: string) {
+    return apiFetch<{ ok: true }>(
+        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`,
+        { method: "DELETE" }
+    );
+}
+
+export async function getProjectDetail(projectId: string) {
+    return apiFetch<{
+        project: Project;
+        files: ProjectFile[];
+        conversations: Array<{ id: string; title: string | null; updated_at: string }>;
+    }>(`/api/projects/${encodeURIComponent(projectId)}`);
+}
 
 export async function getSnippets() {
     return apiFetch<{ snippets: Snippet[] }>("/api/snippets");
