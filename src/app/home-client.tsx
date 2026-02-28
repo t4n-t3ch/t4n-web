@@ -40,11 +40,19 @@ type SnippetVersion = {
 
 /* eslint-disable react/no-unescaped-entities */
 
+type Project = {
+    id: string;
+    name: string;
+    color: string;
+    created_at: string;
+};
+
 type Conversation = {
     id: string;
     title?: string | null;
     created_at?: string;
     updated_at: string;
+    project_id?: string | null;
 };
 type Msg = {
     id: string;
@@ -134,11 +142,17 @@ export default function HomeClient() {
     const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins' | 'appearance'>('prompts');
 
     const [pluginResult, setPluginResult] = useState<unknown>(null);
+    const [copiedBlockId, setCopiedBlockId] = useState<string | null>(null);
+    const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
     const [pluginRuns, setPluginRuns] = useState<PluginRun[]>([]);
     // last tool event emitted from /api/chat/stream (server sends `event: tool`)
 
     const [titles, setTitles] = useState<Record<string, string>>({});
     const [convSearch, setConvSearch] = useState("");
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [activeProjectFilter, setActiveProjectFilter] = useState<string | null>(null);
+    const [showProjectsPage, setShowProjectsPage] = useState(false);
+    const [convProjects, setConvProjects] = useState<Record<string, string>>({}); // convId -> projectId
 
     // =========================
     // Layout: resizable panels
@@ -644,7 +658,24 @@ export default function HomeClient() {
     const lastSendRef = useRef<{ text: string; conversationId?: string } | null>(null);
     const [canRetry, setCanRetry] = useState(false);
 
-    function cancelStreamSilently() {
+    function highlightInCanvas(searchText: string) {
+        const ta = codeTextareaRef.current;
+        if (!ta || !searchText) return;
+        const idx = ta.value.indexOf(searchText);
+        if (idx === -1) return;
+        setCodeOpen(true);
+        requestAnimationFrame(() => {
+            const el = codeTextareaRef.current;
+            if (!el) return;
+            el.focus();
+            el.setSelectionRange(idx, idx + searchText.length);
+            const linesBefore = el.value.slice(0, idx).split('\n').length;
+            const lineHeight = 20;
+            el.scrollTop = Math.max(0, (linesBefore - 3) * lineHeight);
+        });
+    }
+
+function cancelStreamSilently() {
         abortRef.current?.abort();
         abortRef.current = null;
         setStreaming(false);
@@ -1682,8 +1713,78 @@ ${codeContext}` : ""}`
         </div>
     );
 
+    const PROJECT_COLORS = ['#f97316','#3b82f6','#10b981','#8b5cf6','#ec4899','#f59e0b','#06b6d4','#ef4444'];
+
+    function createProject() {
+        const name = prompt("Project name:");
+        if (!name?.trim()) return;
+        const color = PROJECT_COLORS[projects.length % PROJECT_COLORS.length];
+        const project: Project = { id: globalThis.crypto.randomUUID(), name: name.trim(), color, created_at: new Date().toISOString() };
+        setProjects(p => [...p, project]);
+    }
+
+    function deleteProject(id: string) {
+        if (!confirm("Delete project? Conversations will be unassigned.")) return;
+        setProjects(p => p.filter(x => x.id !== id));
+        setConvProjects(prev => {
+            const next = { ...prev };
+            for (const k of Object.keys(next)) { if (next[k] === id) delete next[k]; }
+            return next;
+        });
+        if (activeProjectFilter === id) setActiveProjectFilter(null);
+    }
+
+    function assignToProject(convId: string, projectId: string | null) {
+        setConvProjects(prev => {
+            const next = { ...prev };
+            if (projectId === null) { delete next[convId]; } else { next[convId] = projectId; }
+            return next;
+        });
+    }
+
     return (
         <div className="flex h-screen overflow-hidden">
+            {/* Projects Page Overlay */}
+            {showProjectsPage && (
+                <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'var(--bg-primary)' }}>
+                    <div className="flex items-center gap-3 p-4" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                        <Image src="/t4n-logo.png" alt="T4N" width={22} height={22} className="h-5 w-5 object-contain opacity-90" />
+                        <span style={{ fontWeight: 700, fontSize: '18px', color: 'var(--text-primary)' }}>Projects</span>
+                        <div className="ml-auto flex items-center gap-2">
+                            <button type="button" className="btn-primary" style={{ padding: '6px 16px', fontSize: '13px' }} onClick={createProject}>+ New project</button>
+                            <button type="button" className="btn-secondary" style={{ padding: '6px 14px', fontSize: '13px' }} onClick={() => setShowProjectsPage(false)}>✕ Close</button>
+                        </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-6">
+                        {projects.length === 0 ? (
+                            <div style={{ textAlign: 'center', paddingTop: '80px', color: 'var(--text-muted)', fontSize: '14px' }}>
+                                <div style={{ fontSize: '40px', marginBottom: '12px', opacity: 0.3 }}>📁</div>
+                                <div style={{ fontWeight: 600, marginBottom: '6px' }}>No projects yet</div>
+                                <div style={{ fontSize: '12px', opacity: 0.7 }}>Create a project to organise your conversations</div>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', maxWidth: '960px', margin: '0 auto' }}>
+                                {projects.map(p => {
+                                    const convCount = Object.values(convProjects).filter(v => v === p.id).length;
+                                    return (
+                                        <div key={p.id} style={{ borderRadius: '12px', background: 'var(--bg-secondary)', border: `1px solid var(--border-default)`, padding: '20px', cursor: 'pointer', transition: 'all 0.15s', position: 'relative' }}
+                                            onClick={() => { setActiveProjectFilter(p.id); setShowProjectsPage(false); }}>
+                                            <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: p.color, marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>📁</div>
+                                            <div style={{ fontWeight: 600, fontSize: '15px', color: 'var(--text-primary)', marginBottom: '4px' }}>{p.name}</div>
+                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{convCount} conversation{convCount !== 1 ? 's' : ''}</div>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', opacity: 0.6 }}>Updated {new Date(p.created_at).toLocaleDateString()}</div>
+                                            <button type="button" onClick={(e) => { e.stopPropagation(); deleteProject(p.id); }}
+                                                style={{ position: 'absolute', top: '12px', right: '12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.4, padding: '2px 4px' }}
+                                                title="Delete project">🗑️</button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {sidebarOpen && (
                 <>
                     <aside
@@ -1702,6 +1803,20 @@ ${codeContext}` : ""}`
                             </button>
                         </div>
 
+                        {/* Projects bar */}
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <button type="button" onClick={() => setShowProjectsPage(true)}
+                                style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                📁 Projects
+                            </button>
+                            {activeProjectFilter && (
+                                <button type="button" onClick={() => setActiveProjectFilter(null)}
+                                    style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', border: `1px solid ${projects.find(p => p.id === activeProjectFilter)?.color ?? 'var(--accent)'}`, background: 'transparent', color: projects.find(p => p.id === activeProjectFilter)?.color ?? 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                    ✕ {projects.find(p => p.id === activeProjectFilter)?.name}
+                                </button>
+                            )}
+                        </div>
+
                         <input
                             className="w-full rounded border px-3 py-2 text-sm focus-tangerine"
                             style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
@@ -1714,7 +1829,12 @@ ${codeContext}` : ""}`
                             {conversations.length === 0 ? (
                                 <li style={{ color: 'var(--text-muted)', fontSize: '12px', padding: '8px 4px' }}>No conversations yet</li>
                             ) : (
-                                filteredConversations.map((c) => (
+                                filteredConversations
+                                    .filter(c => activeProjectFilter ? convProjects[c.id] === activeProjectFilter : true)
+                                    .map((c) => {
+                                    const projId = convProjects[c.id];
+                                    const proj = projects.find(p => p.id === projId);
+                                    return (
                                     <li
                                         key={c.id}
                                         className={`cursor-pointer select-none rounded-md px-2 py-2 ${activeId === c.id ? "active-tangerine" : "conversation-item"}`}
@@ -1722,9 +1842,12 @@ ${codeContext}` : ""}`
                                         onClick={() => { router.push(`/?c=${encodeURIComponent(c.id)}`); void openConversation(c.id); }}
                                     >
                                         <div className="flex items-center justify-between gap-2 group">
-                                            <span className="truncate" style={{ fontSize: '13px' }}>
-                                                {titles[c.id] ?? c.title ?? c.id.slice(0, 8)}
-                                            </span>
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                {proj && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: proj.color, flexShrink: 0, display: 'inline-block' }} title={proj.name} />}
+                                                <span className="truncate" style={{ fontSize: '13px' }}>
+                                                    {titles[c.id] ?? c.title ?? c.id.slice(0, 8)}
+                                                </span>
+                                            </div>
                                             <div className="flex items-center gap-1 shrink-0">
                                                 <div className="hidden group-hover:flex items-center gap-1">
                                                     <button type="button"
@@ -1732,6 +1855,16 @@ ${codeContext}` : ""}`
                                                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); void handleRenameConversation(c.id); }}>
                                                         ✏️
                                                     </button>
+                                                    <select
+                                                        style={{ fontSize: '10px', padding: '1px 4px', borderRadius: '4px', border: '1px solid var(--border-default)', background: 'var(--bg-hover)', color: 'var(--text-secondary)', cursor: 'pointer', maxWidth: '80px' }}
+                                                        value={convProjects[c.id] ?? ""}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        onChange={(e) => { e.stopPropagation(); assignToProject(c.id, e.target.value || null); }}
+                                                        title="Assign to project"
+                                                    >
+                                                        <option value="">No project</option>
+                                                        {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                                    </select>
                                                     <button type="button"
                                                         style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', color: 'var(--text-secondary)' }}
                                                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); void handleDeleteConversation(c.id); }}>
@@ -1744,7 +1877,8 @@ ${codeContext}` : ""}`
                                             </div>
                                         </div>
                                     </li>
-                                ))
+                                    );
+                                })
                             )}
                         </ul>
                     </aside>
@@ -2057,9 +2191,9 @@ ${codeContext}` : ""}`
                                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 10px', background: 'rgba(249,115,22,0.1)' }}>
                                                                     <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>FIND</span>
                                                                     <button type="button"
-                                                                        style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.3)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer' }}
-                                                                        onClick={async () => { try { await navigator.clipboard.writeText(findText); } catch { } }}>
-                                                                        Copy
+                                                                        style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.3)', background: copiedBlockId === `find-${segKey}` ? 'rgba(249,115,22,0.25)' : 'transparent', color: copiedBlockId === `find-${segKey}` ? '#fff' : 'var(--accent)', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                                        onClick={async () => { try { await navigator.clipboard.writeText(findText); setCopiedBlockId(`find-${segKey}`); setTimeout(() => setCopiedBlockId(null), 1500); highlightInCanvas(findText); } catch { } }}>
+                                                                        {copiedBlockId === `find-${segKey}` ? '✓ Copied' : 'Copy'}
                                                                     </button>
                                                                 </div>
                                                                 <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{findText}</pre>
@@ -2069,9 +2203,9 @@ ${codeContext}` : ""}`
                                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 10px', background: 'rgba(99,102,241,0.1)' }}>
                                                                     <span style={{ fontSize: '10px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{actionLabel}</span>
                                                                     <button type="button"
-                                                                        style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(99,102,241,0.3)', background: 'transparent', color: '#818cf8', cursor: 'pointer' }}
-                                                                        onClick={async () => { try { await navigator.clipboard.writeText(replaceText); } catch { } }}>
-                                                                        Copy
+                                                                        style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(99,102,241,0.3)', background: copiedBlockId === `replace-${segKey}` ? 'rgba(99,102,241,0.25)' : 'transparent', color: copiedBlockId === `replace-${segKey}` ? '#fff' : '#818cf8', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                                        onClick={async () => { try { await navigator.clipboard.writeText(replaceText); setCopiedBlockId(`replace-${segKey}`); setTimeout(() => setCopiedBlockId(null), 1500); } catch { } }}>
+                                                                        {copiedBlockId === `replace-${segKey}` ? '✓ Copied' : 'Copy'}
                                                                     </button>
                                                                 </div>
                                                                 <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{replaceText || '(empty — delete the found line)'}</pre>
@@ -2364,6 +2498,7 @@ ${codeContext}` : ""}`
                             <div className="p-3 overflow-y-auto pb-8">
                                 {codeText ? (
                                     <textarea
+                                        ref={codeTextareaRef}
                                         className="w-full h-[55vh] whitespace-pre font-mono break-words overflow-auto"
                                         style={{ background: '#0d0d10', color: '#e2e2e8', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '10px', fontSize: '12px', lineHeight: '1.7', fontFamily: 'JetBrains Mono, monospace', resize: 'none' }}
                                         value={codeText}
