@@ -2977,62 +2977,51 @@ ${codeContext}` : ""}`
                             </div>
 
                             <div className="p-3 overflow-y-auto pb-8">
-                                {codeText ? (
-                                    <textarea
-                                        ref={codeTextareaRef}
-                                        className="w-full h-[55vh] whitespace-pre font-mono break-words overflow-auto"
-                                        style={{ background: '#0d0d10', color: '#e2e2e8', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '10px', fontSize: '12px', lineHeight: '1.7', fontFamily: 'JetBrains Mono, monospace', resize: 'none' }}
-                                        value={codeText}
-                                        readOnly={false}
-                                        placeholder="Paste code here or wait for AI to generate..."
-                                        onChange={(e) => {
-                                            const newValue = e.target.value;
-                                            setCodeText(newValue);
-                                            addToHistory(newValue); // Add to history on manual edit
-                                            if (activeCodeId) {
-                                                setHasUnsavedChanges(true);
-                                            } else if (newValue.trim()) {
-                                                setUnsavedCode(newValue);
+                                <textarea
+                                    ref={codeTextareaRef}
+                                    className="w-full h-[55vh] whitespace-pre font-mono break-words overflow-auto"
+                                    style={{ background: '#0d0d10', color: '#e2e2e8', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '10px', fontSize: '12px', lineHeight: '1.7', fontFamily: 'JetBrains Mono, monospace', resize: 'none' }}
+                                    value={codeText}
+                                    placeholder="Paste code here, ask the AI, or type directly…"
+                                    onChange={(e) => {
+                                        const newValue = e.target.value;
+                                        setCodeText(newValue);
+                                        addToHistory(newValue);
+                                        if (activeCodeId) {
+                                            setHasUnsavedChanges(true);
+                                        } else if (newValue.trim()) {
+                                            setUnsavedCode(newValue);
+                                            setHasUnsavedChanges(true);
+                                            setActiveCodeId(null);
+                                        }
+                                    }}
+                                    onPaste={(e) => {
+                                        const pastedText = e.clipboardData?.getData("text") ?? "";
+                                        setTimeout(() => {
+                                            if (pastedText.trim()) {
+                                                setUnsavedCode(pastedText);
                                                 setHasUnsavedChanges(true);
                                                 setActiveCodeId(null);
+                                                addToHistory(pastedText);
                                             }
-                                        }}
-                                        onPaste={(e) => {
-                                            const pastedText = e.clipboardData?.getData("text") ?? "";
-                                            setTimeout(() => {
-                                                if (pastedText.trim()) {
-                                                    setUnsavedCode(pastedText);
-                                                    setHasUnsavedChanges(true);
-                                                    setActiveCodeId(null);
-                                                    addToHistory(pastedText); // Add to history on paste
-                                                }
-                                            }, 0);
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Tab") {
-                                                e.preventDefault();
-                                                const el = e.currentTarget;
-                                                const start = el.selectionStart ?? 0;
-                                                const end = el.selectionEnd ?? 0;
-                                                const insert = "  "; // 2 spaces
-                                                const next = codeText.slice(0, start) + insert + codeText.slice(end);
-                                                setCodeText(next);
-                                                addToHistory(next); // Add to history on tab
-                                                requestAnimationFrame(() => {
-                                                    el.selectionStart = el.selectionEnd = start + insert.length;
-                                                });
-                                            }
-                                        }}
-                                    />
-                                ) : (
-                                    <div style={{ padding: '24px 0', textAlign: 'center' }}>
-                                        <div style={{ fontSize: '24px', marginBottom: '8px', opacity: 0.3 }}>⌨</div>
-                                        <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '4px' }}>No code yet</div>
-                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', opacity: 0.7 }}>
-                                            Paste code here, ask the AI, or type directly
-                                        </div>
-                                    </div>
-                                )}
+                                        }, 0);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Tab") {
+                                            e.preventDefault();
+                                            const el = e.currentTarget;
+                                            const start = el.selectionStart ?? 0;
+                                            const end = el.selectionEnd ?? 0;
+                                            const insert = "  ";
+                                            const next = codeText.slice(0, start) + insert + codeText.slice(end);
+                                            setCodeText(next);
+                                            addToHistory(next);
+                                            requestAnimationFrame(() => {
+                                                el.selectionStart = el.selectionEnd = start + insert.length;
+                                            });
+                                        }
+                                    }}
+                                />
 
                                 {showVersions && activeCodeId && (
                                     <div className="mt-2 pt-2 pb-4" style={{ borderTop: '1px solid var(--border-subtle)' }}>
