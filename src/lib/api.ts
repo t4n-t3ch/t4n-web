@@ -158,7 +158,7 @@ async function apiFetch<T>(
 
     try {
         const session = (await supabase.auth.getSession()).data.session;
-        const accessToken = session?.access_token;
+        const accessToken = session?.access_token ?? "";
 
         console.log(`🌐 API Request: ${API_BASE}${path}`, {
             method: options.method || "GET",
@@ -321,6 +321,7 @@ export async function streamMessage(
     existingCode?: string
 ) {
     const API_BASE = getApiBase();
+    const API_KEY = getApiKey();
 
     const url = conversationId
         ? `${API_BASE}/api/chat/stream?conversationId=${encodeURIComponent(conversationId)}`
@@ -335,7 +336,7 @@ export async function streamMessage(
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "x-api-key": getApiKey(),
+                "x-api-key": API_KEY,
                 ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
             },
             signal,
