@@ -705,7 +705,7 @@ export default function HomeClient() {
         });
     }
 
-function cancelStreamSilently() {
+    function cancelStreamSilently() {
         abortRef.current?.abort();
         abortRef.current = null;
         setStreaming(false);
@@ -1699,34 +1699,46 @@ ${codeContext}` : ""}`
                         {authError}
                     </div>
                 )}
-                <input 
-                    type="email" 
-                    placeholder="Email" 
-                    value={authEmail} 
+                <input
+                    type="email"
+                    placeholder="Email"
+                    value={authEmail}
                     onChange={e => setAuthEmail(e.target.value)}
-                    style={{ width: '100%', background: '#0f0f11', border: '1px solid #2a2a35', borderRadius: 6, padding: '10px 12px', color: '#e2e2e8', fontSize: 13, marginBottom: 10, boxSizing: 'border-box' }} 
+                    style={{ width: '100%', background: '#0f0f11', border: '1px solid #2a2a35', borderRadius: 6, padding: '10px 12px', color: '#e2e2e8', fontSize: 13, marginBottom: 10, boxSizing: 'border-box' }}
                 />
-                <input 
-                    type="password" 
-                    placeholder="Password" 
-                    value={authPassword} 
+                <input
+                    type="password"
+                    placeholder="Password"
+                    value={authPassword}
                     onChange={e => setAuthPassword(e.target.value)}
-                    style={{ width: '100%', background: '#0f0f11', border: '1px solid #2a2a35', borderRadius: 6, padding: '10px 12px', color: '#e2e2e8', fontSize: 13, marginBottom: 16, boxSizing: 'border-box' }} 
+                    onKeyDown={async (e) => {
+                        if (e.key === 'Enter') {
+                            setAuthError(null);
+                            if (authMode === "login") {
+                                const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+                                if (error) setAuthError(error.message);
+                            } else {
+                                const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+                                if (error) setAuthError(error.message);
+                            }
+                        }
+                    }}
+                    style={{ width: '100%', background: '#0f0f11', border: '1px solid #2a2a35', borderRadius: 6, padding: '10px 12px', color: '#e2e2e8', fontSize: 13, marginBottom: 16, boxSizing: 'border-box' }}
                 />
-                <button 
+                <button
                     style={{ width: '100%', background: '#f97316', border: 'none', borderRadius: 6, padding: '10px 0', color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer', marginBottom: 12 }}
                     onClick={async () => {
                         setAuthError(null);
                         if (authMode === "login") {
-                            const { error } = await supabase.auth.signInWithPassword({ 
-                                email: authEmail, 
-                                password: authPassword 
+                            const { error } = await supabase.auth.signInWithPassword({
+                                email: authEmail,
+                                password: authPassword
                             });
                             if (error) setAuthError(error.message);
                         } else {
-                            const { error } = await supabase.auth.signUp({ 
-                                email: authEmail, 
-                                password: authPassword 
+                            const { error } = await supabase.auth.signUp({
+                                email: authEmail,
+                                password: authPassword
                             });
                             if (error) setAuthError(error.message);
                         }
@@ -1744,7 +1756,7 @@ ${codeContext}` : ""}`
         </div>
     );
 
-    const PROJECT_COLORS = ['#f97316','#3b82f6','#10b981','#8b5cf6','#ec4899','#f59e0b','#06b6d4','#ef4444'];
+    const PROJECT_COLORS = ['#f97316', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4', '#ef4444'];
 
     async function createProject() {
         const name = prompt("Project name:");
@@ -1813,7 +1825,7 @@ ${codeContext}` : ""}`
     async function uploadProjectFile(projectId: string, file: File) {
         const text = await file.text();
         const ext = file.name.split('.').pop()?.toLowerCase() ?? 'txt';
-        const fileType = ['ts','tsx','js','jsx','py','sql','md','txt','json','yaml','yml','sh'].includes(ext) ? ext : 'text';
+        const fileType = ['ts', 'tsx', 'js', 'jsx', 'py', 'sql', 'md', 'txt', 'json', 'yaml', 'yml', 'sh'].includes(ext) ? ext : 'text';
 
         // Optimistic local add
         const tempFile: ProjectFile = {
@@ -2001,7 +2013,7 @@ ${codeContext}` : ""}`
                                                 <div style={{ position: 'absolute', top: '70px', left: 0, zIndex: 100, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '10px', width: '220px' }}>
                                                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: 600 }}>Choose emoji</div>
                                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '10px' }}>
-                                                        {['📁','🚀','💡','🎯','🔧','📊','🤖','🧪','💻','🎨','📝','⚡','🔬','🌐','🏗️','🎮','📈','🛡️','🔑','💎'].map(em => (
+                                                        {['📁', '🚀', '💡', '🎯', '🔧', '📊', '🤖', '🧪', '💻', '🎨', '📝', '⚡', '🔬', '🌐', '🏗️', '🎮', '📈', '🛡️', '🔑', '💎'].map(em => (
                                                             <button key={em} type="button"
                                                                 style={{ fontSize: '20px', padding: '4px', background: editingProject?.emoji === em ? 'var(--accent-glow)' : 'none', border: 'none', cursor: 'pointer', borderRadius: '4px' }}
                                                                 onClick={() => { setEditingProject(prev => prev ? { ...prev, emoji: em } : prev); setShowEmojiPicker(false); }}>
@@ -2011,7 +2023,7 @@ ${codeContext}` : ""}`
                                                     </div>
                                                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Colour</div>
                                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                                        {['#f97316','#3b82f6','#10b981','#8b5cf6','#ec4899','#f59e0b','#06b6d4','#ef4444','#84cc16','#6366f1'].map(c => (
+                                                        {['#f97316', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4', '#ef4444', '#84cc16', '#6366f1'].map(c => (
                                                             <button key={c} type="button"
                                                                 style={{ width: '24px', height: '24px', borderRadius: '50%', background: c, border: editingProject?.color === c ? '2px solid white' : '2px solid transparent', cursor: 'pointer' }}
                                                                 onClick={() => setEditingProject(prev => prev ? { ...prev, color: c } : prev)} />
@@ -2265,53 +2277,53 @@ ${codeContext}` : ""}`
                                 filteredConversations
                                     .filter(c => activeProjectFilter ? convProjects[c.id] === activeProjectFilter : true)
                                     .map((c) => {
-                                    const projId = convProjects[c.id];
-                                    const proj = projects.find(p => p.id === projId);
-                                    return (
-                                    <li
-                                        key={c.id}
-                                        className={`cursor-pointer select-none rounded-md px-2 py-2 ${activeId === c.id ? "active-tangerine" : "conversation-item"}`}
-                                        style={{ color: activeId === c.id ? 'var(--accent)' : 'var(--text-secondary)' }}
-                                        onClick={() => { router.push(`/?c=${encodeURIComponent(c.id)}`); void openConversation(c.id); }}
-                                    >
-                                        <div className="flex items-center justify-between gap-2 group">
-                                            <div className="flex items-center gap-1.5 min-w-0">
-                                                {proj && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: proj.color, flexShrink: 0, display: 'inline-block' }} title={proj.name} />}
-                                                <span className="truncate" style={{ fontSize: '13px' }}>
-                                                    {titles[c.id] ?? c.title ?? c.id.slice(0, 8)}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center gap-1 shrink-0">
-                                                <div className="hidden group-hover:flex items-center gap-1">
-                                                    <button type="button"
-                                                        style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', color: 'var(--text-secondary)' }}
-                                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); void handleRenameConversation(c.id); }}>
-                                                        ✏️
-                                                    </button>
-                                                    <select
-                                                        style={{ fontSize: '10px', padding: '1px 4px', borderRadius: '4px', border: '1px solid var(--border-default)', background: 'var(--bg-hover)', color: 'var(--text-secondary)', cursor: 'pointer', maxWidth: '80px' }}
-                                                        value={convProjects[c.id] ?? ""}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        onChange={(e) => { e.stopPropagation(); assignToProject(c.id, e.target.value || null); }}
-                                                        title="Assign to project"
-                                                    >
-                                                        <option value="">No project</option>
-                                                        {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                                    </select>
-                                                    <button type="button"
-                                                        style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', color: 'var(--text-secondary)' }}
-                                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); void handleDeleteConversation(c.id); }}>
-                                                        🗑️
-                                                    </button>
+                                        const projId = convProjects[c.id];
+                                        const proj = projects.find(p => p.id === projId);
+                                        return (
+                                            <li
+                                                key={c.id}
+                                                className={`cursor-pointer select-none rounded-md px-2 py-2 ${activeId === c.id ? "active-tangerine" : "conversation-item"}`}
+                                                style={{ color: activeId === c.id ? 'var(--accent)' : 'var(--text-secondary)' }}
+                                                onClick={() => { router.push(`/?c=${encodeURIComponent(c.id)}`); void openConversation(c.id); }}
+                                            >
+                                                <div className="flex items-center justify-between gap-2 group">
+                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                        {proj && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: proj.color, flexShrink: 0, display: 'inline-block' }} title={proj.name} />}
+                                                        <span className="truncate" style={{ fontSize: '13px' }}>
+                                                            {titles[c.id] ?? c.title ?? c.id.slice(0, 8)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        <div className="hidden group-hover:flex items-center gap-1">
+                                                            <button type="button"
+                                                                style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', color: 'var(--text-secondary)' }}
+                                                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); void handleRenameConversation(c.id); }}>
+                                                                ✏️
+                                                            </button>
+                                                            <select
+                                                                style={{ fontSize: '10px', padding: '1px 4px', borderRadius: '4px', border: '1px solid var(--border-default)', background: 'var(--bg-hover)', color: 'var(--text-secondary)', cursor: 'pointer', maxWidth: '80px' }}
+                                                                value={convProjects[c.id] ?? ""}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                onChange={(e) => { e.stopPropagation(); assignToProject(c.id, e.target.value || null); }}
+                                                                title="Assign to project"
+                                                            >
+                                                                <option value="">No project</option>
+                                                                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                                            </select>
+                                                            <button type="button"
+                                                                style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', color: 'var(--text-secondary)' }}
+                                                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); void handleDeleteConversation(c.id); }}>
+                                                                🗑️
+                                                            </button>
+                                                        </div>
+                                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                                            {new Date(c.updated_at).toLocaleDateString()}
+                                                        </span>
+                                                    </div>
                                                 </div>
-                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                                                    {new Date(c.updated_at).toLocaleDateString()}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </li>
-                                    );
-                                })
+                                            </li>
+                                        );
+                                    })
                             )}
                         </ul>
                     </aside>
@@ -2617,34 +2629,35 @@ ${codeContext}` : ""}`
                                                     const findText = findLines.join('\n').trim();
                                                     const replaceText = replaceLines.join('\n').trim();
 
+                                                    const blockId = segKey++;
                                                     segments.push(
-                                                        <div key={segKey++} style={{ margin: '10px 0' }}>
+                                                        <div key={blockId} style={{ margin: '10px 0' }}>
                                                             {/* FIND box */}
                                                             <div style={{ borderRadius: '6px 6px 0 0', overflow: 'hidden', border: '1px solid rgba(249,115,22,0.35)', borderBottom: 'none' }}>
                                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 10px', background: 'rgba(249,115,22,0.1)' }}>
                                                                     <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>FIND</span>
                                                                     <button type="button"
-                                                                        style={{ 
-                                                                            fontSize: '10px', 
-                                                                            padding: '2px 8px', 
-                                                                            borderRadius: '4px', 
-                                                                            border: copiedBlockId === `find-${segKey}` ? '1px solid #f97316' : '1px solid rgba(249,115,22,0.3)',
-                                                                            background: copiedBlockId === `find-${segKey}` ? '#f97316' : 'transparent',
-                                                                            color: copiedBlockId === `find-${segKey}` ? '#fff' : 'var(--accent)',
-                                                                            fontWeight: copiedBlockId === `find-${segKey}` ? 'bold' : 'normal',
-                                                                            cursor: 'pointer', 
+                                                                        style={{
+                                                                            fontSize: '10px',
+                                                                            padding: '2px 8px',
+                                                                            borderRadius: '4px',
+                                                                            border: copiedBlockId === `find-${blockId}` ? '1px solid #f97316' : '1px solid rgba(249,115,22,0.3)',
+                                                                            background: copiedBlockId === `find-${blockId}` ? '#f97316' : 'transparent',
+                                                                            color: copiedBlockId === `find-${blockId}` ? '#fff' : 'var(--accent)',
+                                                                            fontWeight: copiedBlockId === `find-${blockId}` ? 'bold' : 'normal',
+                                                                            cursor: 'pointer',
                                                                             transition: 'all 0.2s',
-                                                                            boxShadow: copiedBlockId === `find-${segKey}` ? '0 0 10px rgba(249,115,22,0.5)' : 'none'
+                                                                            boxShadow: copiedBlockId === `find-${blockId}` ? '0 0 10px rgba(249,115,22,0.5)' : 'none'
                                                                         }}
-                                                                        onClick={async () => { 
-                                                                            try { 
-                                                                                await navigator.clipboard.writeText(findText); 
-                                                                                setCopiedBlockId(`find-${segKey}`); 
-                                                                                setTimeout(() => setCopiedBlockId(null), 1500); 
-                                                                                highlightInCanvas(findText); 
-                                                                            } catch { } 
+                                                                        onClick={async () => {
+                                                                            try {
+                                                                                await navigator.clipboard.writeText(findText);
+                                                                                setCopiedBlockId(`find-${blockId}`);
+                                                                                setTimeout(() => setCopiedBlockId(null), 1500);
+                                                                                highlightInCanvas(findText);
+                                                                            } catch { }
                                                                         }}>
-                                                                        {copiedBlockId === `find-${segKey}` ? '✓ Copied!' : 'Copy'}
+                                                                        {copiedBlockId === `find-${blockId}` ? '✓ Copied!' : 'Copy'}
                                                                     </button>
                                                                 </div>
                                                                 <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{findText}</pre>
@@ -2654,26 +2667,26 @@ ${codeContext}` : ""}`
                                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 10px', background: 'rgba(99,102,241,0.1)' }}>
                                                                     <span style={{ fontSize: '10px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{actionLabel}</span>
                                                                     <button type="button"
-                                                                        style={{ 
-                                                                            fontSize: '10px', 
-                                                                            padding: '2px 8px', 
-                                                                            borderRadius: '4px', 
-                                                                            border: copiedBlockId === `replace-${segKey}` ? '1px solid #818cf8' : '1px solid rgba(99,102,241,0.3)',
-                                                                            background: copiedBlockId === `replace-${segKey}` ? '#818cf8' : 'transparent',
-                                                                            color: copiedBlockId === `replace-${segKey}` ? '#fff' : '#818cf8',
-                                                                            fontWeight: copiedBlockId === `replace-${segKey}` ? 'bold' : 'normal',
-                                                                            cursor: 'pointer', 
+                                                                        style={{
+                                                                            fontSize: '10px',
+                                                                            padding: '2px 8px',
+                                                                            borderRadius: '4px',
+                                                                            border: copiedBlockId === `replace-${blockId}` ? '1px solid #818cf8' : '1px solid rgba(99,102,241,0.3)',
+                                                                            background: copiedBlockId === `replace-${blockId}` ? '#818cf8' : 'transparent',
+                                                                            color: copiedBlockId === `replace-${blockId}` ? '#fff' : '#818cf8',
+                                                                            fontWeight: copiedBlockId === `replace-${blockId}` ? 'bold' : 'normal',
+                                                                            cursor: 'pointer',
                                                                             transition: 'all 0.2s',
-                                                                            boxShadow: copiedBlockId === `replace-${segKey}` ? '0 0 10px rgba(99,102,241,0.5)' : 'none'
+                                                                            boxShadow: copiedBlockId === `replace-${blockId}` ? '0 0 10px rgba(99,102,241,0.5)' : 'none'
                                                                         }}
-                                                                        onClick={async () => { 
-                                                                            try { 
-                                                                                await navigator.clipboard.writeText(replaceText); 
-                                                                                setCopiedBlockId(`replace-${segKey}`); 
-                                                                                setTimeout(() => setCopiedBlockId(null), 1500); 
-                                                                            } catch { } 
+                                                                        onClick={async () => {
+                                                                            try {
+                                                                                await navigator.clipboard.writeText(replaceText);
+                                                                                setCopiedBlockId(`replace-${blockId}`);
+                                                                                setTimeout(() => setCopiedBlockId(null), 1500);
+                                                                            } catch { }
                                                                         }}>
-                                                                        {copiedBlockId === `replace-${segKey}` ? '✓ Copied!' : 'Copy'}
+                                                                        {copiedBlockId === `replace-${blockId}` ? '✓ Copied!' : 'Copy'}
                                                                     </button>
                                                                 </div>
                                                                 <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{replaceText || '(empty — delete the found line)'}</pre>
