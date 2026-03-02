@@ -2624,9 +2624,27 @@ ${codeContext}` : ""}`
                                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 10px', background: 'rgba(249,115,22,0.1)' }}>
                                                                     <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>FIND</span>
                                                                     <button type="button"
-                                                                        style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.3)', background: copiedBlockId === `find-${segKey}` ? 'rgba(249,115,22,0.25)' : 'transparent', color: copiedBlockId === `find-${segKey}` ? '#fff' : 'var(--accent)', cursor: 'pointer', transition: 'all 0.2s' }}
-                                                                        onClick={async () => { try { await navigator.clipboard.writeText(findText); setCopiedBlockId(`find-${segKey}`); setTimeout(() => setCopiedBlockId(null), 1500); highlightInCanvas(findText); } catch { } }}>
-                                                                        {copiedBlockId === `find-${segKey}` ? '✓ Copied' : 'Copy'}
+                                                                        style={{ 
+                                                                            fontSize: '10px', 
+                                                                            padding: '2px 8px', 
+                                                                            borderRadius: '4px', 
+                                                                            border: copiedBlockId === `find-${segKey}` ? '1px solid #f97316' : '1px solid rgba(249,115,22,0.3)',
+                                                                            background: copiedBlockId === `find-${segKey}` ? '#f97316' : 'transparent',
+                                                                            color: copiedBlockId === `find-${segKey}` ? '#fff' : 'var(--accent)',
+                                                                            fontWeight: copiedBlockId === `find-${segKey}` ? 'bold' : 'normal',
+                                                                            cursor: 'pointer', 
+                                                                            transition: 'all 0.2s',
+                                                                            boxShadow: copiedBlockId === `find-${segKey}` ? '0 0 10px rgba(249,115,22,0.5)' : 'none'
+                                                                        }}
+                                                                        onClick={async () => { 
+                                                                            try { 
+                                                                                await navigator.clipboard.writeText(findText); 
+                                                                                setCopiedBlockId(`find-${segKey}`); 
+                                                                                setTimeout(() => setCopiedBlockId(null), 1500); 
+                                                                                highlightInCanvas(findText); 
+                                                                            } catch { } 
+                                                                        }}>
+                                                                        {copiedBlockId === `find-${segKey}` ? '✓ Copied!' : 'Copy'}
                                                                     </button>
                                                                 </div>
                                                                 <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{findText}</pre>
@@ -2636,9 +2654,26 @@ ${codeContext}` : ""}`
                                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 10px', background: 'rgba(99,102,241,0.1)' }}>
                                                                     <span style={{ fontSize: '10px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{actionLabel}</span>
                                                                     <button type="button"
-                                                                        style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(99,102,241,0.3)', background: copiedBlockId === `replace-${segKey}` ? 'rgba(99,102,241,0.25)' : 'transparent', color: copiedBlockId === `replace-${segKey}` ? '#fff' : '#818cf8', cursor: 'pointer', transition: 'all 0.2s' }}
-                                                                        onClick={async () => { try { await navigator.clipboard.writeText(replaceText); setCopiedBlockId(`replace-${segKey}`); setTimeout(() => setCopiedBlockId(null), 1500); } catch { } }}>
-                                                                        {copiedBlockId === `replace-${segKey}` ? '✓ Copied' : 'Copy'}
+                                                                        style={{ 
+                                                                            fontSize: '10px', 
+                                                                            padding: '2px 8px', 
+                                                                            borderRadius: '4px', 
+                                                                            border: copiedBlockId === `replace-${segKey}` ? '1px solid #818cf8' : '1px solid rgba(99,102,241,0.3)',
+                                                                            background: copiedBlockId === `replace-${segKey}` ? '#818cf8' : 'transparent',
+                                                                            color: copiedBlockId === `replace-${segKey}` ? '#fff' : '#818cf8',
+                                                                            fontWeight: copiedBlockId === `replace-${segKey}` ? 'bold' : 'normal',
+                                                                            cursor: 'pointer', 
+                                                                            transition: 'all 0.2s',
+                                                                            boxShadow: copiedBlockId === `replace-${segKey}` ? '0 0 10px rgba(99,102,241,0.5)' : 'none'
+                                                                        }}
+                                                                        onClick={async () => { 
+                                                                            try { 
+                                                                                await navigator.clipboard.writeText(replaceText); 
+                                                                                setCopiedBlockId(`replace-${segKey}`); 
+                                                                                setTimeout(() => setCopiedBlockId(null), 1500); 
+                                                                            } catch { } 
+                                                                        }}>
+                                                                        {copiedBlockId === `replace-${segKey}` ? '✓ Copied!' : 'Copy'}
                                                                     </button>
                                                                 </div>
                                                                 <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{replaceText || '(empty — delete the found line)'}</pre>
