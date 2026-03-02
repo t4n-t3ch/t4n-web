@@ -157,31 +157,38 @@ async function apiFetch<T>(
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-        // Debug log to see what's being sent
+        const session = (await supabase.auth.getSession()).data.session;
+        const accessToken = session?.access_token;
+
         console.log(`🌐 API Request: ${API_BASE}${path}`, {
-            method: options.method || 'GET',
+            method: options.method || "GET",
             headers: {
-                "x-api-key": API_KEY ? `${API_KEY.substring(0, 4)}...` : 'missing',
-                "Authorization": (await supabase.auth.getSession()).data.session?.access_token ? 'present' : 'missing'
-            }
+                "Content-Type": "application/json",
+                "x-api-key": API_KEY ? `${API_KEY.substring(0, 4)}...` : "missing",
+                "Authorization": accessToken ? "present" : "missing",
+            },
         });
 
         // Additional debug logs
-        console.log("🔑 API_KEY value check:", API_KEY ? `Present (${API_KEY.substring(0, 4)}...)` : 'MISSING');
+        console.log("🔑 API_KEY value check:", API_KEY ? `Present (${API_KEY.substring(0, 4)}...)` : "MISSING");
         console.log("🔑 API_KEY length:", API_KEY ? API_KEY.length : 0);
-        console.log("🔑 Full headers being sent:", {
+        console.log("🔑 Authorization token:", accessToken ? "present" : "missing");
+
+        // Never send "Authorization: Bearer " (empty token) — backend treats it as missing JWT
+        const baseHeaders: Record<string, string> = {
             "Content-Type": "application/json",
-            "x-api-key": API_KEY ? `${API_KEY.substring(0, 4)}...` : 'missing',
-            "Authorization": (await supabase.auth.getSession()).data.session?.access_token ? 'present' : 'missing'
-        });
+            "x-api-key": API_KEY,
+        };
+
+        if (accessToken) {
+            baseHeaders["Authorization"] = `Bearer ${accessToken}`;
+        }
 
         const res = await fetchWithRetry(`${API_BASE}${path}`, {
             ...options,
             signal: controller.signal,
             headers: {
-                "Content-Type": "application/json",
-                "x-api-key": API_KEY,
-                "Authorization": `Bearer ${(await supabase.auth.getSession()).data.session?.access_token ?? ""}`,
+                ...baseHeaders,
                 ...(options.headers || {}),
             },
         });
@@ -306,6 +313,7 @@ export function sendMessage(
  * SSE streaming chat
  * Returns the raw Response so the caller can read the stream
  */
+
 export async function streamMessage(
     message: string,
     conversationId?: string,
@@ -318,6 +326,9 @@ export async function streamMessage(
         ? `${API_BASE}/api/chat/stream?conversationId=${encodeURIComponent(conversationId)}`
         : `${API_BASE}/api/chat/stream`;
 
+    const session = (await supabase.auth.getSession()).data.session;
+    const accessToken = session?.access_token;
+
     return fetchWithRetry(
         url,
         {
@@ -325,7 +336,7 @@ export async function streamMessage(
             headers: {
                 "Content-Type": "application/json",
                 "x-api-key": getApiKey(),
-                "Authorization": `Bearer ${(await supabase.auth.getSession()).data.session?.access_token ?? ""}`,
+                ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
             },
             signal,
             body: JSON.stringify({
