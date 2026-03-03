@@ -2402,7 +2402,7 @@ ${codeContext}` : ""}`
                             <button type="button"
                                 onClick={() => setShowUpgradeModal(true)}
                                 style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '20px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.08)', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>
-                                Free → Upgrade
+                                Free → Upgrade Pro
                             </button>
                         ) : (
                             <span style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '20px', border: '1px solid rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)', color: '#4ade80', fontWeight: 600 }}>
@@ -3330,7 +3330,7 @@ ${codeContext}` : ""}`
                         <div style={{ background: 'linear-gradient(135deg, rgba(249,115,22,0.15), rgba(249,115,22,0.05))', borderBottom: '1px solid var(--border-subtle)', padding: '24px 24px 20px' }}>
                             <div style={{ fontSize: '28px', marginBottom: '8px' }}>⚡</div>
                             <div style={{ fontWeight: 700, fontSize: '20px', color: 'var(--text-primary)', marginBottom: '6px' }}>Upgrade to Pro</div>
-                            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>You've hit the free plan limit. Upgrade to keep going.</div>
+                            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Unlock unlimited access with T4N Pro.</div>
                         </div>
                         {/* Features */}
                         <div style={{ padding: '20px 24px' }}>
