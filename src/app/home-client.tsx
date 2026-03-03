@@ -161,6 +161,9 @@ export default function HomeClient() {
         }
     }, [theme]);
 
+    const [userPlan, setUserPlan] = useState<'free' | 'pro'>('free');
+    const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+    const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins' | 'appearance'>('prompts');
 
@@ -832,6 +835,32 @@ export default function HomeClient() {
         return msg;
     }
 
+    async function startCheckout() {
+        if (!session) return;
+        try {
+            setCheckoutLoading(true);
+            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
+            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
+            const token = session.access_token;
+            const res = await fetch(`${API_BASE}/api/billing/create-checkout-session`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-api-key": API_KEY,
+                    "Authorization": `Bearer ${token}`,
+                },
+                body: JSON.stringify({}),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            if (data.url) window.location.href = data.url;
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Checkout failed");
+        } finally {
+            setCheckoutLoading(false);
+        }
+    }
+
     useEffect(() => {
         // If URL has ?c=..., open that conversation
         if (urlConversationId && urlConversationId !== activeId) {
@@ -905,6 +934,20 @@ export default function HomeClient() {
         if (!session) return;
         void refreshConversations();
         void syncProjectsFromApi();
+        void (async () => {
+            try {
+                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
+                const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
+                const token = session.access_token;
+                const res = await fetch(`${API_BASE}/api/whoami`, {
+                    headers: { "x-api-key": API_KEY, "Authorization": `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.plan) setUserPlan(data.plan);
+                }
+            } catch { /* ignore */ }
+        })();
     }, [session]);
 
     const filteredConversations = (() => {
@@ -1669,11 +1712,15 @@ ${codeContext}` : ""}`
         } catch (err) {
             const msg =
                 err instanceof Error ? err.message : "⚠️ Failed to get a reply. Is the API running?";
-            setError(friendlyError(msg));
-            setMessages((m) => [
-                ...m,
-                { id: globalThis.crypto.randomUUID(), role: "assistant", content: `⚠️ ${friendlyError(msg)}` },
-            ]);
+            if (msg.includes("402") || msg.toLowerCase().includes("payment required") || msg.toLowerCase().includes("quota")) {
+                setShowUpgradeModal(true);
+            } else {
+                setError(friendlyError(msg));
+                setMessages((m) => [
+                    ...m,
+                    { id: globalThis.crypto.randomUUID(), role: "assistant", content: `⚠️ ${friendlyError(msg)}` },
+                ]);
+            }
         } finally {
             setLoading(false);
             setStreaming(false);
@@ -2350,6 +2397,18 @@ ${codeContext}` : ""}`
                     </button>
 
                     <div className="ml-auto flex items-center gap-2">
+                        {/* Plan badge */}
+                        {userPlan === 'free' ? (
+                            <button type="button"
+                                onClick={() => setShowUpgradeModal(true)}
+                                style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '20px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.08)', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>
+                                Free → Upgrade
+                            </button>
+                        ) : (
+                            <span style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '20px', border: '1px solid rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)', color: '#4ade80', fontWeight: 600 }}>
+                                ✓ Pro
+                            </span>
+                        )}
                         {activeId && (
                             <button type="button" className="btn-secondary" style={{ padding: '5px 12px', fontSize: '12px' }}
                                 onClick={() => void refreshPluginRuns(activeId)}>
@@ -3260,6 +3319,49 @@ ${codeContext}` : ""}`
                     )}
                 </form>
             </main>
+
+            {/* Upgrade Modal */}
+            {showUpgradeModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                    onMouseDown={() => setShowUpgradeModal(false)}>
+                    <div style={{ width: '420px', maxWidth: '95vw', borderRadius: '16px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden' }}
+                        onMouseDown={(e) => e.stopPropagation()}>
+                        {/* Header */}
+                        <div style={{ background: 'linear-gradient(135deg, rgba(249,115,22,0.15), rgba(249,115,22,0.05))', borderBottom: '1px solid var(--border-subtle)', padding: '24px 24px 20px' }}>
+                            <div style={{ fontSize: '28px', marginBottom: '8px' }}>⚡</div>
+                            <div style={{ fontWeight: 700, fontSize: '20px', color: 'var(--text-primary)', marginBottom: '6px' }}>Upgrade to Pro</div>
+                            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>You've hit the free plan limit. Upgrade to keep going.</div>
+                        </div>
+                        {/* Features */}
+                        <div style={{ padding: '20px 24px' }}>
+                            {[
+                                { icon: '🔁', text: 'Unlimited AI messages' },
+                                { icon: '💾', text: 'Unlimited saved snippets' },
+                                { icon: '📁', text: 'Unlimited projects' },
+                                { icon: '⚡', text: 'Priority response speed' },
+                            ].map(({ icon, text }) => (
+                                <div key={text} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', fontSize: '13px', color: 'var(--text-primary)' }}>
+                                    <span>{icon}</span><span>{text}</span>
+                                </div>
+                            ))}
+                        </div>
+                        {/* Actions */}
+                        <div style={{ padding: '0 24px 24px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <button type="button"
+                                disabled={checkoutLoading}
+                                onClick={() => void startCheckout()}
+                                style={{ width: '100%', padding: '12px', borderRadius: '8px', background: 'var(--accent)', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14px', cursor: checkoutLoading ? 'not-allowed' : 'pointer', opacity: checkoutLoading ? 0.7 : 1, fontFamily: 'DM Sans, sans-serif' }}>
+                                {checkoutLoading ? 'Redirecting…' : '🚀 Upgrade Now'}
+                            </button>
+                            <button type="button"
+                                onClick={() => setShowUpgradeModal(false)}
+                                style={{ width: '100%', padding: '10px', borderRadius: '8px', background: 'none', border: '1px solid var(--border-default)', color: 'var(--text-muted)', fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                Maybe later
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div >
     );
 }
