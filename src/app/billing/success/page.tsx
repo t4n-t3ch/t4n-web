@@ -6,7 +6,29 @@ export default function BillingSuccess() {
     const router = useRouter();
 
     useEffect(() => {
-        setTimeout(() => router.push("/"), 3000);
+        const run = async () => {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const session_id = params.get("session_id");
+
+                if (session_id) {
+                    // ✅ verifies payment + upgrades user to pro (fallback if webhook missed)
+                    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/billing/verify-session?session_id=${encodeURIComponent(session_id)}`, {
+                        method: "GET",
+                        headers: {
+                            "x-api-key": process.env.NEXT_PUBLIC_API_KEY || "",
+                            "Authorization": `Bearer ${localStorage.getItem("sb-access-token") || ""}`,
+                        },
+                    });
+                }
+            } catch {
+                // ignore — user will still be redirected
+            } finally {
+                setTimeout(() => router.push("/"), 1500);
+            }
+        };
+
+        run();
     }, [router]);
 
     return (
