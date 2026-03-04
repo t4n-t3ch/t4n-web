@@ -1,6 +1,7 @@
 "use client";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 export default function BillingSuccess() {
     const router = useRouter();
@@ -13,11 +14,15 @@ export default function BillingSuccess() {
 
                 if (session_id) {
                     // ✅ verifies payment + upgrades user to pro (fallback if webhook missed)
+                    const { data } = await supabase.auth.getSession();
+                    const accessToken = data.session?.access_token || "";
+                    if (!accessToken) return;
+
                     await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/billing/verify-session?session_id=${encodeURIComponent(session_id)}`, {
                         method: "GET",
                         headers: {
                             "x-api-key": process.env.NEXT_PUBLIC_API_KEY || "",
-                            "Authorization": `Bearer ${localStorage.getItem("sb-access-token") || ""}`,
+                            "Authorization": `Bearer ${accessToken}`,
                         },
                     });
                 }
