@@ -1798,19 +1798,28 @@ ${codeContext}` : ""}`
             const status = (err as Error & { status?: number })?.status;
             const code = (err as Error & { code?: string })?.code;
 
-            // Check for payment required error
+            // Check for payment required error (usage limits)
             const isPaywall =
                 status === 402 ||
                 code === "PAYMENT_REQUIRED" ||
+                code === "TOPIC_RESTRICTED" ||
                 msg.includes("402") ||
                 msg.includes("PAYMENT_REQUIRED") ||
+                msg.includes("UPGRADE_REQUIRED") ||
                 msg === "Free plan limit reached. Upgrade to continue." ||
                 msg.toLowerCase().includes("free plan limit") ||
                 msg.toLowerCase().includes("upgrade to continue") ||
                 msg.toLowerCase().includes("payment required") ||
-                msg.toLowerCase().includes("quota");
+                msg.toLowerCase().includes("quota") ||
+                msg.toLowerCase().includes("pro feature");
 
             if (isPaywall) {
+                // Show appropriate message based on error type
+                if (msg.toLowerCase().includes("pro feature") || code === "TOPIC_RESTRICTED") {
+                    alert("✨ This feature requires a Pro subscription. Please upgrade to access it.");
+                } else {
+                    alert("⚠️ You've reached your free message limit. Please upgrade to Pro to continue chatting.");
+                }
                 setShowUpgradeModal(true);
             } else {
                 setError(friendlyError(msg));
