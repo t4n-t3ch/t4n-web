@@ -1271,7 +1271,19 @@ export default function HomeClient() {
 
                     if (event === "error") {
                         const err = (data || {}) as StreamError;
-                        throw new Error(err.details || err.error || "Stream error");
+                        const msg = err.details || err.error || "Stream error";
+                        const is402 =
+                            (data as { status?: number })?.status === 402 ||
+                            msg.includes("402") ||
+                            msg.toUpperCase().includes("PAYMENT_REQUIRED") ||
+                            msg.toLowerCase().includes("free plan limit") ||
+                            msg.toLowerCase().includes("upgrade to continue");
+                        if (is402) {
+                            const e = new Error(msg) as Error & { status?: number };
+                            e.status = 402;
+                            throw e;
+                        }
+                        throw new Error(msg);
                     }
                 }
             }
