@@ -1712,7 +1712,15 @@ ${codeContext}` : ""}`
         } catch (err) {
             const msg =
                 err instanceof Error ? err.message : "⚠️ Failed to get a reply. Is the API running?";
-            if (msg.includes("402") || msg.toLowerCase().includes("payment required") || msg.toLowerCase().includes("quota")) {
+            const status = (err as Error & { status?: number })?.status;
+            const isPaywall =
+                status === 402 ||
+                msg.includes("402") ||
+                msg.toUpperCase().includes("PAYMENT_REQUIRED") ||
+                msg.toLowerCase().includes("payment required") ||
+                msg.toLowerCase().includes("quota") ||
+                msg.toLowerCase().includes("free plan limit");
+            if (isPaywall) {
                 setShowUpgradeModal(true);
             } else {
                 setError(friendlyError(msg));
