@@ -1277,15 +1277,31 @@ export default function HomeClient() {
                     if (event === "error") {
                         const err = (data || {}) as StreamError;
                         const msg = err.details || err.error || "Stream error";
+
+                        // Check for payment required error using multiple signals
                         const is402 =
+                            // Check status field if present
                             (data as { status?: number })?.status === 402 ||
+                            // Check error code field
+                            (data as { code?: string })?.code === "PAYMENT_REQUIRED" ||
+                            // Check for 402 in message
                             msg.includes("402") ||
-                            msg.toUpperCase().includes("PAYMENT_REQUIRED") ||
+                            // Check for PAYMENT_REQUIRED string
+                            msg.includes("PAYMENT_REQUIRED") ||
+                            // Check exact error message from enforceUsageOrThrow
+                            msg === "Free plan limit reached. Upgrade to continue." ||
+                            // Check for variations of the message
                             msg.toLowerCase().includes("free plan limit") ||
-                            msg.toLowerCase().includes("upgrade to continue");
+                            msg.toLowerCase().includes("upgrade to continue") ||
+                            msg.toLowerCase().includes("payment required") ||
+                            msg.toLowerCase().includes("quota");
+
                         if (is402) {
-                            const e = new Error(msg) as Error & { status?: number };
+                            // Set showUpgradeModal directly in the error handler
+                            // This will be caught by the outer catch and handled there
+                            const e = new Error(msg) as Error & { status?: number; code?: string };
                             e.status = 402;
+                            e.code = "PAYMENT_REQUIRED";
                             throw e;
                         }
                         throw new Error(msg);
