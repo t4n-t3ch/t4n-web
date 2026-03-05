@@ -1,12 +1,15 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-
+// Initialize Stripe inside the function to avoid build-time errors
 export async function POST(_req: NextRequest) {
     try {
+        // Initialize Stripe inside the route handler
+        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+        
         const cookieStore = cookies();
         const supabase = createServerClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -43,7 +46,7 @@ export async function POST(_req: NextRequest) {
             { cancel_at_period_end: true }
         );
 
-        // Use type assertion with a more specific type instead of 'any'
+        // Use type assertion
         type StripeSubscription = {
             id: string;
             current_period_end: number;

@@ -1,12 +1,14 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-
-export async function POST(req: NextRequest) {
+export async function POST(_req: NextRequest) {
     try {
+        // Initialize Stripe inside the route handler
+        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+        
         const cookieStore = cookies();
         const supabase = createServerClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,8 +21,9 @@ export async function POST(req: NextRequest) {
                 },
             }
         );
-        const { data: { user } } = await supabase.auth.getUser();
 
+        const { data: { user } } = await supabase.auth.getUser();
+        
         if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
