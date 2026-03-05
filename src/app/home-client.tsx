@@ -1205,8 +1205,11 @@ export default function HomeClient() {
         onTool?: (data: ToolEvent) => void,
         signal?: AbortSignal,
     ) {
+        console.log("🔍 readSseStream started, response OK:", res.ok);
+
         if (!res.ok || !res.body) {
             const text = await res.text().catch(() => "");
+            console.log("🔴 Response not OK:", { status: res.status, text });
             if (res.status === 402) {
                 const e = new Error("Free plan limit reached. Upgrade to continue.") as Error & { status?: number };
                 e.status = 402;
@@ -1214,6 +1217,8 @@ export default function HomeClient() {
             }
             throw new Error(text || res.statusText || `Request failed (${res.status})`);
         }
+
+        console.log("🔍 Response body exists, starting to read stream");
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
@@ -1232,15 +1237,26 @@ export default function HomeClient() {
         }
 
         try {
+            let frameCount = 0;
+
             while (true) {
-                if (signal?.aborted) return;
+                if (signal?.aborted) {
+                    console.log("🔍 Stream aborted by signal");
+                    return;
+                }
 
                 const { value, done } = await reader.read();
-                if (done) break;
+                if (done) {
+                    console.log("🔍 Stream reading done");
+                    break;
+                }
 
                 if (signal?.aborted) return;
 
-                buf += decoder.decode(value, { stream: true });
+                const chunk = decoder.decode(value, { stream: true });
+                console.log(`🔍 Received chunk #${frameCount++}:`, chunk.substring(0, 100) + (chunk.length > 100 ? '...' : ''));
+
+                buf += chunk;
 
                 let idx: number;
                 while ((idx = buf.indexOf("\n\n")) !== -1) {
@@ -1248,6 +1264,8 @@ export default function HomeClient() {
 
                     const frame = buf.slice(0, idx);
                     buf = buf.slice(idx + 2);
+
+                    console.log("🔍 Raw frame:", frame);
 
                     let event = "message";
                     let dataStr = "";
@@ -1257,12 +1275,15 @@ export default function HomeClient() {
                         if (line.startsWith("data:")) dataStr += line.slice(5).trim();
                     }
 
+                    console.log(`🔍 Parsed event: ${event}, data:`, dataStr.substring(0, 100));
+
                     if (!dataStr) continue;
 
                     const data = (() => {
                         try {
                             return JSON.parse(dataStr);
-                        } catch {
+                        } catch (e) {
+                            console.log("🔴 Failed to parse JSON:", dataStr);
                             return null;
                         }
                     })();
@@ -1275,6 +1296,8 @@ export default function HomeClient() {
                     if (event === "ping") continue;
 
                     if (event === "error") {
+                        console.log("🔴 ERROR EVENT DETECTED! Full data:", data);
+
                         const err = (data || {}) as StreamError;
                         const msg = err.details || err.error || "Stream error";
 
@@ -1312,6 +1335,8 @@ export default function HomeClient() {
 
                         if (is402) {
                             console.log("🔴 THROWING PAYWALL ERROR");
+                            // Also show alert immediately for testing
+                            alert("🔴 PAYWALL DETECTED: " + msg);
                             const e = new Error(msg) as Error & { status?: number; code?: string };
                             e.status = 402;
                             e.code = "PAYMENT_REQUIRED";
@@ -1321,6 +1346,9 @@ export default function HomeClient() {
                     }
                 }
             }
+        } catch (error) {
+            console.log("🔴 Exception in readSseStream:", error);
+            throw error;
         } finally {
             await cancel();
         }
