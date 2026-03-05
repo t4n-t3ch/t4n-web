@@ -1335,8 +1335,6 @@ export default function HomeClient() {
 
                         if (is402) {
                             console.log("🔴 THROWING PAYWALL ERROR");
-                            // Also show alert immediately for testing
-                            alert("🔴 PAYWALL DETECTED: " + msg);
                             const e = new Error(msg) as Error & { status?: number; code?: string };
                             e.status = 402;
                             e.code = "PAYMENT_REQUIRED";
@@ -1813,9 +1811,6 @@ ${codeContext}` : ""}`
                 msg.toLowerCase().includes("quota");
 
             if (isPaywall) {
-                // Show a simple alert popup
-                alert("⚠️ You've reached your free message limit. Please upgrade to Pro to continue chatting.");
-                // Also show the upgrade modal
                 setShowUpgradeModal(true);
             } else {
                 setError(friendlyError(msg));
