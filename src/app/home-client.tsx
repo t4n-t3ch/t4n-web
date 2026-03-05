@@ -1719,7 +1719,8 @@ ${codeContext}` : ""}`
                 msg.toUpperCase().includes("PAYMENT_REQUIRED") ||
                 msg.toLowerCase().includes("payment required") ||
                 msg.toLowerCase().includes("quota") ||
-                msg.toLowerCase().includes("free plan limit");
+                msg.toLowerCase().includes("free plan limit") ||
+                msg.toLowerCase().includes("upgrade to continue");
             if (isPaywall) {
                 setShowUpgradeModal(true);
             } else {

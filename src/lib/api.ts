@@ -330,7 +330,7 @@ export async function streamMessage(
     const session = (await supabase.auth.getSession()).data.session;
     const accessToken = session?.access_token;
 
-    const res = await fetchWithRetry(
+    return fetchWithRetry(
         url,
         {
             method: "POST",
@@ -348,16 +348,6 @@ export async function streamMessage(
         },
         { maxRetries: 2, baseDelayMs: 750, signal }
     );
-
-    // Surface 402 as a typed error before the caller tries to read the stream
-    if (res.status === 402) {
-        const body = await res.text().catch(() => "");
-        const err = new Error("PAYMENT_REQUIRED: " + (body || "Free plan limit reached"));
-        (err as Error & { status: number }).status = 402;
-        throw err;
-    }
-
-    return res;
 }
 
 export async function executePlugin(
