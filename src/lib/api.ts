@@ -330,24 +330,42 @@ export async function streamMessage(
     const session = (await supabase.auth.getSession()).data.session;
     const accessToken = session?.access_token;
 
-    return fetchWithRetry(
-        url,
-        {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "x-api-key": API_KEY,
-                ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-            },
-            signal,
-            body: JSON.stringify({
-                message,
-                conversationId,
-                existingCode,
-            }),
+    console.log("🌐 Streaming to:", url);
+    console.log("🔑 Using API key:", API_KEY ? `${API_KEY.substring(0, 4)}...` : 'missing');
+    console.log("🔑 Auth token:", accessToken ? 'present' : 'missing');
+
+    // Use regular fetch, NOT fetchWithRetry, to get raw SSE stream
+    const response = await fetch(url, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "x-api-key": API_KEY,
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
-        { maxRetries: 2, baseDelayMs: 750, signal }
-    );
+        signal,
+        body: JSON.stringify({
+            message,
+            conversationId,
+            existingCode,
+        }),
+    });
+
+    console.log("📡 Stream response status:", response.status, response.statusText);
+
+    // If not OK, try to get error details
+    if (!response.ok) {
+        try {
+            const text = await response.text();
+            console.error("❌ Stream error response:", text);
+            let data;
+            try { data = JSON.parse(text); } catch { data = text; }
+            throw new Error(data?.error || data?.details || text || `HTTP ${response.status}`);
+        } catch (e) {
+            throw e;
+        }
+    }
+
+    return response;
 }
 
 export async function executePlugin(
