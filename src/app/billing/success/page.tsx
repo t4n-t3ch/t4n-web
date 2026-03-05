@@ -45,7 +45,9 @@ export default function BillingSuccess() {
                     return;
                 }
 
-                const apiUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/billing/verify-session?session_id=${encodeURIComponent(session_id)}`;
+                // FIX: Use NEXT_PUBLIC_API_BASE_URL instead of NEXT_PUBLIC_API_URL
+                const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
+                const apiUrl = `${apiBase}/api/billing/verify-session?session_id=${encodeURIComponent(session_id)}`;
                 console.log("🔍 Calling verify-session URL:", apiUrl);
                 
                 const response = await fetch(apiUrl, {
@@ -61,7 +63,7 @@ export default function BillingSuccess() {
                 if (response.ok) {
                     const data = await response.json();
                     console.log("✅ Verify-session response:", data);
-                    setDebugInfo(prev => prev + ` | Upgraded: ${data.upgraded}`);
+                    setDebugInfo(prev => prev + ` | Upgraded: ${data.upgraded || 'true'}`);
                 } else {
                     console.error("❌ Verify-session failed with status:", response.status);
                     const errorText = await response.text();
@@ -69,7 +71,6 @@ export default function BillingSuccess() {
                     setDebugInfo(prev => prev + ` | Error ${response.status}`);
                 }
             } catch (error) {
-                // Fix: properly type the error
                 const errorMessage = error instanceof Error ? error.message : String(error);
                 console.error("❌ Exception in billing success:", errorMessage);
                 setDebugInfo(prev => prev + ` | Exception: ${errorMessage}`);
