@@ -1757,15 +1757,24 @@ ${codeContext}` : ""}`
             const msg =
                 err instanceof Error ? err.message : "⚠️ Failed to get a reply. Is the API running?";
             const status = (err as Error & { status?: number })?.status;
+            const code = (err as Error & { code?: string })?.code;
+
+            // Check for payment required error
             const isPaywall =
                 status === 402 ||
+                code === "PAYMENT_REQUIRED" ||
                 msg.includes("402") ||
-                msg.toUpperCase().includes("PAYMENT_REQUIRED") ||
-                msg.toLowerCase().includes("payment required") ||
-                msg.toLowerCase().includes("quota") ||
+                msg.includes("PAYMENT_REQUIRED") ||
+                msg === "Free plan limit reached. Upgrade to continue." ||
                 msg.toLowerCase().includes("free plan limit") ||
-                msg.toLowerCase().includes("upgrade to continue");
+                msg.toLowerCase().includes("upgrade to continue") ||
+                msg.toLowerCase().includes("payment required") ||
+                msg.toLowerCase().includes("quota");
+
             if (isPaywall) {
+                // Show a simple alert popup
+                alert("⚠️ You've reached your free message limit. Please upgrade to Pro to continue chatting.");
+                // Also show the upgrade modal
                 setShowUpgradeModal(true);
             } else {
                 setError(friendlyError(msg));
