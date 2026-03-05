@@ -2418,6 +2418,15 @@ ${codeContext}` : ""}`
                                 ✓ Pro
                             </span>
                         )}
+                        <button type="button"
+                            onClick={async () => {
+                                if (confirm("Sign out?")) {
+                                    await supabase.auth.signOut();
+                                }
+                            }}
+                            style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                            Sign out
+                        </button>
                         {activeId && (
                             <button type="button" className="btn-secondary" style={{ padding: '5px 12px', fontSize: '12px' }}
                                 onClick={() => void refreshPluginRuns(activeId)}>
