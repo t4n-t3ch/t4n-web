@@ -1278,12 +1278,24 @@ export default function HomeClient() {
                         const err = (data || {}) as StreamError;
                         const msg = err.details || err.error || "Stream error";
 
+                        // Log the full error for debugging
+                        console.log("🔴 SSE Error received:", {
+                            event,
+                            data,
+                            msg,
+                            status: (data as any)?.status,
+                            code: (data as any)?.code,
+                            error: (data as any)?.error
+                        });
+
                         // Check for payment required error using multiple signals
                         const is402 =
                             // Check status field if present
                             (data as { status?: number })?.status === 402 ||
                             // Check error code field
                             (data as { code?: string })?.code === "PAYMENT_REQUIRED" ||
+                            // Check error field (your backend sends error: "PAYMENT_REQUIRED")
+                            (data as { error?: string })?.error === "PAYMENT_REQUIRED" ||
                             // Check for 402 in message
                             msg.includes("402") ||
                             // Check for PAYMENT_REQUIRED string
@@ -1296,9 +1308,10 @@ export default function HomeClient() {
                             msg.toLowerCase().includes("payment required") ||
                             msg.toLowerCase().includes("quota");
 
+                        console.log("🔴 Is paywall?", { is402, msg });
+
                         if (is402) {
-                            // Set showUpgradeModal directly in the error handler
-                            // This will be caught by the outer catch and handled there
+                            console.log("🔴 THROWING PAYWALL ERROR");
                             const e = new Error(msg) as Error & { status?: number; code?: string };
                             e.status = 402;
                             e.code = "PAYMENT_REQUIRED";
