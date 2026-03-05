@@ -1207,6 +1207,11 @@ export default function HomeClient() {
     ) {
         if (!res.ok || !res.body) {
             const text = await res.text().catch(() => "");
+            if (res.status === 402) {
+                const e = new Error("Free plan limit reached. Upgrade to continue.") as Error & { status?: number };
+                e.status = 402;
+                throw e;
+            }
             throw new Error(text || res.statusText || `Request failed (${res.status})`);
         }
 
