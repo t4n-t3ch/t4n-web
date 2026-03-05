@@ -2,20 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+// Define error type
+type SyncError = {
+  message: string;
+};
 
 export async function GET(req: NextRequest) {
-  // Verify cron secret to prevent unauthorized access
-  const authHeader = req.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   try {
+    // Initialize Stripe inside the function
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+    
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    // Verify cron secret to prevent unauthorized access
+    const authHeader = req.headers.get('authorization');
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const results = {
       syncedSubscriptions: 0,
       errors: [] as string[]
@@ -52,8 +59,10 @@ export async function GET(req: NextRequest) {
           
           results.syncedSubscriptions++;
         }
-      } catch (error: any) {
-        results.errors.push(`Failed to sync ${sub.stripe_subscription_id}: ${error.message}`);
+      } catch (error) {
+        // Properly type the error
+        const err = error as Error;
+        results.errors.push(`Failed to sync ${sub.stripe_subscription_id}: ${err.message}`);
       }
     }
 
@@ -62,10 +71,11 @@ export async function GET(req: NextRequest) {
       timestamp: new Date().toISOString(),
       results 
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Nightly sync failed:', error);
+    const err = error as Error;
     return NextResponse.json(
-      { error: 'Sync failed', details: error.message },
+      { error: 'Sync failed', details: err.message },
       { status: 500 }
     );
   }
