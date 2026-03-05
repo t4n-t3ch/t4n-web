@@ -75,12 +75,10 @@ export async function POST(req: NextRequest) {
         break;
 
       case 'invoice.payment_succeeded':
-        // Handle successful payment
         console.log('Payment succeeded:', event.data.object);
         break;
 
       case 'invoice.payment_failed':
-        // Handle failed payment
         console.log('Payment failed:', event.data.object);
         break;
     }
@@ -92,8 +90,9 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+// Remove this entire block:
+// export const config = {
+//   api: {
+//     bodyParser: false,
+//   },
+// };
