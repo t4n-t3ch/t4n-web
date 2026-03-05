@@ -490,6 +490,12 @@ export async function getProjectDetail(projectId: string) {
     }>(`/api/projects/${encodeURIComponent(projectId)}`);
 }
 
+export async function createBillingPortalSession() {
+    return apiFetch<{ url: string }>("/api/billing/portal", {
+        method: "POST",
+    });
+}
+
 export async function getSnippets() {
     return apiFetch<{ snippets: Snippet[] }>("/api/snippets");
 }

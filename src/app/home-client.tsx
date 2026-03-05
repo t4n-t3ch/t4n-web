@@ -14,6 +14,7 @@ import {
     getPluginRuns,
     renameConversation,
     deleteConversation,
+    createBillingPortalSession,
     getSnippets,
     getSnippet,           // Add this if missing
     createSnippet,
@@ -165,7 +166,7 @@ export default function HomeClient() {
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
-    const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins' | 'appearance'>('prompts');
+    const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins' | 'appearance' | 'billing'>('prompts');
 
     const [pluginResult, setPluginResult] = useState<unknown>(null);
     const [copiedBlockId, setCopiedBlockId] = useState<string | null>(null);
@@ -833,6 +834,16 @@ export default function HomeClient() {
             return "AI is disabled on the free cloud deploy. To use Llama/DeepSeek, run t4n-api locally with Ollama enabled (local mode), then point the web app at your local API.";
         }
         return msg;
+    }
+
+    async function openBillingPortal() {
+        try {
+            const res = await createBillingPortalSession();
+            if (!res.ok) throw new Error(res.error);
+            if (res.data.url) window.location.href = res.data.url;
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to open billing portal");
+        }
     }
 
     async function startCheckout() {
@@ -2414,9 +2425,11 @@ ${codeContext}` : ""}`
                                 Free → Upgrade Pro
                             </button>
                         ) : (
-                            <span style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '20px', border: '1px solid rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)', color: '#4ade80', fontWeight: 600 }}>
-                                ✓ Pro
-                            </span>
+                            <button type="button"
+                                onClick={() => void openBillingPortal()}
+                                style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '20px', border: '1px solid rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)', color: '#4ade80', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                ✓ Pro · Manage
+                            </button>
                         )}
                         <button type="button"
                             onClick={async () => {
@@ -2462,7 +2475,7 @@ ${codeContext}` : ""}`
                             </div>
 
                             <div className="flex" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                                {(['prompts', 'plugins', 'appearance'] as const).map((tab) => (
+                                {(['prompts', 'plugins', 'appearance', 'billing'] as const).map((tab) => (
                                     <button
                                         key={tab}
                                         onClick={() => setActiveSettingsTab(tab)}
@@ -2544,6 +2557,38 @@ ${codeContext}` : ""}`
                                                 </button>
                                             ))}
                                         </div>
+                                    </div>
+                                )}
+
+                                {activeSettingsTab === 'billing' && (
+                                    <div className="space-y-4">
+                                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Subscription</p>
+                                        <div style={{ padding: '16px', background: 'var(--bg-elevated)', borderRadius: '10px', border: '1px solid var(--border-default)' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                                <span style={{ fontSize: '13px', color: 'var(--text-primary)', fontWeight: 600 }}>Current plan</span>
+                                                {userPlan === 'pro' ? (
+                                                    <span style={{ padding: '3px 10px', fontSize: '11px', borderRadius: '20px', border: '1px solid rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)', color: '#4ade80', fontWeight: 600 }}>✓ Pro</span>
+                                                ) : (
+                                                    <span style={{ padding: '3px 10px', fontSize: '11px', borderRadius: '20px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.08)', color: 'var(--accent)', fontWeight: 600 }}>Free</span>
+                                                )}
+                                            </div>
+                                            {userPlan === 'pro' ? (
+                                                <button type="button"
+                                                    onClick={() => { setSettingsOpen(false); void openBillingPortal(); }}
+                                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', background: 'var(--bg-hover)', border: '1px solid var(--border-default)', color: 'var(--text-primary)', fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                                    Manage Subscription →
+                                                </button>
+                                            ) : (
+                                                <button type="button"
+                                                    onClick={() => { setSettingsOpen(false); setShowUpgradeModal(true); }}
+                                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', background: 'var(--accent)', border: 'none', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                                    🚀 Upgrade to Pro
+                                                </button>
+                                            )}
+                                        </div>
+                                        <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                            Manage your subscription, update payment details, or cancel via the Stripe billing portal.
+                                        </p>
                                     </div>
                                 )}
 
