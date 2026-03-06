@@ -32,7 +32,7 @@ import {
     deleteProjectFile as apiDeleteProjectFile,
     getProjectDetail,
     type Project as ApiProject,
-    type ProjectFile as ApiProjectFile,
+    // type ProjectFile as ApiProjectFile, // removed unused import
 } from "@/lib/api";
 
 
@@ -47,8 +47,6 @@ type SnippetVersion = {
     source: 'ai_generated' | 'user_edit' | 'import' | 'restore';
     created_at: string;
 };
-
-/* eslint-disable react/no-unescaped-entities */
 
 type Project = {
     id: string;
@@ -168,7 +166,7 @@ export default function HomeClient() {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins' | 'appearance' | 'billing'>('prompts');
 
-    const [pluginResult, setPluginResult] = useState<unknown>(null);
+    const [, setPluginResult] = useState<unknown>(null);
     const [copiedBlockId, setCopiedBlockId] = useState<string | null>(null);
     const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
     const [pluginRuns, setPluginRuns] = useState<PluginRun[]>([]);
@@ -280,7 +278,7 @@ export default function HomeClient() {
     const [savedCodes, setSavedCodes] = useState<Snippet[]>([]);
     const [activeCodeId, setActiveCodeId] = useState<string | null>(null);
     const [giveAiAccessToCode, setGiveAiAccessToCode] = useState(false);
-    const [accessLockedSnippetId, setAccessLockedSnippetId] = useState<string | null>(null);
+    const [, setAccessLockedSnippetId] = useState<string | null>(null);
     const [accessLockedCode, setAccessLockedCode] = useState<string>("");
     const [loadingSnippets, setLoadingSnippets] = useState(false);
     const [snippetVersions, setSnippetVersions] = useState<SnippetVersion[]>([]);
@@ -944,6 +942,7 @@ export default function HomeClient() {
     useEffect(() => {
         if (!session) return;
         void refreshConversations();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         void syncProjectsFromApi();
         void (async () => {
             try {
@@ -1282,7 +1281,7 @@ export default function HomeClient() {
                     const data = (() => {
                         try {
                             return JSON.parse(dataStr);
-                        } catch (e) {
+                        } catch {
                             console.log("🔴 Failed to parse JSON:", dataStr);
                             return null;
                         }
@@ -1306,19 +1305,17 @@ export default function HomeClient() {
                             event,
                             data,
                             msg,
-                            status: (data as any)?.status,
-                            code: (data as any)?.code,
-                            error: (data as any)?.error
+                            status: (data as Record<string, unknown>)?.status,
+                            code: (data as Record<string, unknown>)?.code,
+                            error: (data as Record<string, unknown>)?.error
                         });
 
                         // Check for payment required error using multiple signals
                         const is402 =
                             // Check status field if present
-                            (data as { status?: number })?.status === 402 ||
-                            // Check error code field
-                            (data as { code?: string })?.code === "PAYMENT_REQUIRED" ||
-                            // Check error field (your backend sends error: "PAYMENT_REQUIRED")
-                            (data as { error?: string })?.error === "PAYMENT_REQUIRED" ||
+                            (data as { status?: number } | null)?.status === 402 ||
+                            (data as { code?: string } | null)?.code === "PAYMENT_REQUIRED" ||
+                            (data as { error?: string } | null)?.error === "PAYMENT_REQUIRED" ||
                             // Check for 402 in message
                             msg.includes("402") ||
                             // Check for PAYMENT_REQUIRED string
@@ -1399,9 +1396,6 @@ export default function HomeClient() {
 
             // keep lastSendRef up to date so future retries always have the cid
             lastSendRef.current = { text: payload.text, conversationId: cid };
-
-            const looksLikeErrorReport =
-                /\b(error|cannot call|undeclared|mismatched input|expected|type mismatch|problem)\b/i.test(payload.text);
 
             const hasExistingCode = giveAiAccessToCode && !!codeText.trim();
             const wantsEdit = looksLikeEditRequest(payload.text);
@@ -1632,10 +1626,6 @@ ${codeContext}` : ""}`
             abortRef.current = controller;
 
             const payload = lastSendRef.current ?? { text: apiText, conversationId: activeId ?? undefined };
-
-
-            const looksLikeErrorReport =
-                /\b(error|cannot call|undeclared|mismatched input|expected|type mismatch|problem)\b/i.test(payload.text);
 
             // Use locked snapshot if available, otherwise fall back to live codeText
             const codeForContext = (giveAiAccessToCode && accessLockedCode)
