@@ -276,7 +276,9 @@ export default function HomeClient() {
     // Using imported Snippet type
 
     const [savedCodes, setSavedCodes] = useState<Snippet[]>([]);
-    const [activeCodeId, setActiveCodeId] = useState<string | null>(null);
+    const [activeCodeId, setActiveCodeId] = useState<string | null>(() => {
+        try { return localStorage.getItem('t4n_active_code_id') || null; } catch { return null; }
+    });
     const [giveAiAccessToCode, setGiveAiAccessToCode] = useState(false);
     const [, setAccessLockedSnippetId] = useState<string | null>(null);
     const [accessLockedCode, setAccessLockedCode] = useState<string>("");
@@ -298,6 +300,15 @@ export default function HomeClient() {
                 const res = await getSnippets();
                 if (res.ok) {
                     setSavedCodes(res.data.snippets);
+                    // Restore previously active snippet
+                    const savedId = localStorage.getItem('t4n_active_code_id');
+                    if (savedId) {
+                        const found = res.data.snippets.find((s: Snippet) => s.id === savedId);
+                        if (found) {
+                            setActiveCodeId(found.id);
+                            setCodeText(found.code);
+                        }
+                    }
                 }
             } catch (error) {
                 console.error("Failed to load snippets:", error);
@@ -315,6 +326,13 @@ export default function HomeClient() {
             // ignore
         }
     }, [savedCodes]);
+
+    useEffect(() => {
+        try {
+            if (activeCodeId) localStorage.setItem('t4n_active_code_id', activeCodeId);
+            else localStorage.removeItem('t4n_active_code_id');
+        } catch { /* ignore */ }
+    }, [activeCodeId]);
 
     async function loadVersions(snippetId: string) {
         try {
@@ -3099,7 +3117,7 @@ ${codeContext}` : ""}`
                                             )}
                                             {savedCodes.map((s) => (
                                                 <option key={s.id} value={s.id}>
-                                                    {s.name} {activeCodeId === s.id && hasUnsavedChanges ? '✏️' : ''}
+                                                    {s.name}
                                                 </option>
                                             ))}
                                         </select>
