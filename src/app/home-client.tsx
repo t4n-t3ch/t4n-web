@@ -2569,7 +2569,7 @@ ${codeContext}` : ""}`
                                             borderBottom: activeSettingsTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
                                         }}
                                     >
-                                        {tab === 'prompts' ? 'Prompt Settings' : tab === 'plugins' ? 'Plugins' : 'Appearance'}
+                                        {tab === 'prompts' ? 'Prompt Settings' : tab === 'plugins' ? 'Plugins' : tab === 'appearance' ? 'Appearance' : 'Subscription'}
                                     </button>
                                 ))}
                             </div>
