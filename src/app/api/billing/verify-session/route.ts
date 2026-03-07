@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     try {
         // Initialize Stripe inside the route handler
         const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-        
+
         const cookieStore = cookies();
         const supabase = createServerClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,14 +32,14 @@ export async function GET(req: NextRequest) {
 
         // Get the authenticated user
         const { data: { user }, error: authError } = await supabase.auth.getUser();
-        
+
         if (authError || !user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
         // Get session_id from query params
         const sessionId = req.nextUrl.searchParams.get('session_id');
-        
+
         if (!sessionId) {
             return NextResponse.json({ error: 'Session ID required' }, { status: 400 });
         }
@@ -54,10 +54,10 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
         }
 
-        if (session.payment_status === 'paid') {
-            // Cast to our custom type instead of 'any'
-            const subscription = session.subscription as unknown as SubscriptionData;
-            
+        const subscription = session.subscription as unknown as SubscriptionData;
+        const isActive = subscription?.status === 'active' || subscription?.status === 'trialing' || session.payment_status === 'paid';
+
+        if (isActive) {
             if (!subscription) {
                 return NextResponse.json({ error: 'No subscription found' }, { status: 400 });
             }
@@ -65,8 +65,8 @@ export async function GET(req: NextRequest) {
             // Update user's plan
             await supabase
                 .from('users')
-                .update({ 
-                    plan: 'pro', 
+                .update({
+                    plan: 'pro',
                     stripe_customer_id: session.customer as string,
                     updated_at: new Date().toISOString()
                 })
@@ -89,8 +89,8 @@ export async function GET(req: NextRequest) {
                     onConflict: 'stripe_subscription_id'
                 });
 
-            return NextResponse.json({ 
-                success: true, 
+            return NextResponse.json({
+                success: true,
                 upgraded: true,
                 subscription: {
                     status: subscription.status,
@@ -99,8 +99,8 @@ export async function GET(req: NextRequest) {
             });
         }
 
-        return NextResponse.json({ 
-            success: false, 
+        return NextResponse.json({
+            success: false,
             upgraded: false,
             message: 'Payment not completed'
         });
