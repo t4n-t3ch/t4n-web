@@ -945,18 +945,23 @@ export default function HomeClient() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
         void syncProjectsFromApi();
         void (async () => {
-            try {
-                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
-                const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
-                const token = session.access_token;
-                const res = await fetch(`${API_BASE}/api/whoami`, {
-                    headers: { "x-api-key": API_KEY, "Authorization": `Bearer ${token}` }
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.plan) setUserPlan(data.plan);
-                }
-            } catch { /* ignore */ }
+            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
+            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
+            const token = session.access_token;
+            const delays = [0, 3000, 8000, 15000]; // immediate, then 3s, 8s, 15s (Render cold start)
+            for (const delay of delays) {
+                try {
+                    if (delay > 0) await new Promise(r => setTimeout(r, delay));
+                    const res = await fetch(`${API_BASE}/api/whoami`, {
+                        headers: { "x-api-key": API_KEY, "Authorization": `Bearer ${token}` },
+                        signal: AbortSignal.timeout(4000),
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.plan) { setUserPlan(data.plan); break; }
+                    }
+                } catch { /* retry */ }
+            }
         })();
     }, [session]);
 
