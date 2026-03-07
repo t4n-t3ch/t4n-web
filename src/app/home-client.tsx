@@ -334,6 +334,8 @@ export default function HomeClient() {
 
     async function saveCurrentCode() {
         if (!codeText.trim()) return;
+        // Never auto-save over an existing named snippet — only called for truly new unsaved code
+        if (activeCodeId) return;
 
         try {
             const res = await createSnippet({
@@ -620,14 +622,15 @@ export default function HomeClient() {
             const lang = langRaw.toLowerCase();
             const body = (m[2] || "").replace(/\s+$/, "");
 
-            // Don’t prepend anything that could break Pine’s required first line (//@version=5)
+            // Don't prepend anything that could break Pine's required first line (//@version=5)
             const shouldAnnotateLang = !!lang && lang !== "pinescript" && lang !== "pine";
 
             blocks.push(`${shouldAnnotateLang ? `// ${langRaw}\n` : ""}${body}`);
         }
 
         if (blocks.length > 0) {
-            return blocks.join("\n\n// ------------------------\n\n");
+            // If multiple blocks, take only the LAST one (most complete/final version)
+            return blocks[blocks.length - 1];
         }
 
         // 2) Partial / unclosed fence (common when user presses Stop mid-stream)
@@ -1454,8 +1457,12 @@ ${codeContext}` : ""}`
                         setCodeText(merged);
                         addToHistory(merged);
 
+                        // Never mark unsaved or clear activeCodeId when AI edits an existing snippet
                         if (!activeCodeId) {
                             setUnsavedCode(merged);
+                            setHasUnsavedChanges(true);
+                        } else {
+                            // Keep activeCodeId intact — don't drift to "Snippet N"
                             setHasUnsavedChanges(true);
                         }
 
@@ -1673,8 +1680,12 @@ ${codeContext}` : ""}`
                         setCodeText(merged);
                         addToHistory(merged);
 
+                        // Never mark unsaved or clear activeCodeId when AI edits an existing snippet
                         if (!activeCodeId) {
                             setUnsavedCode(merged);
+                            setHasUnsavedChanges(true);
+                        } else {
+                            // Keep activeCodeId intact — don't drift to "Snippet N"
                             setHasUnsavedChanges(true);
                         }
 
