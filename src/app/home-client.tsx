@@ -1478,17 +1478,16 @@ export default function HomeClient() {
                     ? `\n\nEXISTING CODE (you MUST either give Ctrl+F find-and-replace instructions OR output the FULL corrected file — NEVER output a partial truncated file):\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
                     : "";
 
+            const projectContext = buildProjectContext();
+
             const finalText = (wantsCodeRef.current || (giveAiAccessToCode && codeForContext.trim()))
                 ? `USER REQUEST:
 ${payload.text}${codeContext ? `
 
-${codeContext}` : ""}`
-                : payload.text;
+${codeContext}` : ""}${projectContext}`
+                : `${payload.text}${projectContext}`;
 
-
-            // Send first 800 chars (structure/header) + last 400 chars (tail) 
-            // so AI knows the shape without seeing the full file
-            const codeToSend = undefined; // Code already sent inside finalText via codeContext
+            const codeToSend = undefined;
             const res = await streamMessage(finalText, cid, controller.signal, codeToSend);
 
 
@@ -1703,17 +1702,15 @@ ${codeContext}` : ""}`
                     ? `\n\nEXISTING CODE (you MUST either output the FULL corrected file OR give Ctrl+F find-and-replace instructions — NEVER output a partial truncated file):\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
                     : "";
 
+            const projectContext = buildProjectContext();
+
             const finalText = (wantsCodeRef.current || (giveAiAccessToCode && codeForContext.trim()))
                 ? `USER REQUEST:
 ${payload.text}${codeContext ? `
 
-${codeContext}` : ""}`
-                : payload.text;
+${codeContext}` : ""}${projectContext}`
+                : `${payload.text}${projectContext}`;
 
-            // Hard cap code at 2000 chars client-side — server will trim further
-            // For large scripts, the AI only needs the relevant section anyway
-            // Send first 800 chars (structure/header) + last 400 chars (tail) 
-            // so AI knows the shape without seeing the full file
             const res = await streamMessage(finalText, payload.conversationId, controller.signal);
             let streamed = "";
             let sawDone = false;
@@ -2121,6 +2118,83 @@ ${codeContext}` : ""}`
         } catch (e) {
             console.error("Failed to load project detail:", e);
         }
+    }
+
+    function formatCode(code: string, domain: string): string {
+        const lines = code.split('\n');
+        const result: string[] = [];
+        let indentLevel = 0;
+        const indent = (n: number) => '    '.repeat(Math.max(0, n));
+
+        if (domain === 'pinescript') {
+            // Pine Script: indent inside if/for/while/switch blocks
+            for (const raw of lines) {
+                const line = raw.trimEnd();
+                const trimmed = line.trim();
+                if (!trimmed) { result.push(''); continue; }
+
+                // Decrease indent before closing keywords
+                if (/^(else|else if|switch)\b/.test(trimmed)) {
+                    indentLevel = Math.max(0, indentLevel - 1);
+                }
+
+                result.push(indent(indentLevel) + trimmed);
+
+                // Increase indent after opening keywords
+                if (/^(if |for |while |switch |else\b|else if )/.test(trimmed) && !trimmed.endsWith('=>')) {
+                    indentLevel++;
+                } else if (trimmed.endsWith('=>')) {
+                    indentLevel++;
+                }
+            }
+            return result.join('\n');
+        }
+
+        if (domain === 'python') {
+            // Python: preserve relative indentation, just normalise mixed tabs/spaces
+            return lines.map(l => l.replace(/\t/g, '    ').trimEnd()).join('\n');
+        }
+
+        if (['typescript', 'react', 'javascript', 'generic', 'ctrader', 'mql5', 'unity', 'blender'].includes(domain)) {
+            // Brace-based languages
+            for (const raw of lines) {
+                const line = raw.trimEnd();
+                const trimmed = line.trim();
+                if (!trimmed) { result.push(''); continue; }
+
+                const closingBraces = (trimmed.match(/^[}\])]/) ? 1 : 0);
+                if (closingBraces) indentLevel = Math.max(0, indentLevel - 1);
+
+                result.push(indent(indentLevel) + trimmed);
+
+                const opens = (trimmed.match(/[{[(]/g) || []).length;
+                const closes = (trimmed.match(/[}\])]/g) || []).length;
+                indentLevel = Math.max(0, indentLevel + opens - closes - closingBraces);
+            }
+            return result.join('\n');
+        }
+
+        // Fallback: just trim trailing whitespace
+        return lines.map(l => l.trimEnd()).join('\n');
+    }
+
+    function buildProjectContext(): string {
+        const activeConvProjectId = activeId ? convProjects[activeId] : null;
+        const proj = projects.find(p => p.id === activeConvProjectId);
+        if (!proj) return '';
+
+        const parts: string[] = [];
+        parts.push(`PROJECT: ${proj.name}`);
+        if (proj.description) parts.push(`DESCRIPTION: ${proj.description}`);
+        if (proj.ai_instructions?.trim()) parts.push(`PROJECT INSTRUCTIONS (follow these always):\n${proj.ai_instructions.trim()}`);
+        parts.push(`LANGUAGE/DOMAIN: ${selectedDomain}`);
+
+        const files = projectFiles[proj.id] ?? [];
+        if (files.length > 0) {
+            parts.push(`PROJECT FILES: ${files.map(f => f.name).join(', ')}`);
+        }
+
+        return `\n\n[PROJECT CONTEXT]\n${parts.join('\n')}\n[END PROJECT CONTEXT]`;
     }
 
     return (
@@ -3610,7 +3684,8 @@ ${codeContext}` : ""}`
 
                                             // Build the full prompt including the code
                                             const domain = selectedDomain;
-                                            const fullPrompt = `USER REQUEST:\n${prompt}\n\nEXISTING CODE (${domain}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\``;
+                                            const projectContext = buildProjectContext();
+                                            const fullPrompt = `USER REQUEST:\n${prompt}\n\nEXISTING CODE (${domain}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
 
                                             // Inject into chat input and fire
                                             try {
@@ -3695,6 +3770,30 @@ ${codeContext}` : ""}`
                                         {inlineActionLabel === label ? '⏳' : label}
                                     </button>
                                 ))}
+                                <button
+                                    type="button"
+                                    disabled={!codeText.trim()}
+                                    style={{
+                                        padding: '3px 9px',
+                                        fontSize: '11px',
+                                        borderRadius: '5px',
+                                        border: '1px solid var(--border-default)',
+                                        background: 'var(--bg-elevated)',
+                                        color: 'var(--text-secondary)',
+                                        cursor: !codeText.trim() ? 'not-allowed' : 'pointer',
+                                        opacity: !codeText.trim() ? 0.5 : 1,
+                                        fontFamily: 'DM Sans, sans-serif',
+                                        whiteSpace: 'nowrap',
+                                    }}
+                                    onClick={() => {
+                                        const formatted = formatCode(codeText, selectedDomain);
+                                        setCodeText(formatted);
+                                        addToHistory(formatted);
+                                        setHasUnsavedChanges(true);
+                                    }}
+                                >
+                                    🧹 Format
+                                </button>
                             </div>
 
                             <div className="p-3 overflow-y-auto pb-8">
