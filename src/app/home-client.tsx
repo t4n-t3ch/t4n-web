@@ -192,7 +192,11 @@ export default function HomeClient() {
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [sidebarWidth, setSidebarWidth] = useState(288); // px (w-72)
     const [codeWidth, setCodeWidth] = useState(420); // px
-    const draggingRef = useRef<null | "sidebar" | "code">(null);
+    const [fileTreeOpen, setFileTreeOpen] = useState(true);
+    const [fileTreeWidth, setFileTreeWidth] = useState(220); // px
+    const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
+    const [activeFileId, setActiveFileId] = useState<string | null>(null);
+    const draggingRef = useRef<null | "sidebar" | "code" | "filetree">(null);
 
     useEffect(() => {
         // Restore layout
@@ -241,6 +245,11 @@ export default function HomeClient() {
                 const next = Math.max(280, Math.min(800, viewportW - e.clientX));
                 setCodeWidth(next);
             }
+
+            if (draggingRef.current === "filetree") {
+                const next = Math.max(160, Math.min(400, e.clientX - sidebarWidth));
+                setFileTreeWidth(next);
+            }
         }
 
         function onUp() {
@@ -285,6 +294,13 @@ export default function HomeClient() {
     const [loadingSnippets, setLoadingSnippets] = useState(false);
     const [snippetVersions, setSnippetVersions] = useState<SnippetVersion[]>([]);
     const [showVersions, setShowVersions] = useState(false);
+
+    // Domain / language selection
+    const [selectedDomain, setSelectedDomain] = useState<string>('pinescript');
+
+    // Inline AI code actions
+    const [inlineActionBusy, setInlineActionBusy] = useState(false);
+    const [inlineActionLabel, setInlineActionLabel] = useState<string | null>(null);
 
     // Unsaved snippet handling
     const UNSAVED_ID = 'unsaved';
@@ -2514,12 +2530,162 @@ ${codeContext}` : ""}`
                 </>
             )}
 
+            {/* File Tree Panel */}
+            {fileTreeOpen && (
+                <>
+                    <aside
+                        style={{ width: fileTreeWidth, background: 'var(--bg-secondary)', borderRight: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', flexShrink: 0 }}
+                    >
+                        {/* File Tree Header */}
+                        <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-elevated)' }}>
+                            <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Explorer</span>
+                            <button
+                                type="button"
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--text-muted)', padding: '1px 4px', borderRadius: '3px' }}
+                                onClick={() => setFileTreeOpen(false)}
+                                title="Close explorer"
+                            >✕</button>
+                        </div>
+
+                        {/* File Tree Body */}
+                        <div className="flex-1 overflow-y-auto" style={{ padding: '6px 0' }}>
+                            {projects.length === 0 ? (
+                                <div style={{ padding: '12px 10px', fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                                    <div style={{ marginBottom: '4px', opacity: 0.4 }}>📁</div>
+                                    No projects
+                                </div>
+                            ) : (
+                                projects.map(proj => {
+                                    const isExpanded = expandedProjects[proj.id] ?? false;
+                                    const files = projectFiles[proj.id] ?? [];
+
+                                    return (
+                                        <div key={proj.id}>
+                                            {/* Project row */}
+                                            <div
+                                                style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 10px', cursor: 'pointer', userSelect: 'none', fontSize: '12px', color: 'var(--text-secondary)', background: activeProjectFilter === proj.id ? 'var(--accent-glow)' : 'transparent' }}
+                                                onClick={() => {
+                                                    setExpandedProjects(prev => ({ ...prev, [proj.id]: !isExpanded }));
+                                                    if (!projectFiles[proj.id]) void loadProjectDetail(proj.id);
+                                                }}
+                                            >
+                                                <span style={{ fontSize: '9px', color: 'var(--text-muted)', width: '10px', display: 'inline-block' }}>
+                                                    {isExpanded ? '▼' : '▶'}
+                                                </span>
+                                                <span style={{ fontSize: '13px' }}>{proj.emoji ?? '📁'}</span>
+                                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>
+                                                    {proj.name}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted)', padding: '1px 3px', opacity: 0, transition: 'opacity 0.1s' }}
+                                                    title="Add file"
+                                                    onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                                                    onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        const name = prompt('New file name (e.g. strategy.pine):');
+                                                        if (!name?.trim()) return;
+                                                        await uploadProjectFile(proj.id, new File([''], name.trim(), { type: 'text/plain' }));
+                                                        if (!projectFiles[proj.id]) void loadProjectDetail(proj.id);
+                                                        setExpandedProjects(prev => ({ ...prev, [proj.id]: true }));
+                                                    }}
+                                                >+</button>
+                                            </div>
+
+                                            {/* Files under project */}
+                                            {isExpanded && (
+                                                <div>
+                                                    {files.length === 0 ? (
+                                                        <div style={{ padding: '3px 10px 3px 28px', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                                            No files
+                                                        </div>
+                                                    ) : (
+                                                        files.map(file => {
+                                                            const isActiveFile = activeFileId === file.id;
+                                                            const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+                                                            const icon = ext === 'pine' || ext === 'pinescript' ? '🌲'
+                                                                : ext === 'py' ? '🐍'
+                                                                    : ext === 'ts' || ext === 'tsx' ? '📘'
+                                                                        : ext === 'js' || ext === 'jsx' ? '📙'
+                                                                            : ext === 'json' ? '📋'
+                                                                                : ext === 'md' ? '📝'
+                                                                                    : '📄';
+
+                                                            return (
+                                                                <div
+                                                                    key={file.id}
+                                                                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px 3px 24px', cursor: 'pointer', fontSize: '11px', color: isActiveFile ? 'var(--accent)' : 'var(--text-muted)', background: isActiveFile ? 'var(--accent-glow)' : 'transparent', borderLeft: isActiveFile ? '2px solid var(--accent)' : '2px solid transparent' }}
+                                                                    onClick={() => {
+                                                                        setActiveFileId(file.id);
+                                                                        setCodeText(file.content);
+                                                                        setUnsavedCode(file.content);
+                                                                        setHasUnsavedChanges(false);
+                                                                        setActiveCodeId(null);
+                                                                        setCodeOpen(true);
+                                                                        addToHistory(file.content);
+                                                                    }}
+                                                                >
+                                                                    <span>{icon}</span>
+                                                                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                        {file.name}
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: '#f87171', padding: '1px 2px', opacity: 0, flexShrink: 0 }}
+                                                                        title="Delete file"
+                                                                        onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                                                                        onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
+                                                                        onClick={async (e) => {
+                                                                            e.stopPropagation();
+                                                                            if (!confirm(`Delete ${file.name}?`)) return;
+                                                                            await removeProjectFile(proj.id, file.id);
+                                                                            if (activeFileId === file.id) setActiveFileId(null);
+                                                                        }}
+                                                                    >🗑️</button>
+                                                                </div>
+                                                            );
+                                                        })
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                        {/* Footer — new project shortcut */}
+                        <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border-subtle)' }}>
+                            <button
+                                type="button"
+                                style={{ width: '100%', padding: '5px 0', fontSize: '11px', color: 'var(--text-muted)', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '5px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                onClick={() => void createProject()}
+                            >+ New project</button>
+                        </div>
+                    </aside>
+
+                    {/* File tree drag handle */}
+                    <div
+                        className="w-1 cursor-col-resize"
+                        style={{ background: 'var(--border-subtle)' }}
+                        onPointerDown={() => { draggingRef.current = "filetree"; }}
+                    />
+                </>
+            )}
+
             <main className="flex-1 flex flex-col">
                 <div className="p-3 text-sm flex items-center gap-2" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}>
                     <button type="button" className="btn-secondary" style={{ padding: '5px 12px', fontSize: '12px' }}
                         onClick={() => setSidebarOpen((v) => !v)}
                         title={sidebarOpen ? "Hide conversations" : "Show conversations"}>
                         {sidebarOpen ? "← Hide" : "☰ Chats"}
+                    </button>
+
+                    <button type="button" className="btn-secondary" style={{ padding: '5px 12px', fontSize: '12px' }}
+                        onClick={() => setFileTreeOpen((v) => !v)}
+                        title={fileTreeOpen ? "Hide file explorer" : "Show file explorer"}>
+                        {fileTreeOpen ? "✕ Explorer" : "📁 Explorer"}
                     </button>
 
                     <button type="button" className="btn-secondary" style={{ padding: '5px 12px', fontSize: '12px' }}
@@ -3070,6 +3236,22 @@ ${codeContext}` : ""}`
                                         Copy
                                     </button>
 
+                                    {/* Domain / Language Selector */}
+                                    <select
+                                        value={selectedDomain}
+                                        onChange={(e) => setSelectedDomain(e.target.value)}
+                                        style={{ fontSize: '11px', padding: '3px 6px', borderRadius: '5px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                        title="Select language / domain"
+                                    >
+                                        <option value="pinescript">🌲 Pine Script</option>
+                                        <option value="ctrader">📊 cTrader</option>
+                                        <option value="python">🐍 Python</option>
+                                        <option value="mql5">⚙️ MT5 / MQL5</option>
+                                        <option value="react">⚛️ React / Next.js</option>
+                                        <option value="blender">🎨 Blender</option>
+                                        <option value="unity">🎮 Unity</option>
+                                        <option value="generic">💻 Generic Code</option>
+                                    </select>
 
                                     <div className="flex items-center gap-2">
                                         <select
@@ -3207,6 +3389,128 @@ ${codeContext}` : ""}`
                                         </>
                                     )}
                                 </div>
+                            </div>
+
+                            {/* Inline AI Action Toolbar */}
+                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-primary)' }}>
+                                {([
+                                    { label: '🔍 Explain', prompt: 'Explain what this code does in plain English. Be concise.' },
+                                    { label: '🔧 Fix Errors', prompt: 'Find and fix any errors, bugs, or issues in this code. Use Ctrl+F format for changes.' },
+                                    { label: '✨ Improve', prompt: 'Suggest and apply improvements to this code for readability, performance, and best practices. Use Ctrl+F format.' },
+                                    { label: '🔄 Convert', prompt: `Convert this code to ${selectedDomain === 'pinescript' ? 'cTrader C#' : selectedDomain === 'ctrader' ? 'Pine Script v5' : 'Python'}. Output the full converted file.` },
+                                    { label: '📋 Add Comments', prompt: 'Add clear inline comments to this code explaining what each section does. Use Ctrl+F format.' },
+                                    { label: '⚡ Optimise', prompt: 'Optimise this code for speed and efficiency. Use Ctrl+F format for changes.' },
+                                ] as const).map(({ label, prompt }) => (
+                                    <button
+                                        key={label}
+                                        type="button"
+                                        disabled={!codeText.trim() || inlineActionBusy}
+                                        style={{
+                                            padding: '3px 9px',
+                                            fontSize: '11px',
+                                            borderRadius: '5px',
+                                            border: '1px solid var(--border-default)',
+                                            background: inlineActionLabel === label ? 'var(--accent-glow)' : 'var(--bg-elevated)',
+                                            color: inlineActionLabel === label ? 'var(--accent)' : 'var(--text-secondary)',
+                                            cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer',
+                                            opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
+                                            fontFamily: 'DM Sans, sans-serif',
+                                            transition: 'all 0.15s',
+                                            whiteSpace: 'nowrap',
+                                        }}
+                                        onClick={async () => {
+                                            if (!codeText.trim() || inlineActionBusy) return;
+
+                                            setInlineActionBusy(true);
+                                            setInlineActionLabel(label);
+
+                                            // Build the full prompt including the code
+                                            const domain = selectedDomain;
+                                            const fullPrompt = `USER REQUEST:\n${prompt}\n\nEXISTING CODE (${domain}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\``;
+
+                                            // Inject into chat input and fire
+                                            try {
+                                                // Create a new chat if needed
+                                                let cid = activeId;
+                                                if (!cid) {
+                                                    const newId = await startNewChat();
+                                                    if (!newId) throw new Error('Failed to create conversation');
+                                                    cid = newId;
+                                                }
+
+                                                // Add user message to UI
+                                                const userMsgId = globalThis.crypto.randomUUID();
+                                                setMessages(m => [...m, { id: userMsgId, role: 'user', content: `${label} — running on current code…` }]);
+
+                                                // Stream the response
+                                                const assistantId = globalThis.crypto.randomUUID();
+                                                activeAssistantIdRef.current = assistantId;
+                                                setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+
+                                                abortRef.current?.abort();
+                                                const controller = new AbortController();
+                                                abortRef.current = controller;
+                                                setStreaming(true);
+                                                setLoading(true);
+
+                                                const res = await streamMessage(fullPrompt, cid, controller.signal);
+                                                let streamed = '';
+
+                                                await readSseStream(
+                                                    res,
+                                                    (delta) => {
+                                                        streamed += delta;
+                                                        const extracted = extractCodeBlocks(streamed);
+
+                                                        if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                                                            const merged = (giveAiAccessToCode && accessLockedCode.trim())
+                                                                ? mergePatchWithExisting(accessLockedCode, extracted)
+                                                                : extracted;
+                                                            setCodeText(merged);
+                                                            addToHistory(merged);
+                                                            setHasUnsavedChanges(true);
+                                                            if (giveAiAccessToCode) setAccessLockedCode(merged);
+                                                            setCodeOpen(true);
+                                                        }
+
+                                                        const isCtrlF = /ctrl\+f:/i.test(streamed);
+                                                        let messageToShow = '';
+                                                        if (isCtrlF) {
+                                                            messageToShow = streamed;
+                                                        } else if (extracted) {
+                                                            messageToShow = '[Code updated → check the Code panel]';
+                                                        } else {
+                                                            messageToShow = stripCodeBlocks(streamed);
+                                                        }
+
+                                                        setMessages(m => m.map(msg =>
+                                                            msg.id === assistantId ? { ...msg, content: messageToShow } : msg
+                                                        ));
+                                                    },
+                                                    (doneData) => {
+                                                        const finalCid = doneData?.conversationId || cid;
+                                                        if (finalCid) void refreshPluginRuns(finalCid);
+                                                    },
+                                                    undefined,
+                                                    undefined,
+                                                    controller.signal,
+                                                );
+                                            } catch (err) {
+                                                const msg = err instanceof Error ? err.message : 'Action failed';
+                                                setError(msg);
+                                            } finally {
+                                                setInlineActionBusy(false);
+                                                setInlineActionLabel(null);
+                                                setStreaming(false);
+                                                setLoading(false);
+                                                activeAssistantIdRef.current = null;
+                                                abortRef.current = null;
+                                            }
+                                        }}
+                                    >
+                                        {inlineActionLabel === label ? '⏳' : label}
+                                    </button>
+                                ))}
                             </div>
 
                             <div className="p-3 overflow-y-auto pb-8">
