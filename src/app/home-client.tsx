@@ -2570,6 +2570,9 @@ ${codeContext}` : ""}`
                                 projects.map(proj => {
                                     const isExpanded = expandedProjects[proj.id] ?? false;
                                     const files = projectFiles[proj.id] ?? [];
+                                    const linkedConvIds = Object.entries(convProjects)
+                                        .filter(([, pid]) => pid === proj.id)
+                                        .map(([cid]) => cid);
 
                                     return (
                                         <div key={proj.id}>
@@ -2588,29 +2591,56 @@ ${codeContext}` : ""}`
                                                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>
                                                     {proj.name}
                                                 </span>
-                                                <button
-                                                    type="button"
-                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted)', padding: '1px 3px', opacity: 0, transition: 'opacity 0.1s' }}
-                                                    title="Add file"
-                                                    onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                                                    onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
-                                                    onClick={async (e) => {
-                                                        e.stopPropagation();
-                                                        const name = prompt('New file name (e.g. strategy.pine):');
-                                                        if (!name?.trim()) return;
-                                                        await uploadProjectFile(proj.id, new File([''], name.trim(), { type: 'text/plain' }));
-                                                        if (!projectFiles[proj.id]) void loadProjectDetail(proj.id);
-                                                        setExpandedProjects(prev => ({ ...prev, [proj.id]: true }));
-                                                    }}
-                                                >+</button>
+                                                {/* Always-visible + Add button */}
+                                                <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                                                    <button
+                                                        type="button"
+                                                        title="Add code file"
+                                                        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 5px', lineHeight: 1.4 }}
+                                                        onClick={async () => {
+                                                            const name = prompt('New file name (e.g. strategy.pine):');
+                                                            if (!name?.trim()) return;
+                                                            await uploadProjectFile(proj.id, new File([''], name.trim(), { type: 'text/plain' }));
+                                                            if (!projectFiles[proj.id]) void loadProjectDetail(proj.id);
+                                                            setExpandedProjects(prev => ({ ...prev, [proj.id]: true }));
+                                                        }}
+                                                    >📄+</button>
+                                                    <button
+                                                        type="button"
+                                                        title="Link a chat session"
+                                                        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 5px', lineHeight: 1.4 }}
+                                                        onClick={() => {
+                                                            // Build a list of unlinked recent conversations
+                                                            const unlinked = conversations.filter(c => !convProjects[c.id]);
+                                                            if (unlinked.length === 0) {
+                                                                alert('No unlinked conversations available. All chats are already assigned to a project.');
+                                                                return;
+                                                            }
+                                                            const options = unlinked.slice(0, 30).map((c, i) =>
+                                                                `${i + 1}. ${titles[c.id] ?? c.title ?? c.id.slice(0, 8)}`
+                                                            ).join('\n');
+                                                            const raw = prompt(`Link a chat to "${proj.name}".\n\nEnter the number:\n\n${options}`);
+                                                            if (!raw) return;
+                                                            const idx = parseInt(raw.trim(), 10) - 1;
+                                                            const chosen = unlinked[idx];
+                                                            if (!chosen) { alert('Invalid selection.'); return; }
+                                                            assignToProject(chosen.id, proj.id);
+                                                            setExpandedProjects(prev => ({ ...prev, [proj.id]: true }));
+                                                        }}
+                                                    >💬+</button>
+                                                </div>
                                             </div>
 
-                                            {/* Files under project */}
+                                            {/* Expanded content */}
                                             {isExpanded && (
                                                 <div>
+                                                    {/* ── Code Files sub-section ── */}
+                                                    <div style={{ padding: '4px 10px 2px 22px', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                                        📄 Code Files
+                                                    </div>
                                                     {files.length === 0 ? (
-                                                        <div style={{ padding: '3px 10px 3px 28px', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                                                            No files
+                                                        <div style={{ padding: '2px 10px 4px 24px', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                                            No files — click 📄+ to add
                                                         </div>
                                                     ) : (
                                                         files.map(file => {
@@ -2623,7 +2653,6 @@ ${codeContext}` : ""}`
                                                                             : ext === 'json' ? '📋'
                                                                                 : ext === 'md' ? '📝'
                                                                                     : '📄';
-
                                                             return (
                                                                 <div
                                                                     key={file.id}
@@ -2655,6 +2684,48 @@ ${codeContext}` : ""}`
                                                                             if (activeFileId === file.id) setActiveFileId(null);
                                                                         }}
                                                                     >🗑️</button>
+                                                                </div>
+                                                            );
+                                                        })
+                                                    )}
+
+                                                    {/* ── Chat Sessions sub-section ── */}
+                                                    <div style={{ padding: '6px 10px 2px 22px', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                                        💬 Chat Sessions
+                                                    </div>
+                                                    {linkedConvIds.length === 0 ? (
+                                                        <div style={{ padding: '2px 10px 6px 24px', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                                            No chats — click 💬+ to link
+                                                        </div>
+                                                    ) : (
+                                                        linkedConvIds.map(cid => {
+                                                            const conv = conversations.find(c => c.id === cid);
+                                                            const label = titles[cid] ?? conv?.title ?? cid.slice(0, 8);
+                                                            const isActive = activeId === cid;
+                                                            return (
+                                                                <div
+                                                                    key={cid}
+                                                                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px 3px 24px', cursor: 'pointer', fontSize: '11px', color: isActive ? 'var(--accent)' : 'var(--text-muted)', background: isActive ? 'var(--accent-glow)' : 'transparent', borderLeft: isActive ? '2px solid var(--accent)' : '2px solid transparent' }}
+                                                                    onClick={() => {
+                                                                        // Just highlight — don't open
+                                                                        router.push(`/?c=${encodeURIComponent(cid)}`);
+                                                                    }}
+                                                                >
+                                                                    <span>💬</span>
+                                                                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                        {label}
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 2px', opacity: 0, flexShrink: 0 }}
+                                                                        title="Unlink chat"
+                                                                        onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                                                                        onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            assignToProject(cid, null);
+                                                                        }}
+                                                                    >✕</button>
                                                                 </div>
                                                             );
                                                         })
