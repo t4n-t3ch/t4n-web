@@ -2653,16 +2653,16 @@ ${codeContext}` : ""}`
                                                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '10px' }}>All chats are already linked to a project.</div>
                                                 );
                                                 return (
-                                                    <div style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                                        {unlinked.slice(0, 30).map(c => {
+                                                    <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                        {unlinked.slice(0, 5).map(c => {
                                                             const label = titles[c.id] ?? c.title ?? c.id.slice(0, 8);
                                                             return (
                                                                 <button
                                                                     key={c.id}
                                                                     type="button"
-                                                                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', fontSize: '12px', color: 'var(--text-primary)', background: 'var(--bg-primary)', border: '1px solid var(--border-default)', borderRadius: '6px', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'DM Sans, sans-serif', fontWeight: 500 }}
-                                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent-glow)')}
-                                                                    onMouseLeave={e => (e.currentTarget.style.background = 'var(--bg-primary)')}
+                                                                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', fontSize: '12px', color: '#ffffff', background: '#2a2a2a', border: '1px solid #444', borderRadius: '6px', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'DM Sans, sans-serif', fontWeight: 500 }}
+                                                                    onMouseEnter={e => (e.currentTarget.style.background = '#333')}
+                                                                    onMouseLeave={e => (e.currentTarget.style.background = '#2a2a2a')}
                                                                     onClick={() => {
                                                                         assignToProject(c.id, explorerOverlay.projectId);
                                                                         setExpandedProjects(prev => ({ ...prev, [explorerOverlay.projectId]: true }));
@@ -2779,10 +2779,8 @@ ${codeContext}` : ""}`
                                                                     </span>
                                                                     <button
                                                                         type="button"
-                                                                        style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '3px', cursor: 'pointer', fontSize: '9px', color: '#f87171', padding: '1px 4px', flexShrink: 0, opacity: 0, transition: 'opacity 0.15s', fontFamily: 'DM Sans, sans-serif' }}
+                                                                        style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '3px', cursor: 'pointer', fontSize: '9px', color: '#f87171', padding: '2px 5px', flexShrink: 0, fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
                                                                         title="Remove file"
-                                                                        onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                                                                        onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
                                                                         onClick={async (e) => {
                                                                             e.stopPropagation();
                                                                             await removeProjectFile(proj.id, file.id);
@@ -2822,10 +2820,8 @@ ${codeContext}` : ""}`
                                                                     </span>
                                                                     <button
                                                                         type="button"
-                                                                        style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '3px', cursor: 'pointer', fontSize: '9px', color: '#f87171', padding: '1px 4px', flexShrink: 0, opacity: 0, transition: 'opacity 0.15s', fontFamily: 'DM Sans, sans-serif' }}
+                                                                        style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '3px', cursor: 'pointer', fontSize: '9px', color: '#f87171', padding: '2px 5px', flexShrink: 0, fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
                                                                         title="Unlink chat"
-                                                                        onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                                                                        onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             assignToProject(cid, null);
