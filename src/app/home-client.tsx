@@ -431,7 +431,7 @@ export default function HomeClient() {
         // Update local state immediately
         setSavedCodes((p) => p.map((x) => (x.id === id ? { ...x, name: next.trim() } : x)));
 
-        // Call dedicated rename endpoint
+        // Try dedicated rename endpoint first, fall back to updateSnippet
         try {
             const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
             const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
@@ -443,10 +443,27 @@ export default function HomeClient() {
             });
 
             if (!res.ok) {
-                console.error("Failed to persist rename:", await res.text());
+                // Fallback: use the standard updateSnippet which definitely persists
+                console.warn("Rename endpoint failed, falling back to updateSnippet");
+                const current = savedCodes.find((s) => s.id === id);
+                if (current) await updateSnippet(id, { code: current.code, change_summary: 'Rename', source: 'user_edit', name: next.trim() } as Parameters<typeof updateSnippet>[1]);
             }
         } catch (err) {
-            console.error("Rename API call failed:", err);
+            console.error("Rename API call failed, trying fallback:", err);
+            try {
+                const current = savedCodes.find((s) => s.id === id);
+                if (current) await updateSnippet(id, { code: current.code, change_summary: 'Rename', source: 'user_edit', name: next.trim() } as Parameters<typeof updateSnippet>[1]);
+            } catch (e) {
+                console.error("Fallback rename also failed:", e);
+            }
+        }
+
+        // Always re-fetch to confirm what actually persisted
+        try {
+            const snippetsRes = await getSnippets();
+            if (snippetsRes.ok) setSavedCodes(snippetsRes.data.snippets);
+        } catch (e) {
+            console.error("Failed to refresh snippets after rename:", e);
         }
     }
 
