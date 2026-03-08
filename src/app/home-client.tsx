@@ -198,6 +198,14 @@ export default function HomeClient() {
     const [activeFileId, setActiveFileId] = useState<string | null>(null);
     const draggingRef = useRef<null | "sidebar" | "code" | "filetree">(null);
 
+    // Explorer overlay menus
+    type ExplorerOverlay =
+        | { type: 'add-file'; projectId: string }
+        | { type: 'link-chat'; projectId: string }
+        | null;
+    const [explorerOverlay, setExplorerOverlay] = useState<ExplorerOverlay>(null);
+    const [newFileName, setNewFileName] = useState('');
+
     useEffect(() => {
         // Restore layout
         try {
@@ -2559,6 +2567,125 @@ ${codeContext}` : ""}`
                             >✕</button>
                         </div>
 
+                        {/* Explorer Overlay — add file / link chat */}
+                        {explorerOverlay && (
+                            <div
+                                style={{ position: 'absolute', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                onClick={() => { setExplorerOverlay(null); setNewFileName(''); }}
+                            >
+                                <div
+                                    style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '16px', width: '220px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
+                                    onClick={e => e.stopPropagation()}
+                                >
+                                    {explorerOverlay.type === 'add-file' && (
+                                        <>
+                                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '10px' }}>📄 New Code File</div>
+                                            <input
+                                                autoFocus
+                                                placeholder="e.g. strategy.pine"
+                                                value={newFileName}
+                                                onChange={e => setNewFileName(e.target.value)}
+                                                onKeyDown={async e => {
+                                                    if (e.key === 'Enter' && newFileName.trim()) {
+                                                        const pid = explorerOverlay.projectId;
+                                                        await uploadProjectFile(pid, new File([''], newFileName.trim(), { type: 'text/plain' }));
+                                                        if (!projectFiles[pid]) void loadProjectDetail(pid);
+                                                        setExpandedProjects(prev => ({ ...prev, [pid]: true }));
+                                                        setExplorerOverlay(null);
+                                                        setNewFileName('');
+                                                    }
+                                                    if (e.key === 'Escape') { setExplorerOverlay(null); setNewFileName(''); }
+                                                }}
+                                                style={{ width: '100%', background: 'var(--bg-primary)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '7px 10px', color: 'var(--text-primary)', fontSize: '12px', marginBottom: '8px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }}
+                                            />
+                                            {/* Top 5 existing snippets as quick-pick */}
+                                            {savedCodes.length > 0 && (
+                                                <div style={{ marginBottom: '8px' }}>
+                                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Or pick existing snippet</div>
+                                                    {savedCodes.slice(0, 5).map(s => (
+                                                        <button
+                                                            key={s.id}
+                                                            type="button"
+                                                            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', fontSize: '11px', color: 'var(--text-secondary)', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: '5px', cursor: 'pointer', marginBottom: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'DM Sans, sans-serif' }}
+                                                            onClick={async () => {
+                                                                const pid = explorerOverlay.projectId;
+                                                                await uploadProjectFile(pid, new File([s.code], `${s.name}.pine`, { type: 'text/plain' }));
+                                                                if (!projectFiles[pid]) void loadProjectDetail(pid);
+                                                                setExpandedProjects(prev => ({ ...prev, [pid]: true }));
+                                                                setExplorerOverlay(null);
+                                                                setNewFileName('');
+                                                            }}
+                                                        >
+                                                            🌲 {s.name}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                                <button type="button" onClick={() => { setExplorerOverlay(null); setNewFileName(''); }}
+                                                    style={{ padding: '5px 12px', fontSize: '11px', borderRadius: '5px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                                    Cancel
+                                                </button>
+                                                <button type="button"
+                                                    disabled={!newFileName.trim()}
+                                                    onClick={async () => {
+                                                        if (!newFileName.trim()) return;
+                                                        const pid = explorerOverlay.projectId;
+                                                        await uploadProjectFile(pid, new File([''], newFileName.trim(), { type: 'text/plain' }));
+                                                        if (!projectFiles[pid]) void loadProjectDetail(pid);
+                                                        setExpandedProjects(prev => ({ ...prev, [pid]: true }));
+                                                        setExplorerOverlay(null);
+                                                        setNewFileName('');
+                                                    }}
+                                                    style={{ padding: '5px 12px', fontSize: '11px', borderRadius: '5px', border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', opacity: newFileName.trim() ? 1 : 0.5 }}>
+                                                    Create
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {explorerOverlay.type === 'link-chat' && (
+                                        <>
+                                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '10px' }}>💬 Link Chat Session</div>
+                                            {(() => {
+                                                const unlinked = conversations.filter(c => !convProjects[c.id]);
+                                                if (unlinked.length === 0) return (
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '10px' }}>All chats are already linked to a project.</div>
+                                                );
+                                                return (
+                                                    <div style={{ maxHeight: '180px', overflowY: 'auto', marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                                        {unlinked.slice(0, 30).map(c => {
+                                                            const label = titles[c.id] ?? c.title ?? c.id.slice(0, 8);
+                                                            return (
+                                                                <button
+                                                                    key={c.id}
+                                                                    type="button"
+                                                                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 8px', fontSize: '11px', color: 'var(--text-secondary)', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: '5px', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'DM Sans, sans-serif' }}
+                                                                    onClick={() => {
+                                                                        assignToProject(c.id, explorerOverlay.projectId);
+                                                                        setExpandedProjects(prev => ({ ...prev, [explorerOverlay.projectId]: true }));
+                                                                        setExplorerOverlay(null);
+                                                                    }}
+                                                                >
+                                                                    💬 {label}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                );
+                                            })()}
+                                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                                <button type="button" onClick={() => setExplorerOverlay(null)}
+                                                    style={{ padding: '5px 12px', fontSize: '11px', borderRadius: '5px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         {/* File Tree Body */}
                         <div className="flex-1 overflow-y-auto" style={{ padding: '6px 0' }}>
                             {projects.length === 0 ? (
@@ -2597,36 +2724,13 @@ ${codeContext}` : ""}`
                                                         type="button"
                                                         title="Add code file"
                                                         style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 5px', lineHeight: 1.4 }}
-                                                        onClick={async () => {
-                                                            const name = prompt('New file name (e.g. strategy.pine):');
-                                                            if (!name?.trim()) return;
-                                                            await uploadProjectFile(proj.id, new File([''], name.trim(), { type: 'text/plain' }));
-                                                            if (!projectFiles[proj.id]) void loadProjectDetail(proj.id);
-                                                            setExpandedProjects(prev => ({ ...prev, [proj.id]: true }));
-                                                        }}
+                                                        onClick={() => { setNewFileName(''); setExplorerOverlay({ type: 'add-file', projectId: proj.id }); }}
                                                     >📄+</button>
                                                     <button
                                                         type="button"
                                                         title="Link a chat session"
                                                         style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 5px', lineHeight: 1.4 }}
-                                                        onClick={() => {
-                                                            // Build a list of unlinked recent conversations
-                                                            const unlinked = conversations.filter(c => !convProjects[c.id]);
-                                                            if (unlinked.length === 0) {
-                                                                alert('No unlinked conversations available. All chats are already assigned to a project.');
-                                                                return;
-                                                            }
-                                                            const options = unlinked.slice(0, 30).map((c, i) =>
-                                                                `${i + 1}. ${titles[c.id] ?? c.title ?? c.id.slice(0, 8)}`
-                                                            ).join('\n');
-                                                            const raw = prompt(`Link a chat to "${proj.name}".\n\nEnter the number:\n\n${options}`);
-                                                            if (!raw) return;
-                                                            const idx = parseInt(raw.trim(), 10) - 1;
-                                                            const chosen = unlinked[idx];
-                                                            if (!chosen) { alert('Invalid selection.'); return; }
-                                                            assignToProject(chosen.id, proj.id);
-                                                            setExpandedProjects(prev => ({ ...prev, [proj.id]: true }));
-                                                        }}
+                                                        onClick={() => setExplorerOverlay({ type: 'link-chat', projectId: proj.id })}
                                                     >💬+</button>
                                                 </div>
                                             </div>
