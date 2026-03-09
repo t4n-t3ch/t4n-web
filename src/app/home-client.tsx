@@ -3911,7 +3911,6 @@ ${codeContext}` : ""}${projectContext}`
                                     { label: '🔍 Explain', prompt: 'Explain what this code does in plain English. Be concise.' },
                                     { label: '🔧 Fix Errors', prompt: 'Find and fix any errors, bugs, or issues in this code. Use Ctrl+F format for changes.' },
                                     { label: '✨ Improve', prompt: 'Suggest and apply improvements to this code for readability, performance, and best practices. Use Ctrl+F format.' },
-                                    { label: '🔄 Convert', prompt: `Convert this code to ${selectedDomain === 'pinescript' ? 'cTrader C#' : selectedDomain === 'ctrader' ? 'Pine Script v5' : 'Python'}. Output the full converted file.` },
                                     { label: '📋 Add Comments', prompt: 'Add clear inline comments to this code explaining what each section does. Use Ctrl+F format.' },
                                     { label: '⚡ Optimise', prompt: 'Optimise this code for speed and efficiency. Use Ctrl+F format for changes.' },
                                 ] as const).map(({ label, prompt }) => (
@@ -4051,7 +4050,7 @@ ${codeContext}` : ""}${projectContext}`
                                     🧹 Format
                                 </button>
 
-                                {/* Convert dropdown */}
+                                {/* Convert dropdown — Pro only */}
                                 <div style={{ position: 'relative' }}>
                                     <button
                                         type="button"
@@ -4068,9 +4067,15 @@ ${codeContext}` : ""}${projectContext}`
                                             fontFamily: 'DM Sans, sans-serif',
                                             whiteSpace: 'nowrap',
                                         }}
-                                        onClick={() => setConvertDropdownOpen(v => !v)}
+                                        onClick={() => {
+                                            if (userPlan !== 'pro') {
+                                                setShowUpgradeModal(true);
+                                                return;
+                                            }
+                                            setConvertDropdownOpen(v => !v);
+                                        }}
                                     >
-                                        🔄 Convert ▾
+                                        🔄 Convert ▾ {userPlan !== 'pro' && <span style={{ fontSize: '9px', marginLeft: '2px', opacity: 0.7 }}>✦ Pro</span>}
                                     </button>
 
                                     {convertDropdownOpen && (
