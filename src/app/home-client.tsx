@@ -277,6 +277,7 @@ export default function HomeClient() {
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Reset description when streaming ends
@@ -4557,6 +4558,42 @@ ${codeContext}` : ""}${projectContext}`
                                                 monacoEditorRef.current = editor;
                                                 monacoInstanceRef.current = monaco;
                                                 runDiagnostics(codeText);
+
+                                                // Subscribe to Monaco's own language diagnostics
+                                                const syncMonacoMarkers = () => {
+                                                    const model = editor.getModel();
+                                                    if (!model) return;
+                                                    const markers = monaco.editor.getModelMarkers({ resource: model.uri });
+                                                    const monacoSeverityMap: Record<number, 'error' | 'warning' | 'info'> = {
+                                                        8: 'error',   // MarkerSeverity.Error
+                                                        4: 'warning', // MarkerSeverity.Warning
+                                                        2: 'info',    // MarkerSeverity.Info
+                                                        1: 'info',    // MarkerSeverity.Hint
+                                                    };
+                                                    const monacodiags: Diagnostic[] = markers.map((m: Monaco.editor.IMarker) => ({
+                                                        line: m.startLineNumber,
+                                                        col: m.startColumn,
+                                                        endCol: m.endColumn,
+                                                        severity: monacoSeverityMap[m.severity] ?? 'info',
+                                                        message: m.message,
+                                                        code: `MC${m.code ?? '000'}`,
+                                                    }));
+                                                    // Merge with custom linter results
+                                                    const customDiags = lintCode(codeText, selectedDomain);
+                                                    const merged = [...customDiags, ...monacodiags].sort((a, b) => {
+                                                        const order = { error: 0, warning: 1, info: 2 };
+                                                        return order[a.severity] - order[b.severity] || a.line - b.line;
+                                                    });
+                                                    setDiagnostics(merged);
+                                                    if (merged.some(d => d.severity === 'error' || d.severity === 'warning')) {
+                                                        setDiagnosticsOpen(true);
+                                                    }
+                                                };
+
+                                                // Fire on every marker change (real-time)
+                                                monaco.editor.onDidChangeMarkers((_uris: readonly Monaco.Uri[]) => syncMonacoMarkers());
+                                                // Also run once immediately after mount
+                                                setTimeout(syncMonacoMarkers, 1500);
                                             }}
                                         />
                                     </div>
