@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Session } from "@supabase/supabase-js";
 import Image from "next/image";
 import MonacoEditor from "@monaco-editor/react";
+import DiffViewer from 'react-diff-viewer-continued';
 import {
     listConversations,
     getMessages,
@@ -306,6 +307,9 @@ export default function HomeClient() {
     const [loadingSnippets, setLoadingSnippets] = useState(false);
     const [snippetVersions, setSnippetVersions] = useState<SnippetVersion[]>([]);
     const [showVersions, setShowVersions] = useState(false);
+    const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+    const [compareVersionId, setCompareVersionId] = useState<string | null>(null);
+    const [showDiffView, setShowDiffView] = useState(false);
     const [renameModalId, setRenameModalId] = useState<string | null>(null);
     const [renameModalValue, setRenameModalValue] = useState('');
 
@@ -2220,6 +2224,25 @@ ${codeContext}` : ""}${projectContext}`
         // Inject the preset into the conversion flow
         // This will be used when the user clicks a preset
         setInput(preset.prompt);
+    }
+
+    function getVersionById(id: string): SnippetVersion | undefined {
+        return snippetVersions.find(v => v.id === id);
+    }
+
+    function formatVersionSource(source: string): string {
+        const sources: Record<string, string> = {
+            'ai_generated': 'AI',
+            'user_edit': 'Manual',
+            'import': 'Import',
+            'restore': 'Restore'
+        };
+        return sources[source] || source;
+    }
+
+    function getVersionNumberById(id: string): number {
+        const version = snippetVersions.find(v => v.id === id);
+        return version?.version_number || 0;
     }
 
     function formatCode(code: string, domain: string): string {
@@ -4198,83 +4221,83 @@ ${codeContext}` : ""}${projectContext}`
                                                 ];
                                                 return allConversions.filter(c => c.domains.includes(selectedDomain));
                                             })().map(({ from, to, lang }) => (
-                                            <button
-                                                key={`${from}-${to}`}
-                                                type="button"
-                                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
-                                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
-                                                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                                                onClick={async () => {
-                                                    setConvertDropdownOpen(false);
-                                                    if (!codeText.trim() || inlineActionBusy) return;
+                                                <button
+                                                    key={`${from}-${to}`}
+                                                    type="button"
+                                                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
+                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                    onClick={async () => {
+                                                        setConvertDropdownOpen(false);
+                                                        if (!codeText.trim() || inlineActionBusy) return;
 
-                                                    setInlineActionBusy(true);
-                                                    setInlineActionLabel('🔄 Convert');
+                                                        setInlineActionBusy(true);
+                                                        setInlineActionLabel('🔄 Convert');
 
-                                                    const projectContext = buildProjectContext();
-                                                    const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+                                                        const projectContext = buildProjectContext();
+                                                        const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
 
-                                                    try {
-                                                        let cid = activeId;
-                                                        if (!cid) {
-                                                            const newId = await startNewChat();
-                                                            if (!newId) throw new Error('Failed to create conversation');
-                                                            cid = newId;
+                                                        try {
+                                                            let cid = activeId;
+                                                            if (!cid) {
+                                                                const newId = await startNewChat();
+                                                                if (!newId) throw new Error('Failed to create conversation');
+                                                                cid = newId;
+                                                            }
+
+                                                            const userMsgId = globalThis.crypto.randomUUID();
+                                                            setMessages(m => [...m, { id: userMsgId, role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
+
+                                                            const assistantId = globalThis.crypto.randomUUID();
+                                                            activeAssistantIdRef.current = assistantId;
+                                                            setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+
+                                                            abortRef.current?.abort();
+                                                            const controller = new AbortController();
+                                                            abortRef.current = controller;
+                                                            setStreaming(true);
+                                                            setLoading(true);
+
+                                                            const res = await streamMessage(fullPrompt, cid, controller.signal);
+                                                            let streamed = '';
+
+                                                            await readSseStream(
+                                                                res,
+                                                                (delta) => {
+                                                                    streamed += delta;
+                                                                    const extracted = extractCodeBlocks(streamed);
+                                                                    if (extracted) {
+                                                                        setCodeText(extracted);
+                                                                        addToHistory(extracted);
+                                                                        setHasUnsavedChanges(true);
+                                                                        setCodeOpen(true);
+                                                                    }
+                                                                    setMessages(m => m.map(msg =>
+                                                                        msg.id === assistantId ? { ...msg, content: extracted ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg
+                                                                    ));
+                                                                },
+                                                                (doneData) => {
+                                                                    const finalCid = doneData?.conversationId || cid;
+                                                                    if (finalCid) void refreshPluginRuns(finalCid);
+                                                                },
+                                                                undefined, undefined,
+                                                                controller.signal,
+                                                            );
+                                                        } catch (err) {
+                                                            setError(err instanceof Error ? err.message : 'Conversion failed');
+                                                        } finally {
+                                                            setInlineActionBusy(false);
+                                                            setInlineActionLabel(null);
+                                                            setStreaming(false);
+                                                            setLoading(false);
+                                                            activeAssistantIdRef.current = null;
+                                                            abortRef.current = null;
                                                         }
-
-                                                        const userMsgId = globalThis.crypto.randomUUID();
-                                                        setMessages(m => [...m, { id: userMsgId, role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
-
-                                                        const assistantId = globalThis.crypto.randomUUID();
-                                                        activeAssistantIdRef.current = assistantId;
-                                                        setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-
-                                                        abortRef.current?.abort();
-                                                        const controller = new AbortController();
-                                                        abortRef.current = controller;
-                                                        setStreaming(true);
-                                                        setLoading(true);
-
-                                                        const res = await streamMessage(fullPrompt, cid, controller.signal);
-                                                        let streamed = '';
-
-                                                        await readSseStream(
-                                                            res,
-                                                            (delta) => {
-                                                                streamed += delta;
-                                                                const extracted = extractCodeBlocks(streamed);
-                                                                if (extracted) {
-                                                                    setCodeText(extracted);
-                                                                    addToHistory(extracted);
-                                                                    setHasUnsavedChanges(true);
-                                                                    setCodeOpen(true);
-                                                                }
-                                                                setMessages(m => m.map(msg =>
-                                                                    msg.id === assistantId ? { ...msg, content: extracted ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg
-                                                                ));
-                                                            },
-                                                            (doneData) => {
-                                                                const finalCid = doneData?.conversationId || cid;
-                                                                if (finalCid) void refreshPluginRuns(finalCid);
-                                                            },
-                                                            undefined, undefined,
-                                                            controller.signal,
-                                                        );
-                                                    } catch (err) {
-                                                        setError(err instanceof Error ? err.message : 'Conversion failed');
-                                                    } finally {
-                                                        setInlineActionBusy(false);
-                                                        setInlineActionLabel(null);
-                                                        setStreaming(false);
-                                                        setLoading(false);
-                                                        activeAssistantIdRef.current = null;
-                                                        abortRef.current = null;
-                                                    }
-                                                }}
-                                            >
-                                                <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{from} → {to}</span>
-                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
-                                            </button>
+                                                    }}
+                                                >
+                                                    <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{from} → {to}</span>
+                                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
+                                                </button>
                                             ))}
 
                                             {/* Presets Section */}
@@ -4460,102 +4483,227 @@ ${codeContext}` : ""}${projectContext}`
                                 )}
 
                                 {showVersions && activeCodeId && (
-                                    <div className="mt-2 pt-2 pb-4" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                                    <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--border-subtle)' }}>
                                         <div className="flex items-center justify-between mb-2">
-                                            <h4 style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Version History</h4>
-                                            <button
-                                                type="button"
-                                                style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
-                                                onClick={() => setShowVersions(false)}
-                                            >
-                                                ✕
-                                            </button>
-                                        </div>
-                                        {loadingSnippets ? (
-                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '4px 0' }}>Loading...</div>
-                                        ) : snippetVersions.length > 0 ? (
-                                            <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                                                {snippetVersions.map((version) => (
-                                                    <div
-                                                        key={version.id}
-                                                        className="group relative"
-                                                        style={{ fontSize: '12px', padding: '6px 8px', border: '1px solid var(--border-subtle)', borderRadius: '6px', background: 'var(--bg-elevated)' }}
+                                            <h4 style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                                {showDiffView ? 'Version Diff' : 'Version History'}
+                                            </h4>
+                                            <div className="flex items-center gap-2">
+                                                {showDiffView && (
+                                                    <button
+                                                        type="button"
+                                                        className="btn-secondary"
+                                                        style={{ padding: '2px 8px', fontSize: '10px' }}
+                                                        onClick={() => {
+                                                            setShowDiffView(false);
+                                                            setSelectedVersionId(null);
+                                                            setCompareVersionId(null);
+                                                        }}
                                                     >
-                                                        <div className="flex justify-between items-start">
-                                                            <div
-                                                                className="flex-1 cursor-pointer"
-                                                                onClick={async () => {
-                                                                    if (!activeCodeId) return;
-                                                                    if (confirm(`Restore version ${version.version_number}?`)) {
-                                                                        try {
-                                                                            setLoadingSnippets(true);
-                                                                            const res = await restoreSnippetVersion(activeCodeId, version.version_number);
+                                                        ← Back
+                                                    </button>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
+                                                    onClick={() => {
+                                                        setShowVersions(false);
+                                                        setShowDiffView(false);
+                                                        setSelectedVersionId(null);
+                                                        setCompareVersionId(null);
+                                                    }}
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        </div>
 
-                                                                            if (res.ok) {
-                                                                                const snippetsRes = await getSnippets();
-                                                                                if (snippetsRes.ok) setSavedCodes(snippetsRes.data.snippets);
-                                                                                await loadVersions(activeCodeId);
-                                                                                const snippetRes = await getSnippet(activeCodeId);
-                                                                                if (snippetRes.ok) {
-                                                                                    // Load restored code WITHOUT adding to history (avoids creating a new version entry)
-                                                                                    setCodeText(snippetRes.data.snippet.code);
-                                                                                    setHasUnsavedChanges(false);
-                                                                                }
-                                                                            }
-                                                                        } catch (error) {
-                                                                            console.error("Error restoring version:", error);
-                                                                        } finally {
-                                                                            setLoadingSnippets(false);
-                                                                        }
-                                                                    }
-                                                                }}
-                                                            >
-                                                                <div className="flex justify-between">
-                                                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>v{version.version_number}</span>
-                                                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                                                                        {new Date(version.created_at).toLocaleDateString()}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="truncate pr-12" style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                                                    {version.change_summary || version.source}
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="hidden group-hover:flex items-center gap-0.5 ml-1 shrink-0">
+                                        {loadingSnippets ? (
+                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '20px 0', textAlign: 'center' }}>Loading versions...</div>
+                                        ) : snippetVersions.length > 0 ? (
+                                            <>
+                                                {/* Diff View */}
+                                                {showDiffView && selectedVersionId && compareVersionId && (
+                                                    <div className="mb-4">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <div className="flex items-center gap-3">
+                                                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                                                    Comparing v{getVersionNumberById(compareVersionId)} 
+                                                                    <span style={{ margin: '0 6px' }}>→</span> 
+                                                                    v{getVersionNumberById(selectedVersionId)}
+                                                                </span>
                                                                 <button
                                                                     type="button"
-                                                                    style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '2px 5px', fontSize: '10px', cursor: 'pointer' }}
-                                                                    title="Edit description"
-                                                                    onClick={async (e) => {
-                                                                        e.stopPropagation();
-                                                                        const newSummary = prompt("Edit description:", version.change_summary || "");
-                                                                        if (newSummary !== null) {
-                                                                            alert("Version description update coming soon!");
-                                                                        }
+                                                                    className="btn-secondary"
+                                                                    style={{ padding: '2px 8px', fontSize: '10px' }}
+                                                                    onClick={() => {
+                                                                        // Swap comparison
+                                                                        setSelectedVersionId(compareVersionId);
+                                                                        setCompareVersionId(selectedVersionId);
                                                                     }}
                                                                 >
-                                                                    ✏️
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '2px 5px', fontSize: '10px', cursor: 'pointer', color: '#f87171' }}
-                                                                    title="Delete version"
-                                                                    onClick={async (e) => {
-                                                                        e.stopPropagation();
-                                                                        if (confirm(`Delete version ${version.version_number}?`)) {
-                                                                            alert("Version deletion coming soon!");
-                                                                        }
-                                                                    }}
-                                                                >
-                                                                    🗑️
+                                                                    Swap
                                                                 </button>
                                                             </div>
                                                         </div>
+                                                        <div style={{ 
+                                                            border: '1px solid var(--border-subtle)', 
+                                                            borderRadius: '6px', 
+                                                            overflow: 'hidden',
+                                                            background: 'var(--bg-primary)',
+                                                            maxHeight: '400px',
+                                                            overflowY: 'auto'
+                                                        }}>
+                                                            {(() => {
+                                                                const oldVersion = snippetVersions.find(v => v.id === compareVersionId);
+                                                                const newVersion = snippetVersions.find(v => v.id === selectedVersionId);
+                                                                if (!oldVersion || !newVersion) return null;
+                                                                
+                                                                return (
+                                                                    <DiffViewer
+                                                                        oldValue={oldVersion.code}
+                                                                        newValue={newVersion.code}
+                                                                        splitView={true}
+                                                                        useDarkTheme={theme === 'dark'}
+                                                                        showDiffOnly={false}
+                                                                        styles={{
+                                                                            variables: {
+                                                                                dark: {
+                                                                                    diffViewerBackground: '#1e1e24',
+                                                                                    diffViewerColor: '#e2e2e8',
+                                                                                    addedBackground: 'rgba(34,197,94,0.15)',
+                                                                                    addedColor: '#4ade80',
+                                                                                    removedBackground: 'rgba(239,68,68,0.15)',
+                                                                                    removedColor: '#f87171',
+                                                                                    wordAddedBackground: 'rgba(34,197,94,0.3)',
+                                                                                    wordRemovedBackground: 'rgba(239,68,68,0.3)',
+                                                                                    addedGutterBackground: 'rgba(34,197,94,0.2)',
+                                                                                    removedGutterBackground: 'rgba(239,68,68,0.2)',
+                                                                                    gutterBackground: '#2a2a32',
+                                                                                    gutterBackgroundDark: '#2a2a32',
+                                                                                    highlightBackground: '#2a2a35',
+                                                                                    highlightGutterBackground: '#2a2a35'
+                                                                                }
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                );
+                                                            })()}
+                                                        </div>
                                                     </div>
-                                                ))}
-                                            </div>
+                                                )}
+
+                                                {/* Version List */}
+                                                {!showDiffView && (
+                                                    <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                                                        {snippetVersions.map((version) => (
+                                                            <div
+                                                                key={version.id}
+                                                                className="group relative"
+                                                                style={{ 
+                                                                    fontSize: '12px', 
+                                                                    padding: '8px', 
+                                                                    border: '1px solid var(--border-subtle)', 
+                                                                    borderRadius: '6px', 
+                                                                    background: 'var(--bg-elevated)',
+                                                                    cursor: 'pointer',
+                                                                    ...(selectedVersionId === version.id ? { borderColor: 'var(--accent)', background: 'var(--accent-glow)' } : {})
+                                                                }}
+                                                            >
+                                                                <div className="flex justify-between items-start">
+                                                                    <div className="flex-1">
+                                                                        <div className="flex justify-between items-center mb-1">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                                                    v{version.version_number}
+                                                                                </span>
+                                                                                <span style={{ 
+                                                                                    fontSize: '9px', 
+                                                                                    padding: '2px 6px', 
+                                                                                    borderRadius: '10px',
+                                                                                    background: 'var(--bg-hover)',
+                                                                                    color: 'var(--text-muted)'
+                                                                                }}>
+                                                                                    {formatVersionSource(version.source)}
+                                                                                </span>
+                                                                            </div>
+                                                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                                                                {new Date(version.created_at).toLocaleDateString()}
+                                                                            </span>
+                                                                        </div>
+                                                                        
+                                                                        {version.change_summary && (
+                                                                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                                                                                {version.change_summary}
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* Action buttons */}
+                                                                        <div className="flex items-center gap-1 mt-1">
+                                                                            <button
+                                                                                type="button"
+                                                                                className="btn-secondary"
+                                                                                style={{ padding: '2px 8px', fontSize: '10px' }}
+                                                                                onClick={async (e) => {
+                                                                                    e.stopPropagation();
+                                                                                    if (!activeCodeId) return;
+                                                                                    if (confirm(`Restore version ${version.version_number}?`)) {
+                                                                                        try {
+                                                                                            setLoadingSnippets(true);
+                                                                                            const res = await restoreSnippetVersion(activeCodeId, version.version_number);
+                                                                                            if (res.ok) {
+                                                                                                const snippetsRes = await getSnippets();
+                                                                                                if (snippetsRes.ok) setSavedCodes(snippetsRes.data.snippets);
+                                                                                                await loadVersions(activeCodeId);
+                                                                                                const snippetRes = await getSnippet(activeCodeId);
+                                                                                                if (snippetRes.ok) {
+                                                                                                    setCodeText(snippetRes.data.snippet.code);
+                                                                                                    setHasUnsavedChanges(false);
+                                                                                                }
+                                                                                            }
+                                                                                        } catch (error) {
+                                                                                            console.error("Error restoring version:", error);
+                                                                                        } finally {
+                                                                                            setLoadingSnippets(false);
+                                                                                        }
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                Restore
+                                                                            </button>
+                                                                            
+                                                                            <button
+                                                                                type="button"
+                                                                                className="btn-secondary"
+                                                                                style={{ padding: '2px 8px', fontSize: '10px' }}
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    if (!selectedVersionId) {
+                                                                                        setSelectedVersionId(version.id);
+                                                                                    } else if (selectedVersionId === version.id) {
+                                                                                        setSelectedVersionId(null);
+                                                                                        setCompareVersionId(null);
+                                                                                    } else if (!compareVersionId) {
+                                                                                        setCompareVersionId(selectedVersionId);
+                                                                                        setSelectedVersionId(version.id);
+                                                                                        setShowDiffView(true);
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                {selectedVersionId === version.id ? 'Cancel' : 'Compare'}
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </>
                                         ) : (
-                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '4px 0' }}>No history</div>
+                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '20px 0', textAlign: 'center' }}>
+                                                No version history yet
+                                            </div>
                                         )}
                                     </div>
                                 )}
