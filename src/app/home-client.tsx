@@ -4043,7 +4043,7 @@ ${codeContext}` : ""}${projectContext}`
                                             // Build the full prompt including the code
                                             const domain = selectedDomain;
                                             const projectContext = buildProjectContext();
-                                            const fullPrompt = `USER REQUEST:\n${prompt}\n\nEXISTING CODE (${domain}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+                                            const fullPrompt = `USER REQUEST:\n${prompt}\n\nEXISTING CODE (${domain}) — output the FULL corrected file, no truncation:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
 
                                             // Inject into chat input and fire
                                             try {
@@ -4086,6 +4086,10 @@ ${codeContext}` : ""}${projectContext}`
                                                             setCodeText(merged);
                                                             addToHistory(merged);
                                                             setHasUnsavedChanges(true);
+                                                            // Keep the active snippet ID — don't drift to unsaved
+                                                            if (!activeCodeId) {
+                                                                setUnsavedCode(merged);
+                                                            }
                                                             if (giveAiAccessToCode) setAccessLockedCode(merged);
                                                             setCodeOpen(true);
                                                         }
