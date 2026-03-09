@@ -215,6 +215,49 @@ const PINE_RULES: LintRule[] = [
         },
     },
 
+    // PS013 — unknown named argument in plot() call
+    {
+        code: 'PS013',
+        severity: 'error',
+        check: (line, lineIndex) => {
+            if (!/\bplot\s*\(/.test(line)) return null;
+
+            const VALID_PLOT_PARAMS = new Set([
+                'title', 'color', 'linewidth', 'style', 'offset',
+                'trackprice', 'display', 'editable', 'show_last',
+                'join', 'force_overlay', 'histbase',
+            ]);
+
+            // Extract all key=value pairs from the line
+            const argRe = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=/g;
+            let m: RegExpExecArray | null;
+            while ((m = argRe.exec(line)) !== null) {
+                const name = m[1];
+                // Skip Pine keywords that appear before the opening paren
+                if (['plot', 'if', 'for', 'var', 'varip'].includes(name)) continue;
+                if (!VALID_PLOT_PARAMS.has(name)) {
+                    const col = m.index + 1;
+                    // Find the closest valid param by edit distance
+                    const suggestion = [...VALID_PLOT_PARAMS].find(p =>
+                        Math.abs(p.length - name.length) <= 2 &&
+                        [...name].filter((c, i) => p[i] !== c).length <= 2
+                    );
+                    return {
+                        line: lineIndex + 1, col, endCol: col + name.length,
+                        severity: 'error',
+                        message: `Unknown \`plot()\` argument \`${name}=\`${suggestion ? `. Did you mean \`${suggestion}=\`?` : '. Check Pine Script v5 docs.'}`,
+                        code: 'PS013',
+                        quickFix: suggestion ? {
+                            label: `Replace with ${suggestion}=`,
+                            replacement: line.slice(0, m.index) + line.slice(m.index).replace(name, suggestion),
+                        } : undefined,
+                    };
+                }
+            }
+            return null;
+        },
+    },
+
     // PS012 — trailing whitespace (style)
     {
         code: 'PS012',
