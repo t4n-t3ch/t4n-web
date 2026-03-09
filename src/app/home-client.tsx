@@ -169,6 +169,8 @@ export default function HomeClient() {
 
     const [, setPluginResult] = useState<unknown>(null);
     const [copiedBlockId, setCopiedBlockId] = useState<string | null>(null);
+    const [appliedBlockId, setAppliedBlockId] = useState<string | null>(null);
+    const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
     const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
     const [pluginRuns, setPluginRuns] = useState<PluginRun[]>([]);
     // last tool event emitted from /api/chat/stream (server sends `event: tool`)
@@ -3420,6 +3422,55 @@ ${codeContext}` : ""}${projectContext}`
                                         {isActiveStreaming ? " ▍" : ""}
 
                                     </div>
+
+                                    {/* Apply to Editor button — show on completed assistant messages that contain code */}
+                                    {!isUser && !isActiveStreaming && (() => {
+                                        const extracted = extractCodeBlocks(m.content ?? '');
+                                        if (!extracted) return null;
+                                        const blockId = m.id;
+                                        const applied = appliedBlockId === blockId;
+                                        return (
+                                            <div style={{ marginTop: '6px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                                <button
+                                                    type="button"
+                                                    style={{
+                                                        padding: '4px 12px',
+                                                        fontSize: '11px',
+                                                        borderRadius: '6px',
+                                                        border: applied ? '1px solid rgba(34,197,94,0.5)' : '1px solid rgba(249,115,22,0.4)',
+                                                        background: applied ? 'rgba(34,197,94,0.1)' : 'rgba(249,115,22,0.08)',
+                                                        color: applied ? '#4ade80' : 'var(--accent)',
+                                                        cursor: 'pointer',
+                                                        fontFamily: 'DM Sans, sans-serif',
+                                                        fontWeight: 600,
+                                                        transition: 'all 0.2s',
+                                                    }}
+                                                    onClick={() => {
+                                                        const code = extractCodeBlocks(m.content ?? '');
+                                                        if (!code) return;
+                                                        setCodeText(code);
+                                                        addToHistory(code);
+                                                        setHasUnsavedChanges(true);
+                                                        if (!activeCodeId) {
+                                                            setUnsavedCode(code);
+                                                            setActiveCodeId(null);
+                                                        }
+                                                        setCodeOpen(true);
+                                                        setAppliedBlockId(blockId);
+                                                        setTimeout(() => setAppliedBlockId(null), 1500);
+                                                    }}
+                                                >
+                                                    {applied ? '✓ Applied' : '⬇ Apply to Editor'}
+                                                </button>
+                                                {applied && (
+                                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                                        Hit Undo to revert
+                                                    </span>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+
                                 </div>
                             );
                         })}
@@ -3534,6 +3585,96 @@ ${codeContext}` : ""}${projectContext}`
                                     </button>
 
                                     {/* Domain / Language Selector */}
+                                    {/* Export dropdown */}
+                                    {codeText.trim() && (
+                                        <div style={{ position: 'relative' }}>
+                                            <button
+                                                type="button"
+                                                className="btn-secondary"
+                                                style={{ padding: '4px 10px', fontSize: '12px' }}
+                                                onClick={() => setExportDropdownOpen(v => !v)}
+                                                title="Export code"
+                                            >
+                                                ⬇ Export
+                                            </button>
+                                            {exportDropdownOpen && (
+                                                <div
+                                                    style={{ position: 'absolute', top: '100%', left: 0, zIndex: 100, marginTop: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '180px', overflow: 'hidden' }}
+                                                    onMouseLeave={() => setExportDropdownOpen(false)}
+                                                >
+                                                    {[
+                                                        {
+                                                            label: '📄 Download as file',
+                                                            sublabel: (() => {
+                                                                const ext = selectedDomain === 'python' ? '.py' : selectedDomain === 'react' ? '.tsx' : selectedDomain === 'typescript' ? '.ts' : selectedDomain === 'javascript' ? '.js' : selectedDomain === 'mql5' ? '.mq5' : selectedDomain === 'ctrader' ? '.cs' : selectedDomain === 'unity' ? '.cs' : selectedDomain === 'blender' ? '.py' : '.pine';
+                                                                return ext;
+                                                            })(),
+                                                            action: () => {
+                                                                const ext = selectedDomain === 'python' ? '.py' : selectedDomain === 'react' ? '.tsx' : selectedDomain === 'typescript' ? '.ts' : selectedDomain === 'javascript' ? '.js' : selectedDomain === 'mql5' ? '.mq5' : selectedDomain === 'ctrader' ? '.cs' : selectedDomain === 'unity' ? '.cs' : selectedDomain === 'blender' ? '.py' : '.pine';
+                                                                const name = savedCodes.find(s => s.id === activeCodeId)?.name ?? 'snippet';
+                                                                const safe = name.replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+                                                                const blob = new Blob([codeText], { type: 'text/plain;charset=utf-8' });
+                                                                const url = URL.createObjectURL(blob);
+                                                                const a = document.createElement('a');
+                                                                a.href = url; a.download = `${safe}${ext}`;
+                                                                document.body.appendChild(a); a.click(); a.remove();
+                                                                URL.revokeObjectURL(url);
+                                                                setExportDropdownOpen(false);
+                                                            }
+                                                        },
+                                                        {
+                                                            label: '📋 Copy as Markdown',
+                                                            sublabel: 'Fenced code block',
+                                                            action: async () => {
+                                                                const lang = selectedDomain === 'python' ? 'python' : selectedDomain === 'react' ? 'tsx' : selectedDomain === 'typescript' ? 'typescript' : selectedDomain === 'javascript' ? 'javascript' : selectedDomain === 'ctrader' ? 'csharp' : selectedDomain === 'mql5' ? 'cpp' : 'pine';
+                                                                const md = `\`\`\`${lang}\n${codeText}\n\`\`\``;
+                                                                await navigator.clipboard.writeText(md);
+                                                                setExportDropdownOpen(false);
+                                                            }
+                                                        },
+                                                        {
+                                                            label: '🗜 Export project as zip',
+                                                            sublabel: 'All project files',
+                                                            action: async () => {
+                                                                const activeConvProjectId = activeId ? convProjects[activeId] : null;
+                                                                const proj = projects.find(p => p.id === activeConvProjectId);
+                                                                const files = proj ? (projectFiles[proj.id] ?? []) : [];
+                                                                if (!proj || files.length === 0) {
+                                                                    alert('No project files to export. Assign this chat to a project with files first.');
+                                                                    setExportDropdownOpen(false);
+                                                                    return;
+                                                                }
+                                                                const JSZip = (await import('jszip')).default;
+                                                                const zip = new JSZip();
+                                                                for (const f of files) zip.file(f.name, f.content);
+                                                                const blob = await zip.generateAsync({ type: 'blob' });
+                                                                const url = URL.createObjectURL(blob);
+                                                                const a = document.createElement('a');
+                                                                const safeName = proj.name.replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+                                                                a.href = url; a.download = `${safeName}.zip`;
+                                                                document.body.appendChild(a); a.click(); a.remove();
+                                                                URL.revokeObjectURL(url);
+                                                                setExportDropdownOpen(false);
+                                                            }
+                                                        },
+                                                    ].map(({ label, sublabel, action }) => (
+                                                        <button
+                                                            key={label}
+                                                            type="button"
+                                                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', borderBottom: '1px solid var(--border-subtle)', transition: 'background 0.1s' }}
+                                                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                            onClick={() => void action()}
+                                                        >
+                                                            <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: 500 }}>{label}</span>
+                                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '1px' }}>{sublabel}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
                                     {/* Monaco toggle */}
                                     <button
                                         type="button"
