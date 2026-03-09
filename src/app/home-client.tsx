@@ -4083,21 +4083,36 @@ ${codeContext}` : ""}${projectContext}`
                                             style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 100, marginBottom: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'hidden' }}
                                             onMouseLeave={() => setConvertDropdownOpen(false)}
                                         >
-                                            {[
-                                                { from: 'Pine Script', to: 'Python',       lang: 'Python' },
-                                                { from: 'Pine Script', to: 'cTrader C#',   lang: 'cTrader C#' },
-                                                { from: 'Pine Script', to: 'MQL5',         lang: 'MQL5' },
-                                                { from: 'Pine Script', to: 'JavaScript',   lang: 'JavaScript' },
-                                                { from: 'Pine Script', to: 'TypeScript',   lang: 'TypeScript' },
-                                                { from: 'Python',      to: 'Pine Script',  lang: 'Pine Script v5' },
-                                                { from: 'Python',      to: 'JavaScript',   lang: 'JavaScript' },
-                                                { from: 'cTrader C#',  to: 'Pine Script',  lang: 'Pine Script v5' },
-                                                { from: 'cTrader C#',  to: 'Python',       lang: 'Python' },
-                                                { from: 'MQL5',        to: 'Pine Script',  lang: 'Pine Script v5' },
-                                                { from: 'MQL5',        to: 'Python',       lang: 'Python' },
-                                                { from: 'JavaScript',  to: 'TypeScript',   lang: 'TypeScript' },
-                                                { from: 'TypeScript',  to: 'Python',       lang: 'Python' },
-                                            ].map(({ from, to, lang }) => (
+                                            {(() => {
+                                                const allConversions: { from: string; to: string; lang: string; domains: string[] }[] = [
+                                                    { from: 'Pine Script', to: 'Python',      lang: 'Python',        domains: ['pinescript'] },
+                                                    { from: 'Pine Script', to: 'cTrader C#',  lang: 'cTrader C#',    domains: ['pinescript'] },
+                                                    { from: 'Pine Script', to: 'MQL5',        lang: 'MQL5',          domains: ['pinescript'] },
+                                                    { from: 'Pine Script', to: 'JavaScript',  lang: 'JavaScript',    domains: ['pinescript'] },
+                                                    { from: 'Pine Script', to: 'TypeScript',  lang: 'TypeScript',    domains: ['pinescript'] },
+                                                    { from: 'Python',      to: 'Pine Script', lang: 'Pine Script v5',domains: ['python'] },
+                                                    { from: 'Python',      to: 'JavaScript',  lang: 'JavaScript',    domains: ['python'] },
+                                                    { from: 'Python',      to: 'TypeScript',  lang: 'TypeScript',    domains: ['python'] },
+                                                    { from: 'Python',      to: 'MQL5',        lang: 'MQL5',          domains: ['python'] },
+                                                    { from: 'cTrader C#',  to: 'Pine Script', lang: 'Pine Script v5',domains: ['ctrader'] },
+                                                    { from: 'cTrader C#',  to: 'Python',      lang: 'Python',        domains: ['ctrader'] },
+                                                    { from: 'cTrader C#',  to: 'MQL5',        lang: 'MQL5',          domains: ['ctrader'] },
+                                                    { from: 'MQL5',        to: 'Pine Script', lang: 'Pine Script v5',domains: ['mql5'] },
+                                                    { from: 'MQL5',        to: 'Python',      lang: 'Python',        domains: ['mql5'] },
+                                                    { from: 'MQL5',        to: 'cTrader C#',  lang: 'cTrader C#',    domains: ['mql5'] },
+                                                    { from: 'JavaScript',  to: 'TypeScript',  lang: 'TypeScript',    domains: ['javascript'] },
+                                                    { from: 'JavaScript',  to: 'Python',      lang: 'Python',        domains: ['javascript'] },
+                                                    { from: 'TypeScript',  to: 'JavaScript',  lang: 'JavaScript',    domains: ['typescript', 'react'] },
+                                                    { from: 'TypeScript',  to: 'Python',      lang: 'Python',        domains: ['typescript', 'react'] },
+                                                    { from: 'C#',          to: 'Python',      lang: 'Python',        domains: ['unity'] },
+                                                    { from: 'C#',          to: 'TypeScript',  lang: 'TypeScript',    domains: ['unity'] },
+                                                    { from: 'Python',      to: 'JavaScript',  lang: 'JavaScript',    domains: ['blender'] },
+                                                    { from: 'Code',        to: 'Python',      lang: 'Python',        domains: ['generic'] },
+                                                    { from: 'Code',        to: 'TypeScript',  lang: 'TypeScript',    domains: ['generic'] },
+                                                    { from: 'Code',        to: 'JavaScript',  lang: 'JavaScript',    domains: ['generic'] },
+                                                ];
+                                                return allConversions.filter(c => c.domains.includes(selectedDomain));
+                                            })().map(({ from, to, lang }) => (
                                                 <button
                                                     key={`${from}-${to}`}
                                                     type="button"
