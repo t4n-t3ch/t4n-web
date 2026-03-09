@@ -228,12 +228,14 @@ const PINE_RULES: LintRule[] = [
                 'join', 'force_overlay', 'histbase',
             ]);
 
-            // Extract all key=value pairs from the line
-            const argRe = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=/g;
+            // Extract named args — only match inside the plot() call, skip == comparisons
+            const plotCallMatch = line.match(/\bplot\s*\((.+)/);
+            if (!plotCallMatch) return null;
+            const argsStr = plotCallMatch[1];
+            const argRe = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=(?!=)/g;
             let m: RegExpExecArray | null;
-            while ((m = argRe.exec(line)) !== null) {
+            while ((m = argRe.exec(argsStr)) !== null) {
                 const name = m[1];
-                // Skip Pine keywords that appear before the opening paren
                 if (['plot', 'if', 'for', 'var', 'varip'].includes(name)) continue;
                 if (!VALID_PLOT_PARAMS.has(name)) {
                     const col = m.index + 1;

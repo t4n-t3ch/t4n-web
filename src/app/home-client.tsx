@@ -3901,6 +3901,7 @@ ${codeContext}` : ""}${projectContext}`
                                                 if (found && id) {
                                                     setCodeText(found.code);
                                                     addToHistory(found.code);
+                                                    runDiagnostics(found.code);
                                                     await loadVersions(id);
                                                     // Open in tabs if Monaco is on
                                                     if (useMonaco) {
