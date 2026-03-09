@@ -302,6 +302,8 @@ export default function HomeClient() {
     const [loadingSnippets, setLoadingSnippets] = useState(false);
     const [snippetVersions, setSnippetVersions] = useState<SnippetVersion[]>([]);
     const [showVersions, setShowVersions] = useState(false);
+    const [renameModalId, setRenameModalId] = useState<string | null>(null);
+    const [renameModalValue, setRenameModalValue] = useState('');
 
     // Domain / language selection
     const [selectedDomain, setSelectedDomain] = useState<string>('pinescript');
@@ -425,51 +427,45 @@ export default function HomeClient() {
 
     async function renameSnippet(id: string) {
         const current = savedCodes.find((s) => s.id === id)?.name ?? "";
-        const next = prompt("Rename snippet:", current);
-        if (!next || !next.trim()) return;
+        setRenameModalId(id);
+        setRenameModalValue(current);
+    }
 
-        // Update local state immediately
-        setSavedCodes((p) => p.map((x) => (x.id === id ? { ...x, name: next.trim() } : x)));
+    async function commitRename() {
+        const id = renameModalId;
+        const next = renameModalValue.trim();
+        setRenameModalId(null);
+        setRenameModalValue('');
+        if (!id || !next) return;
 
-        // Try dedicated rename endpoint first, fall back to updateSnippet
+        // Optimistic update
+        setSavedCodes((p) => p.map((x) => (x.id === id ? { ...x, name: next } : x)));
+
         try {
             const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
             const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
-
             const res = await fetch(`${API_BASE}/api/snippets/${encodeURIComponent(id)}/rename`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json", "x-api-key": API_KEY },
-                body: JSON.stringify({ name: next.trim() }),
+                body: JSON.stringify({ name: next }),
             });
-
             if (!res.ok) {
-                // Fallback: use the standard updateSnippet which definitely persists
-                console.warn("Rename endpoint failed, falling back to updateSnippet");
+                // Fallback to updateSnippet
                 const current = savedCodes.find((s) => s.id === id);
-                if (current) await updateSnippet(id, { code: current.code, change_summary: 'Rename', source: 'user_edit', name: next.trim() } as Parameters<typeof updateSnippet>[1]);
+                if (current) await updateSnippet(id, { code: current.code, change_summary: 'Rename', source: 'user_edit', name: next } as Parameters<typeof updateSnippet>[1]);
             }
         } catch (err) {
-            console.error("Rename API call failed, trying fallback:", err);
-            try {
-                const current = savedCodes.find((s) => s.id === id);
-                if (current) await updateSnippet(id, { code: current.code, change_summary: 'Rename', source: 'user_edit', name: next.trim() } as Parameters<typeof updateSnippet>[1]);
-            } catch (e) {
-                console.error("Fallback rename also failed:", e);
-            }
+            console.error("Rename failed:", err);
         }
-
-        // Re-fetch to confirm — only update if DB name matches what we set
+        // Re-fetch but ONLY replace state if DB confirms the new name
         try {
             const snippetsRes = await getSnippets();
             if (snippetsRes.ok) {
-                const saved = snippetsRes.data.snippets.find((s: Snippet) => s.id === id);
-                if (saved && saved.name === next.trim()) {
-                    setSavedCodes(snippetsRes.data.snippets);
-                }
-                // If DB still has old name, keep optimistic update — rename route not yet deployed
+                const confirmed = snippetsRes.data.snippets.find((s: Snippet) => s.id === id);
+                if (confirmed?.name === next) setSavedCodes(snippetsRes.data.snippets);
             }
         } catch (e) {
-            console.error("Failed to refresh snippets after rename:", e);
+            console.error("Failed to refresh after rename:", e);
         }
     }
 
@@ -4145,6 +4141,40 @@ ${codeContext}` : ""}${projectContext}`
                                 onClick={() => setShowUpgradeModal(false)}
                                 style={{ width: '100%', padding: '10px', borderRadius: '8px', background: 'none', border: '1px solid var(--border-default)', color: 'var(--text-muted)', fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
                                 Maybe later
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        {/* Rename Snippet Modal */}
+            {renameModalId && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                    onMouseDown={() => { setRenameModalId(null); setRenameModalValue(''); }}>
+                    <div
+                        style={{ width: '320px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', padding: '20px' }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                    >
+                        <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)', marginBottom: '12px' }}>✏️ Rename snippet</div>
+                        <input
+                            autoFocus
+                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', marginBottom: '12px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }}
+                            value={renameModalValue}
+                            onChange={(e) => setRenameModalValue(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') void commitRename();
+                                if (e.key === 'Escape') { setRenameModalId(null); setRenameModalValue(''); }
+                            }}
+                        />
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                            <button type="button"
+                                style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                onClick={() => { setRenameModalId(null); setRenameModalValue(''); }}>
+                                Cancel
+                            </button>
+                            <button type="button"
+                                style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                onClick={() => void commitRename()}>
+                                Save
                             </button>
                         </div>
                     </div>
