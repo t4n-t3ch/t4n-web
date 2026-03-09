@@ -2026,11 +2026,31 @@ ${codeContext}` : ""}${projectContext}`
                             } else {
                                 const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
                                 if (error) setAuthError(error.message);
+                                else setAuthError("✅ Check your email to confirm your account before signing in.");
                             }
                         }
                     }}
-                    style={{ width: '100%', background: '#0f0f11', border: '1px solid #2a2a35', borderRadius: 6, padding: '10px 12px', color: '#e2e2e8', fontSize: 13, marginBottom: 16, boxSizing: 'border-box' }}
+                    style={{ width: '100%', background: '#0f0f11', border: '1px solid #2a2a35', borderRadius: 6, padding: '10px 12px', color: '#e2e2e8', fontSize: 13, marginBottom: 8, boxSizing: 'border-box' }}
                 />
+                {authMode === "login" && (
+                    <div style={{ textAlign: 'right', marginBottom: 12 }}>
+                        <button
+                            type="button"
+                            style={{ color: '#f97316', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}
+                            onClick={async () => {
+                                if (!authEmail.trim()) { setAuthError("Enter your email above first."); return; }
+                                setAuthError(null);
+                                const { error } = await supabase.auth.resetPasswordForEmail(authEmail.trim(), {
+                                    redirectTo: `${window.location.origin}/reset-password`,
+                                });
+                                if (error) setAuthError(error.message);
+                                else setAuthError("✅ Password reset email sent — check your inbox.");
+                            }}
+                        >
+                            Forgot password?
+                        </button>
+                    </div>
+                )}
                 <button
                     style={{ width: '100%', background: '#f97316', border: 'none', borderRadius: 6, padding: '10px 0', color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer', marginBottom: 12 }}
                     onClick={async () => {
@@ -2047,6 +2067,7 @@ ${codeContext}` : ""}${projectContext}`
                                 password: authPassword
                             });
                             if (error) setAuthError(error.message);
+                            else setAuthError("✅ Check your email to confirm your account before signing in.");
                         }
                     }}>
                     {authMode === "login" ? "Sign In" : "Sign Up"}
