@@ -458,10 +458,16 @@ export default function HomeClient() {
             }
         }
 
-        // Always re-fetch to confirm what actually persisted
+        // Re-fetch to confirm — only update if DB name matches what we set
         try {
             const snippetsRes = await getSnippets();
-            if (snippetsRes.ok) setSavedCodes(snippetsRes.data.snippets);
+            if (snippetsRes.ok) {
+                const saved = snippetsRes.data.snippets.find((s: Snippet) => s.id === id);
+                if (saved && saved.name === next.trim()) {
+                    setSavedCodes(snippetsRes.data.snippets);
+                }
+                // If DB still has old name, keep optimistic update — rename route not yet deployed
+            }
         } catch (e) {
             console.error("Failed to refresh snippets after rename:", e);
         }
@@ -1001,22 +1007,26 @@ export default function HomeClient() {
     }, [titles]);
 
 
-    const fetchUserPlan = async (accessToken: string) => {
+    const fetchUserPlan = async (accessToken: string, keepOnFailure = false) => {
         const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
         const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
-        const delays = [0, 3000, 8000, 15000];
+        const delays = [0, 3000, 8000, 15000, 25000];
         for (const delay of delays) {
             try {
                 if (delay > 0) await new Promise(r => setTimeout(r, delay));
                 const res = await fetch(`${API_BASE}/api/whoami`, {
                     headers: { "x-api-key": API_KEY, "Authorization": `Bearer ${accessToken}` },
-                    signal: AbortSignal.timeout(4000),
+                    signal: AbortSignal.timeout(30000), // 30s per attempt for Render cold starts
                 });
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.plan) { setUserPlan(data.plan); break; }
+                    if (data.plan) { setUserPlan(data.plan); return; }
                 }
             } catch { /* retry */ }
+        }
+        // All retries exhausted — only downgrade if not keepOnFailure
+        if (!keepOnFailure) {
+            setUserPlan(prev => prev === 'pro' ? 'pro' : 'free');
         }
     };
 
@@ -1032,7 +1042,7 @@ export default function HomeClient() {
     useEffect(() => {
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible' && session) {
-                void fetchUserPlan(session.access_token);
+                void fetchUserPlan(session.access_token, true);
             }
         };
         document.addEventListener('visibilitychange', handleVisibilityChange);
