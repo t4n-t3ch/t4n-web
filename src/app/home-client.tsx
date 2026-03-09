@@ -4413,6 +4413,16 @@ ${codeContext}` : ""}${projectContext}`
                                                                         addToHistory(extracted);
                                                                         setHasUnsavedChanges(true);
                                                                         setCodeOpen(true);
+                                                                        const domainMap: Record<string, string> = {
+                                                                            'Python': 'python',
+                                                                            'Pine Script': 'pinescript',
+                                                                            'Pine Script v5': 'pinescript',
+                                                                            'cTrader C#': 'ctrader',
+                                                                            'MQL5': 'mql5',
+                                                                            'JavaScript': 'javascript',
+                                                                            'TypeScript': 'typescript',
+                                                                        };
+                                                                        if (domainMap[to]) setSelectedDomain(domainMap[to]);
                                                                     }
                                                                     setMessages(m => m.map(msg =>
                                                                         msg.id === assistantId ? { ...msg, content: extracted ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg
