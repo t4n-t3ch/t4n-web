@@ -2599,7 +2599,10 @@ ${codeContext}` : ""}${projectContext}`
                                             >
                                                 <div className="flex items-center justify-between gap-2 group">
                                                     <div className="flex items-center gap-1.5 min-w-0">
-                                                        {proj && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: proj.color, flexShrink: 0, display: 'inline-block' }} title={proj.name} />}
+                                                        {activeId === c.id && (
+                                                            <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#4ade80', flexShrink: 0, display: 'inline-block', boxShadow: '0 0 5px #4ade80' }} title="Active" />
+                                                        )}
+                                                        {proj && activeId !== c.id && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: proj.color, flexShrink: 0, display: 'inline-block' }} title={proj.name} />}
                                                         <span className="truncate" style={{ fontSize: '13px' }}>
                                                             {titles[c.id] ?? c.title ?? c.id.slice(0, 8)}
                                                         </span>
@@ -4146,7 +4149,7 @@ ${codeContext}` : ""}${projectContext}`
                     </div>
                 </div>
             )}
-        {/* Rename Snippet Modal */}
+            {/* Rename Snippet Modal */}
             {renameModalId && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
                     onMouseDown={() => { setRenameModalId(null); setRenameModalValue(''); }}>
