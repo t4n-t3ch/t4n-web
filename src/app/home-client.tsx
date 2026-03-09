@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Session } from "@supabase/supabase-js";
 import Image from "next/image";
+import MonacoEditor from "@monaco-editor/react";
 import {
     listConversations,
     getMessages,
@@ -304,6 +305,13 @@ export default function HomeClient() {
     const [showVersions, setShowVersions] = useState(false);
     const [renameModalId, setRenameModalId] = useState<string | null>(null);
     const [renameModalValue, setRenameModalValue] = useState('');
+
+    // Monaco editor state
+    const [useMonaco, setUseMonaco] = useState(false);
+    const [monacoMinimap, setMonacoMinimap] = useState(false);
+    const [monacoTheme, setMonacoTheme] = useState<'vs-dark' | 'light' | 'hc-black'>('vs-dark');
+    const [openTabs, setOpenTabs] = useState<string[]>([]); // snippet ids open as tabs
+    const [activeTab, setActiveTab] = useState<string | null>(null);
 
     // Domain / language selection
     const [selectedDomain, setSelectedDomain] = useState<string>('pinescript');
@@ -3526,6 +3534,40 @@ ${codeContext}` : ""}${projectContext}`
                                     </button>
 
                                     {/* Domain / Language Selector */}
+                                    {/* Monaco toggle */}
+                                    <button
+                                        type="button"
+                                        className="btn-secondary"
+                                        style={{ padding: '4px 10px', fontSize: '12px', ...(useMonaco ? { background: 'rgba(99,102,241,0.15)', borderColor: 'rgba(99,102,241,0.4)', color: '#818cf8' } : {}) }}
+                                        onClick={() => setUseMonaco(v => !v)}
+                                        title="Toggle Monaco editor"
+                                    >
+                                        {useMonaco ? '⚡ Monaco' : '📝 Basic'}
+                                    </button>
+
+                                    {useMonaco && (
+                                        <>
+                                            <button
+                                                type="button"
+                                                className="btn-secondary"
+                                                style={{ padding: '4px 10px', fontSize: '12px', ...(monacoMinimap ? { background: 'rgba(99,102,241,0.15)', borderColor: 'rgba(99,102,241,0.4)', color: '#818cf8' } : {}) }}
+                                                onClick={() => setMonacoMinimap(v => !v)}
+                                                title="Toggle minimap"
+                                            >
+                                                🗺 Map
+                                            </button>
+                                            <select
+                                                value={monacoTheme}
+                                                onChange={e => setMonacoTheme(e.target.value as typeof monacoTheme)}
+                                                style={{ fontSize: '11px', padding: '3px 6px', borderRadius: '5px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                            >
+                                                <option value="vs-dark">🌑 Dark</option>
+                                                <option value="light">☀️ Light</option>
+                                                <option value="hc-black">⬛ High Contrast</option>
+                                            </select>
+                                        </>
+                                    )}
+
                                     <select
                                         value={selectedDomain}
                                         onChange={(e) => setSelectedDomain(e.target.value)}
@@ -3541,6 +3583,42 @@ ${codeContext}` : ""}${projectContext}`
                                         <option value="unity">🎮 Unity</option>
                                         <option value="generic">💻 Generic Code</option>
                                     </select>
+
+                                    {/* Open Tabs bar */}
+                                    {useMonaco && openTabs.length > 0 && (
+                                        <div style={{ display: 'flex', gap: '2px', flexWrap: 'nowrap', overflowX: 'auto', padding: '0 2px', maxWidth: '100%' }}>
+                                            {openTabs.map(tid => {
+                                                const tabSnippet = savedCodes.find(s => s.id === tid);
+                                                if (!tabSnippet) return null;
+                                                const isActive = activeTab === tid;
+                                                return (
+                                                    <div key={tid} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 10px 3px 10px', borderRadius: '5px 5px 0 0', background: isActive ? 'var(--bg-primary)' : 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderBottom: isActive ? '1px solid var(--bg-primary)' : '1px solid var(--border-default)', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '11px', color: isActive ? 'var(--accent)' : 'var(--text-muted)', fontWeight: isActive ? 600 : 400 }}
+                                                        onClick={() => {
+                                                            setActiveTab(tid);
+                                                            setActiveCodeId(tid);
+                                                            setCodeText(tabSnippet.code);
+                                                        }}>
+                                                        <span>{tabSnippet.name}</span>
+                                                        <button type="button"
+                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '0 0 0 4px', lineHeight: 1 }}
+                                                            onClick={e => {
+                                                                e.stopPropagation();
+                                                                setOpenTabs(prev => prev.filter(t => t !== tid));
+                                                                if (activeTab === tid) {
+                                                                    const remaining = openTabs.filter(t => t !== tid);
+                                                                    const next = remaining[remaining.length - 1] ?? null;
+                                                                    setActiveTab(next);
+                                                                    if (next) {
+                                                                        const nextSnippet = savedCodes.find(s => s.id === next);
+                                                                        if (nextSnippet) { setActiveCodeId(next); setCodeText(nextSnippet.code); }
+                                                                    }
+                                                                }
+                                                            }}>✕</button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
 
                                     <div className="flex items-center gap-2">
                                         <select
@@ -3577,8 +3655,13 @@ ${codeContext}` : ""}${projectContext}`
                                                 const found = savedCodes.find((s) => s.id === id);
                                                 if (found && id) {
                                                     setCodeText(found.code);
-                                                    addToHistory(found.code); // Add to history
+                                                    addToHistory(found.code);
                                                     await loadVersions(id);
+                                                    // Open in tabs if Monaco is on
+                                                    if (useMonaco) {
+                                                        setOpenTabs(prev => prev.includes(id) ? prev : [...prev, id]);
+                                                        setActiveTab(id);
+                                                    }
                                                 }
                                             }}
                                         >
@@ -3828,6 +3911,49 @@ ${codeContext}` : ""}${projectContext}`
                             </div>
 
                             <div className="p-3 overflow-y-auto pb-8">
+                                {useMonaco ? (
+                                    <div style={{ height: '55vh', border: '1px solid var(--border-default)', borderRadius: '6px', overflow: 'hidden' }}>
+                                        <MonacoEditor
+                                            height="100%"
+                                            language={
+                                                selectedDomain === 'python' ? 'python'
+                                                : selectedDomain === 'react' ? 'typescript'
+                                                : selectedDomain === 'typescript' ? 'typescript'
+                                                : selectedDomain === 'javascript' ? 'javascript'
+                                                : selectedDomain === 'mql5' ? 'cpp'
+                                                : selectedDomain === 'ctrader' ? 'csharp'
+                                                : selectedDomain === 'unity' ? 'csharp'
+                                                : 'plaintext'
+                                            }
+                                            theme={monacoTheme}
+                                            value={codeText}
+                                            options={{
+                                                minimap: { enabled: monacoMinimap },
+                                                fontSize: 12,
+                                                lineHeight: 20,
+                                                fontFamily: 'JetBrains Mono, monospace',
+                                                scrollBeyondLastLine: false,
+                                                wordWrap: 'on',
+                                                automaticLayout: true,
+                                                tabSize: 4,
+                                                renderLineHighlight: 'line',
+                                                smoothScrolling: true,
+                                            }}
+                                            onChange={(val: string | undefined) => {
+                                                const newValue = val ?? '';
+                                                setCodeText(newValue);
+                                                addToHistory(newValue);
+                                                if (activeCodeId) {
+                                                    setHasUnsavedChanges(true);
+                                                } else if (newValue.trim()) {
+                                                    setUnsavedCode(newValue);
+                                                    setHasUnsavedChanges(true);
+                                                    setActiveCodeId(null);
+                                                }
+                                            }}
+                                        />
+                                    </div>
+                                ) : (
                                 <textarea
                                     ref={codeTextareaRef}
                                     className="w-full h-[55vh] whitespace-pre font-mono break-words overflow-auto"
@@ -3873,6 +3999,7 @@ ${codeContext}` : ""}${projectContext}`
                                         }
                                     }}
                                 />
+                                )}
 
                                 {showVersions && activeCodeId && (
                                     <div className="mt-2 pt-2 pb-4" style={{ borderTop: '1px solid var(--border-subtle)' }}>
