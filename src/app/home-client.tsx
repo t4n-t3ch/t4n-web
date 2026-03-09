@@ -4739,7 +4739,7 @@ ${codeContext}` : ""}${projectContext}`
                                         type="button"
                                         style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', textAlign: 'left' }}
                                         onClick={() => {
-                                            if (!diagnosticsOpen) runDiagnostics(codeText);
+                                            runDiagnostics(codeText);
                                             setDiagnosticsOpen(v => !v);
                                         }}
                                     >
