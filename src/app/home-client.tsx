@@ -4180,6 +4180,106 @@ ${codeContext}` : ""}${projectContext}`
                                     ⭐ {promptPresets.length > 0 ? promptPresets.length : ''}
                                 </button>
 
+                                {/* Preset quick-launch buttons */}
+                                {promptPresets.slice(0, 3).map(preset => (
+                                    <button
+                                        key={preset.id}
+                                        type="button"
+                                        disabled={!codeText.trim() || inlineActionBusy}
+                                        title={preset.prompt}
+                                        style={{
+                                            padding: '3px 9px',
+                                            fontSize: '11px',
+                                            borderRadius: '5px',
+                                            border: '1px solid rgba(249,115,22,0.3)',
+                                            background: inlineActionLabel === `preset-${preset.id}` ? 'var(--accent-glow)' : 'rgba(249,115,22,0.06)',
+                                            color: inlineActionLabel === `preset-${preset.id}` ? 'var(--accent)' : 'var(--text-secondary)',
+                                            cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer',
+                                            opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
+                                            fontFamily: 'DM Sans, sans-serif',
+                                            whiteSpace: 'nowrap',
+                                            maxWidth: '100px',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                        }}
+                                        onClick={async () => {
+                                            if (!codeText.trim() || inlineActionBusy) return;
+
+                                            setInlineActionBusy(true);
+                                            setInlineActionLabel(`preset-${preset.id}`);
+
+                                            const projectContext = buildProjectContext();
+                                            const fullPrompt = `USER REQUEST:\n${preset.prompt}\n\nSOURCE CODE:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+
+                                            try {
+                                                let cid = activeId;
+                                                if (!cid) {
+                                                    const newId = await startNewChat();
+                                                    if (!newId) throw new Error('Failed to create conversation');
+                                                    cid = newId;
+                                                }
+
+                                                const userMsgId = globalThis.crypto.randomUUID();
+                                                setMessages(m => [...m, { id: userMsgId, role: 'user', content: `📋 ${preset.name}` }]);
+
+                                                const assistantId = globalThis.crypto.randomUUID();
+                                                activeAssistantIdRef.current = assistantId;
+                                                setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+
+                                                abortRef.current?.abort();
+                                                const controller = new AbortController();
+                                                abortRef.current = controller;
+                                                setStreaming(true);
+                                                setLoading(true);
+
+                                                const res = await streamMessage(fullPrompt, cid, controller.signal);
+                                                let streamed = '';
+
+                                                await readSseStream(
+                                                    res,
+                                                    (delta) => {
+                                                        streamed += delta;
+                                                        const extracted = extractCodeBlocks(streamed);
+                                                        if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                                                            setCodeText(extracted);
+                                                            addToHistory(extracted);
+                                                            setHasUnsavedChanges(true);
+                                                            if (!activeCodeId) setUnsavedCode(extracted);
+                                                            if (giveAiAccessToCode) setAccessLockedCode(extracted);
+                                                            setCodeOpen(true);
+                                                        }
+                                                        const isCtrlF = /ctrl\+f:/i.test(streamed);
+                                                        const extracted2 = extractCodeBlocks(streamed);
+                                                        setMessages(m => m.map(msg =>
+                                                            msg.id === assistantId ? {
+                                                                ...msg,
+                                                                content: isCtrlF ? streamed : extracted2 ? `[${preset.name} → open Code panel]` : stripCodeBlocks(streamed)
+                                                            } : msg
+                                                        ));
+                                                    },
+                                                    (doneData) => {
+                                                        const finalCid = doneData?.conversationId || cid;
+                                                        if (finalCid) void refreshPluginRuns(finalCid);
+                                                    },
+                                                    undefined, undefined,
+                                                    controller.signal,
+                                                );
+                                            } catch (err) {
+                                                setError(err instanceof Error ? err.message : 'Preset failed');
+                                            } finally {
+                                                setInlineActionBusy(false);
+                                                setInlineActionLabel(null);
+                                                setStreaming(false);
+                                                setLoading(false);
+                                                activeAssistantIdRef.current = null;
+                                                abortRef.current = null;
+                                            }
+                                        }}
+                                    >
+                                        {inlineActionLabel === `preset-${preset.id}` ? '⏳' : `📋 ${preset.name}`}
+                                    </button>
+                                ))}
+
                                 {/* Convert dropdown — Pro only */}
                                 <div style={{ position: 'relative' }}>
                                     <button
