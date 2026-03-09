@@ -3599,7 +3599,7 @@ ${codeContext}` : ""}${projectContext}`
                                             </button>
                                             {exportDropdownOpen && (
                                                 <div
-                                                    style={{ position: 'absolute', top: '100%', left: 0, zIndex: 100, marginTop: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '180px', overflow: 'hidden' }}
+                                                    style={{ position: 'absolute', top: '100%', right: 0, zIndex: 100, marginTop: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '200px', overflow: 'hidden' }}
                                                     onMouseLeave={() => setExportDropdownOpen(false)}
                                                 >
                                                     {[
