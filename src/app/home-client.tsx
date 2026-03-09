@@ -444,11 +444,16 @@ export default function HomeClient() {
         try {
             const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
             const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
+            const { data: { session: currentSession } } = await supabase.auth.getSession();
+            const token = currentSession?.access_token ?? "";
             const res = await fetch(`${API_BASE}/api/snippets/${encodeURIComponent(id)}/rename`, {
                 method: "PATCH",
-                headers: { "Content-Type": "application/json", "x-api-key": API_KEY },
+                headers: { "Content-Type": "application/json", "x-api-key": API_KEY, "Authorization": `Bearer ${token}` },
                 body: JSON.stringify({ name: next }),
             });
+            if (!res.ok) {
+                console.error("Rename PATCH failed:", res.status, await res.text());
+            }
             if (!res.ok) {
                 // Fallback to updateSnippet
                 const current = savedCodes.find((s) => s.id === id);
