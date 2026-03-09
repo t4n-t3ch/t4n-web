@@ -171,6 +171,7 @@ export default function HomeClient() {
     const [copiedBlockId, setCopiedBlockId] = useState<string | null>(null);
     const [appliedBlockId, setAppliedBlockId] = useState<string | null>(null);
     const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+    const [convertDropdownOpen, setConvertDropdownOpen] = useState(false);
     const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
     const [pluginRuns, setPluginRuns] = useState<PluginRun[]>([]);
     // last tool event emitted from /api/chat/stream (server sends `event: tool`)
@@ -4049,6 +4050,130 @@ ${codeContext}` : ""}${projectContext}`
                                 >
                                     🧹 Format
                                 </button>
+
+                                {/* Convert dropdown */}
+                                <div style={{ position: 'relative' }}>
+                                    <button
+                                        type="button"
+                                        disabled={!codeText.trim() || inlineActionBusy}
+                                        style={{
+                                            padding: '3px 9px',
+                                            fontSize: '11px',
+                                            borderRadius: '5px',
+                                            border: '1px solid var(--border-default)',
+                                            background: convertDropdownOpen ? 'var(--accent-glow)' : 'var(--bg-elevated)',
+                                            color: convertDropdownOpen ? 'var(--accent)' : 'var(--text-secondary)',
+                                            cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer',
+                                            opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
+                                            fontFamily: 'DM Sans, sans-serif',
+                                            whiteSpace: 'nowrap',
+                                        }}
+                                        onClick={() => setConvertDropdownOpen(v => !v)}
+                                    >
+                                        🔄 Convert ▾
+                                    </button>
+
+                                    {convertDropdownOpen && (
+                                        <div
+                                            style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 100, marginBottom: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'hidden' }}
+                                            onMouseLeave={() => setConvertDropdownOpen(false)}
+                                        >
+                                            {[
+                                                { from: 'Pine Script', to: 'Python',       lang: 'Python' },
+                                                { from: 'Pine Script', to: 'cTrader C#',   lang: 'cTrader C#' },
+                                                { from: 'Pine Script', to: 'MQL5',         lang: 'MQL5' },
+                                                { from: 'Pine Script', to: 'JavaScript',   lang: 'JavaScript' },
+                                                { from: 'Pine Script', to: 'TypeScript',   lang: 'TypeScript' },
+                                                { from: 'Python',      to: 'Pine Script',  lang: 'Pine Script v5' },
+                                                { from: 'Python',      to: 'JavaScript',   lang: 'JavaScript' },
+                                                { from: 'cTrader C#',  to: 'Pine Script',  lang: 'Pine Script v5' },
+                                                { from: 'cTrader C#',  to: 'Python',       lang: 'Python' },
+                                                { from: 'MQL5',        to: 'Pine Script',  lang: 'Pine Script v5' },
+                                                { from: 'MQL5',        to: 'Python',       lang: 'Python' },
+                                                { from: 'JavaScript',  to: 'TypeScript',   lang: 'TypeScript' },
+                                                { from: 'TypeScript',  to: 'Python',       lang: 'Python' },
+                                            ].map(({ from, to, lang }) => (
+                                                <button
+                                                    key={`${from}-${to}`}
+                                                    type="button"
+                                                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
+                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                    onClick={async () => {
+                                                        setConvertDropdownOpen(false);
+                                                        if (!codeText.trim() || inlineActionBusy) return;
+
+                                                        setInlineActionBusy(true);
+                                                        setInlineActionLabel('🔄 Convert');
+
+                                                        const projectContext = buildProjectContext();
+                                                        const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+
+                                                        try {
+                                                            let cid = activeId;
+                                                            if (!cid) {
+                                                                const newId = await startNewChat();
+                                                                if (!newId) throw new Error('Failed to create conversation');
+                                                                cid = newId;
+                                                            }
+
+                                                            const userMsgId = globalThis.crypto.randomUUID();
+                                                            setMessages(m => [...m, { id: userMsgId, role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
+
+                                                            const assistantId = globalThis.crypto.randomUUID();
+                                                            activeAssistantIdRef.current = assistantId;
+                                                            setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+
+                                                            abortRef.current?.abort();
+                                                            const controller = new AbortController();
+                                                            abortRef.current = controller;
+                                                            setStreaming(true);
+                                                            setLoading(true);
+
+                                                            const res = await streamMessage(fullPrompt, cid, controller.signal);
+                                                            let streamed = '';
+
+                                                            await readSseStream(
+                                                                res,
+                                                                (delta) => {
+                                                                    streamed += delta;
+                                                                    const extracted = extractCodeBlocks(streamed);
+                                                                    if (extracted) {
+                                                                        setCodeText(extracted);
+                                                                        addToHistory(extracted);
+                                                                        setHasUnsavedChanges(true);
+                                                                        setCodeOpen(true);
+                                                                    }
+                                                                    setMessages(m => m.map(msg =>
+                                                                        msg.id === assistantId ? { ...msg, content: extracted ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg
+                                                                    ));
+                                                                },
+                                                                (doneData) => {
+                                                                    const finalCid = doneData?.conversationId || cid;
+                                                                    if (finalCid) void refreshPluginRuns(finalCid);
+                                                                },
+                                                                undefined, undefined,
+                                                                controller.signal,
+                                                            );
+                                                        } catch (err) {
+                                                            setError(err instanceof Error ? err.message : 'Conversion failed');
+                                                        } finally {
+                                                            setInlineActionBusy(false);
+                                                            setInlineActionLabel(null);
+                                                            setStreaming(false);
+                                                            setLoading(false);
+                                                            activeAssistantIdRef.current = null;
+                                                            abortRef.current = null;
+                                                        }
+                                                    }}
+                                                >
+                                                    <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{from} → {to}</span>
+                                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             <div className="p-3 overflow-y-auto pb-8">
