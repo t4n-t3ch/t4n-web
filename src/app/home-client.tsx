@@ -316,6 +316,42 @@ export default function HomeClient() {
     const [openTabs, setOpenTabs] = useState<string[]>([]); // snippet ids open as tabs
     const [activeTab, setActiveTab] = useState<string | null>(null);
 
+    // Prompt Preset Library
+    type PromptPreset = {
+        id: string;
+        name: string;
+        prompt: string;
+        createdAt: number;
+    };
+
+    const [promptPresets, setPromptPresets] = useState<PromptPreset[]>([]);
+    const [showPresetModal, setShowPresetModal] = useState(false);
+    const [presetModalMode, setPresetModalMode] = useState<'save' | 'manage'>('save');
+    const [editingPreset, setEditingPreset] = useState<PromptPreset | null>(null);
+    const [presetNameInput, setPresetNameInput] = useState('');
+    const [presetPromptInput, setPresetPromptInput] = useState('');
+
+    // Load presets from localStorage
+    useEffect(() => {
+        try {
+            const stored = localStorage.getItem('t4n_prompt_presets');
+            if (stored) {
+                setPromptPresets(JSON.parse(stored));
+            }
+        } catch (e) {
+            console.error('Failed to load presets:', e);
+        }
+    }, []);
+
+    // Save presets to localStorage
+    useEffect(() => {
+        try {
+            localStorage.setItem('t4n_prompt_presets', JSON.stringify(promptPresets));
+        } catch (e) {
+            console.error('Failed to save presets:', e);
+        }
+    }, [promptPresets]);
+
     // Domain / language selection
     const [selectedDomain, setSelectedDomain] = useState<string>('pinescript');
 
@@ -2157,6 +2193,33 @@ ${codeContext}` : ""}${projectContext}`
         } catch (e) {
             console.error("Failed to load project detail:", e);
         }
+    }
+
+    function savePreset(name: string, prompt: string) {
+        if (!name.trim() || !prompt.trim()) return;
+
+        const newPreset: PromptPreset = {
+            id: crypto.randomUUID(),
+            name: name.trim(),
+            prompt: prompt.trim(),
+            createdAt: Date.now(),
+        };
+
+        setPromptPresets(prev => [...prev, newPreset]);
+        setShowPresetModal(false);
+        setPresetNameInput('');
+        setPresetPromptInput('');
+    }
+
+    function deletePreset(id: string) {
+        if (!confirm('Delete this preset?')) return;
+        setPromptPresets(prev => prev.filter(p => p.id !== id));
+    }
+
+    function usePreset(preset: PromptPreset) {
+        // Inject the preset into the conversion flow
+        // This will be used when the user clicks a preset
+        setInput(preset.prompt);
     }
 
     function formatCode(code: string, domain: string): string {
@@ -4050,6 +4113,28 @@ ${codeContext}` : ""}${projectContext}`
                                     🧹 Format
                                 </button>
 
+                                {/* Preset star button */}
+                                <button
+                                    type="button"
+                                    style={{
+                                        padding: '3px 9px',
+                                        fontSize: '11px',
+                                        borderRadius: '5px',
+                                        border: '1px solid var(--border-default)',
+                                        background: promptPresets.length > 0 ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)',
+                                        color: promptPresets.length > 0 ? 'var(--accent)' : 'var(--text-secondary)',
+                                        cursor: 'pointer',
+                                        fontFamily: 'DM Sans, sans-serif',
+                                    }}
+                                    onClick={() => {
+                                        setPresetModalMode('manage');
+                                        setShowPresetModal(true);
+                                    }}
+                                    title="Manage prompt presets"
+                                >
+                                    ⭐ {promptPresets.length > 0 ? promptPresets.length : ''}
+                                </button>
+
                                 {/* Convert dropdown — Pro only */}
                                 <div style={{ position: 'relative' }}>
                                     <button
@@ -4085,112 +4170,199 @@ ${codeContext}` : ""}${projectContext}`
                                         >
                                             {(() => {
                                                 const allConversions: { from: string; to: string; lang: string; domains: string[] }[] = [
-                                                    { from: 'Pine Script', to: 'Python',      lang: 'Python',        domains: ['pinescript'] },
-                                                    { from: 'Pine Script', to: 'cTrader C#',  lang: 'cTrader C#',    domains: ['pinescript'] },
-                                                    { from: 'Pine Script', to: 'MQL5',        lang: 'MQL5',          domains: ['pinescript'] },
-                                                    { from: 'Pine Script', to: 'JavaScript',  lang: 'JavaScript',    domains: ['pinescript'] },
-                                                    { from: 'Pine Script', to: 'TypeScript',  lang: 'TypeScript',    domains: ['pinescript'] },
-                                                    { from: 'Python',      to: 'Pine Script', lang: 'Pine Script v5',domains: ['python'] },
-                                                    { from: 'Python',      to: 'JavaScript',  lang: 'JavaScript',    domains: ['python'] },
-                                                    { from: 'Python',      to: 'TypeScript',  lang: 'TypeScript',    domains: ['python'] },
-                                                    { from: 'Python',      to: 'MQL5',        lang: 'MQL5',          domains: ['python'] },
-                                                    { from: 'cTrader C#',  to: 'Pine Script', lang: 'Pine Script v5',domains: ['ctrader'] },
-                                                    { from: 'cTrader C#',  to: 'Python',      lang: 'Python',        domains: ['ctrader'] },
-                                                    { from: 'cTrader C#',  to: 'MQL5',        lang: 'MQL5',          domains: ['ctrader'] },
-                                                    { from: 'MQL5',        to: 'Pine Script', lang: 'Pine Script v5',domains: ['mql5'] },
-                                                    { from: 'MQL5',        to: 'Python',      lang: 'Python',        domains: ['mql5'] },
-                                                    { from: 'MQL5',        to: 'cTrader C#',  lang: 'cTrader C#',    domains: ['mql5'] },
-                                                    { from: 'JavaScript',  to: 'TypeScript',  lang: 'TypeScript',    domains: ['javascript'] },
-                                                    { from: 'JavaScript',  to: 'Python',      lang: 'Python',        domains: ['javascript'] },
-                                                    { from: 'TypeScript',  to: 'JavaScript',  lang: 'JavaScript',    domains: ['typescript', 'react'] },
-                                                    { from: 'TypeScript',  to: 'Python',      lang: 'Python',        domains: ['typescript', 'react'] },
-                                                    { from: 'C#',          to: 'Python',      lang: 'Python',        domains: ['unity'] },
-                                                    { from: 'C#',          to: 'TypeScript',  lang: 'TypeScript',    domains: ['unity'] },
-                                                    { from: 'Python',      to: 'JavaScript',  lang: 'JavaScript',    domains: ['blender'] },
-                                                    { from: 'Code',        to: 'Python',      lang: 'Python',        domains: ['generic'] },
-                                                    { from: 'Code',        to: 'TypeScript',  lang: 'TypeScript',    domains: ['generic'] },
-                                                    { from: 'Code',        to: 'JavaScript',  lang: 'JavaScript',    domains: ['generic'] },
+                                                    { from: 'Pine Script', to: 'Python', lang: 'Python', domains: ['pinescript'] },
+                                                    { from: 'Pine Script', to: 'cTrader C#', lang: 'cTrader C#', domains: ['pinescript'] },
+                                                    { from: 'Pine Script', to: 'MQL5', lang: 'MQL5', domains: ['pinescript'] },
+                                                    { from: 'Pine Script', to: 'JavaScript', lang: 'JavaScript', domains: ['pinescript'] },
+                                                    { from: 'Pine Script', to: 'TypeScript', lang: 'TypeScript', domains: ['pinescript'] },
+                                                    { from: 'Python', to: 'Pine Script', lang: 'Pine Script v5', domains: ['python'] },
+                                                    { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['python'] },
+                                                    { from: 'Python', to: 'TypeScript', lang: 'TypeScript', domains: ['python'] },
+                                                    { from: 'Python', to: 'MQL5', lang: 'MQL5', domains: ['python'] },
+                                                    { from: 'cTrader C#', to: 'Pine Script', lang: 'Pine Script v5', domains: ['ctrader'] },
+                                                    { from: 'cTrader C#', to: 'Python', lang: 'Python', domains: ['ctrader'] },
+                                                    { from: 'cTrader C#', to: 'MQL5', lang: 'MQL5', domains: ['ctrader'] },
+                                                    { from: 'MQL5', to: 'Pine Script', lang: 'Pine Script v5', domains: ['mql5'] },
+                                                    { from: 'MQL5', to: 'Python', lang: 'Python', domains: ['mql5'] },
+                                                    { from: 'MQL5', to: 'cTrader C#', lang: 'cTrader C#', domains: ['mql5'] },
+                                                    { from: 'JavaScript', to: 'TypeScript', lang: 'TypeScript', domains: ['javascript'] },
+                                                    { from: 'JavaScript', to: 'Python', lang: 'Python', domains: ['javascript'] },
+                                                    { from: 'TypeScript', to: 'JavaScript', lang: 'JavaScript', domains: ['typescript', 'react'] },
+                                                    { from: 'TypeScript', to: 'Python', lang: 'Python', domains: ['typescript', 'react'] },
+                                                    { from: 'C#', to: 'Python', lang: 'Python', domains: ['unity'] },
+                                                    { from: 'C#', to: 'TypeScript', lang: 'TypeScript', domains: ['unity'] },
+                                                    { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['blender'] },
+                                                    { from: 'Code', to: 'Python', lang: 'Python', domains: ['generic'] },
+                                                    { from: 'Code', to: 'TypeScript', lang: 'TypeScript', domains: ['generic'] },
+                                                    { from: 'Code', to: 'JavaScript', lang: 'JavaScript', domains: ['generic'] },
                                                 ];
                                                 return allConversions.filter(c => c.domains.includes(selectedDomain));
                                             })().map(({ from, to, lang }) => (
-                                                <button
-                                                    key={`${from}-${to}`}
-                                                    type="button"
-                                                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
-                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
-                                                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                                                    onClick={async () => {
-                                                        setConvertDropdownOpen(false);
-                                                        if (!codeText.trim() || inlineActionBusy) return;
+                                            <button
+                                                key={`${from}-${to}`}
+                                                type="button"
+                                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
+                                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                onClick={async () => {
+                                                    setConvertDropdownOpen(false);
+                                                    if (!codeText.trim() || inlineActionBusy) return;
 
-                                                        setInlineActionBusy(true);
-                                                        setInlineActionLabel('🔄 Convert');
+                                                    setInlineActionBusy(true);
+                                                    setInlineActionLabel('🔄 Convert');
 
-                                                        const projectContext = buildProjectContext();
-                                                        const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+                                                    const projectContext = buildProjectContext();
+                                                    const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
 
-                                                        try {
-                                                            let cid = activeId;
-                                                            if (!cid) {
-                                                                const newId = await startNewChat();
-                                                                if (!newId) throw new Error('Failed to create conversation');
-                                                                cid = newId;
-                                                            }
-
-                                                            const userMsgId = globalThis.crypto.randomUUID();
-                                                            setMessages(m => [...m, { id: userMsgId, role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
-
-                                                            const assistantId = globalThis.crypto.randomUUID();
-                                                            activeAssistantIdRef.current = assistantId;
-                                                            setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-
-                                                            abortRef.current?.abort();
-                                                            const controller = new AbortController();
-                                                            abortRef.current = controller;
-                                                            setStreaming(true);
-                                                            setLoading(true);
-
-                                                            const res = await streamMessage(fullPrompt, cid, controller.signal);
-                                                            let streamed = '';
-
-                                                            await readSseStream(
-                                                                res,
-                                                                (delta) => {
-                                                                    streamed += delta;
-                                                                    const extracted = extractCodeBlocks(streamed);
-                                                                    if (extracted) {
-                                                                        setCodeText(extracted);
-                                                                        addToHistory(extracted);
-                                                                        setHasUnsavedChanges(true);
-                                                                        setCodeOpen(true);
-                                                                    }
-                                                                    setMessages(m => m.map(msg =>
-                                                                        msg.id === assistantId ? { ...msg, content: extracted ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg
-                                                                    ));
-                                                                },
-                                                                (doneData) => {
-                                                                    const finalCid = doneData?.conversationId || cid;
-                                                                    if (finalCid) void refreshPluginRuns(finalCid);
-                                                                },
-                                                                undefined, undefined,
-                                                                controller.signal,
-                                                            );
-                                                        } catch (err) {
-                                                            setError(err instanceof Error ? err.message : 'Conversion failed');
-                                                        } finally {
-                                                            setInlineActionBusy(false);
-                                                            setInlineActionLabel(null);
-                                                            setStreaming(false);
-                                                            setLoading(false);
-                                                            activeAssistantIdRef.current = null;
-                                                            abortRef.current = null;
+                                                    try {
+                                                        let cid = activeId;
+                                                        if (!cid) {
+                                                            const newId = await startNewChat();
+                                                            if (!newId) throw new Error('Failed to create conversation');
+                                                            cid = newId;
                                                         }
-                                                    }}
-                                                >
-                                                    <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{from} → {to}</span>
-                                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
-                                                </button>
+
+                                                        const userMsgId = globalThis.crypto.randomUUID();
+                                                        setMessages(m => [...m, { id: userMsgId, role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
+
+                                                        const assistantId = globalThis.crypto.randomUUID();
+                                                        activeAssistantIdRef.current = assistantId;
+                                                        setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+
+                                                        abortRef.current?.abort();
+                                                        const controller = new AbortController();
+                                                        abortRef.current = controller;
+                                                        setStreaming(true);
+                                                        setLoading(true);
+
+                                                        const res = await streamMessage(fullPrompt, cid, controller.signal);
+                                                        let streamed = '';
+
+                                                        await readSseStream(
+                                                            res,
+                                                            (delta) => {
+                                                                streamed += delta;
+                                                                const extracted = extractCodeBlocks(streamed);
+                                                                if (extracted) {
+                                                                    setCodeText(extracted);
+                                                                    addToHistory(extracted);
+                                                                    setHasUnsavedChanges(true);
+                                                                    setCodeOpen(true);
+                                                                }
+                                                                setMessages(m => m.map(msg =>
+                                                                    msg.id === assistantId ? { ...msg, content: extracted ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg
+                                                                ));
+                                                            },
+                                                            (doneData) => {
+                                                                const finalCid = doneData?.conversationId || cid;
+                                                                if (finalCid) void refreshPluginRuns(finalCid);
+                                                            },
+                                                            undefined, undefined,
+                                                            controller.signal,
+                                                        );
+                                                    } catch (err) {
+                                                        setError(err instanceof Error ? err.message : 'Conversion failed');
+                                                    } finally {
+                                                        setInlineActionBusy(false);
+                                                        setInlineActionLabel(null);
+                                                        setStreaming(false);
+                                                        setLoading(false);
+                                                        activeAssistantIdRef.current = null;
+                                                        abortRef.current = null;
+                                                    }
+                                                }}
+                                            >
+                                                <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{from} → {to}</span>
+                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
+                                            </button>
                                             ))}
+
+                                            {/* Presets Section */}
+                                            {promptPresets.length > 0 && (
+                                                <>
+                                                    <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '4px 0' }} />
+                                                    <div style={{ padding: '4px 14px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Your Presets</div>
+                                                    {promptPresets.map(preset => (
+                                                        <button
+                                                            key={preset.id}
+                                                            type="button"
+                                                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
+                                                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                            onClick={async () => {
+                                                                setConvertDropdownOpen(false);
+                                                                if (!codeText.trim() || inlineActionBusy) return;
+
+                                                                setInlineActionBusy(true);
+                                                                setInlineActionLabel('📋 Preset');
+
+                                                                const projectContext = buildProjectContext();
+                                                                const fullPrompt = `USER REQUEST:\n${preset.prompt}\n\nSOURCE CODE:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+
+                                                                try {
+                                                                    let cid = activeId;
+                                                                    if (!cid) {
+                                                                        const newId = await startNewChat();
+                                                                        if (!newId) throw new Error('Failed to create conversation');
+                                                                        cid = newId;
+                                                                    }
+
+                                                                    const userMsgId = globalThis.crypto.randomUUID();
+                                                                    setMessages(m => [...m, { id: userMsgId, role: 'user', content: `📋 ${preset.name}` }]);
+
+                                                                    const assistantId = globalThis.crypto.randomUUID();
+                                                                    activeAssistantIdRef.current = assistantId;
+                                                                    setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+
+                                                                    abortRef.current?.abort();
+                                                                    const controller = new AbortController();
+                                                                    abortRef.current = controller;
+                                                                    setStreaming(true);
+                                                                    setLoading(true);
+
+                                                                    const res = await streamMessage(fullPrompt, cid, controller.signal);
+                                                                    let streamed = '';
+
+                                                                    await readSseStream(
+                                                                        res,
+                                                                        (delta) => {
+                                                                            streamed += delta;
+                                                                            const extracted = extractCodeBlocks(streamed);
+                                                                            if (extracted) {
+                                                                                setCodeText(extracted);
+                                                                                addToHistory(extracted);
+                                                                                setHasUnsavedChanges(true);
+                                                                                setCodeOpen(true);
+                                                                            }
+                                                                            setMessages(m => m.map(msg =>
+                                                                                msg.id === assistantId ? { ...msg, content: extracted ? `[${preset.name} → open Code panel]` : stripCodeBlocks(streamed) } : msg
+                                                                            ));
+                                                                        },
+                                                                        (doneData) => {
+                                                                            const finalCid = doneData?.conversationId || cid;
+                                                                            if (finalCid) void refreshPluginRuns(finalCid);
+                                                                        },
+                                                                        undefined, undefined,
+                                                                        controller.signal,
+                                                                    );
+                                                                } catch (err) {
+                                                                    setError(err instanceof Error ? err.message : 'Preset failed');
+                                                                } finally {
+                                                                    setInlineActionBusy(false);
+                                                                    setInlineActionLabel(null);
+                                                                    setStreaming(false);
+                                                                    setLoading(false);
+                                                                    activeAssistantIdRef.current = null;
+                                                                    abortRef.current = null;
+                                                                }
+                                                            }}
+                                                        >
+                                                            <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>📋 {preset.name}</span>
+                                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>preset</span>
+                                                        </button>
+                                                    ))}
+                                                </>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -4203,13 +4375,13 @@ ${codeContext}` : ""}${projectContext}`
                                             height="100%"
                                             language={
                                                 selectedDomain === 'python' ? 'python'
-                                                : selectedDomain === 'react' ? 'typescript'
-                                                : selectedDomain === 'typescript' ? 'typescript'
-                                                : selectedDomain === 'javascript' ? 'javascript'
-                                                : selectedDomain === 'mql5' ? 'cpp'
-                                                : selectedDomain === 'ctrader' ? 'csharp'
-                                                : selectedDomain === 'unity' ? 'csharp'
-                                                : 'plaintext'
+                                                    : selectedDomain === 'react' ? 'typescript'
+                                                        : selectedDomain === 'typescript' ? 'typescript'
+                                                            : selectedDomain === 'javascript' ? 'javascript'
+                                                                : selectedDomain === 'mql5' ? 'cpp'
+                                                                    : selectedDomain === 'ctrader' ? 'csharp'
+                                                                        : selectedDomain === 'unity' ? 'csharp'
+                                                                            : 'plaintext'
                                             }
                                             theme={monacoTheme}
                                             value={codeText}
@@ -4240,51 +4412,51 @@ ${codeContext}` : ""}${projectContext}`
                                         />
                                     </div>
                                 ) : (
-                                <textarea
-                                    ref={codeTextareaRef}
-                                    className="w-full h-[55vh] whitespace-pre font-mono break-words overflow-auto"
-                                    style={{ background: '#0d0d10', color: '#e2e2e8', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '10px', fontSize: '12px', lineHeight: '1.7', fontFamily: 'JetBrains Mono, monospace', resize: 'none' }}
-                                    value={codeText}
-                                    placeholder="Paste code here, ask the AI, or type directly…"
-                                    onChange={(e) => {
-                                        const newValue = e.target.value;
-                                        setCodeText(newValue);
-                                        addToHistory(newValue);
-                                        if (activeCodeId) {
-                                            setHasUnsavedChanges(true);
-                                        } else if (newValue.trim()) {
-                                            setUnsavedCode(newValue);
-                                            setHasUnsavedChanges(true);
-                                            setActiveCodeId(null);
-                                        }
-                                    }}
-                                    onPaste={(e) => {
-                                        const pastedText = e.clipboardData?.getData("text") ?? "";
-                                        setTimeout(() => {
-                                            if (pastedText.trim()) {
-                                                setUnsavedCode(pastedText);
+                                    <textarea
+                                        ref={codeTextareaRef}
+                                        className="w-full h-[55vh] whitespace-pre font-mono break-words overflow-auto"
+                                        style={{ background: '#0d0d10', color: '#e2e2e8', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '10px', fontSize: '12px', lineHeight: '1.7', fontFamily: 'JetBrains Mono, monospace', resize: 'none' }}
+                                        value={codeText}
+                                        placeholder="Paste code here, ask the AI, or type directly…"
+                                        onChange={(e) => {
+                                            const newValue = e.target.value;
+                                            setCodeText(newValue);
+                                            addToHistory(newValue);
+                                            if (activeCodeId) {
+                                                setHasUnsavedChanges(true);
+                                            } else if (newValue.trim()) {
+                                                setUnsavedCode(newValue);
                                                 setHasUnsavedChanges(true);
                                                 setActiveCodeId(null);
-                                                addToHistory(pastedText);
                                             }
-                                        }, 0);
-                                    }}
-                                    onKeyDown={(e) => {
-                                        if (e.key === "Tab") {
-                                            e.preventDefault();
-                                            const el = e.currentTarget;
-                                            const start = el.selectionStart ?? 0;
-                                            const end = el.selectionEnd ?? 0;
-                                            const insert = "  ";
-                                            const next = codeText.slice(0, start) + insert + codeText.slice(end);
-                                            setCodeText(next);
-                                            addToHistory(next);
-                                            requestAnimationFrame(() => {
-                                                el.selectionStart = el.selectionEnd = start + insert.length;
-                                            });
-                                        }
-                                    }}
-                                />
+                                        }}
+                                        onPaste={(e) => {
+                                            const pastedText = e.clipboardData?.getData("text") ?? "";
+                                            setTimeout(() => {
+                                                if (pastedText.trim()) {
+                                                    setUnsavedCode(pastedText);
+                                                    setHasUnsavedChanges(true);
+                                                    setActiveCodeId(null);
+                                                    addToHistory(pastedText);
+                                                }
+                                            }, 0);
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Tab") {
+                                                e.preventDefault();
+                                                const el = e.currentTarget;
+                                                const start = el.selectionStart ?? 0;
+                                                const end = el.selectionEnd ?? 0;
+                                                const insert = "  ";
+                                                const next = codeText.slice(0, start) + insert + codeText.slice(end);
+                                                setCodeText(next);
+                                                addToHistory(next);
+                                                requestAnimationFrame(() => {
+                                                    el.selectionStart = el.selectionEnd = start + insert.length;
+                                                });
+                                            }
+                                        }}
+                                    />
                                 )}
 
                                 {showVersions && activeCodeId && (
@@ -4567,6 +4739,160 @@ ${codeContext}` : ""}${projectContext}`
                     </div>
                 </div>
             )}
+            {/* Preset Modal */}
+            {showPresetModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                    onMouseDown={() => { setShowPresetModal(false); setPresetModalMode('save'); setEditingPreset(null); }}>
+                    <div
+                        style={{ width: '420px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden' }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                    >
+                        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
+                            <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                                {presetModalMode === 'save' ? '⭐ Save as Preset' : '📋 Manage Presets'}
+                            </div>
+                        </div>
+
+                        <div style={{ padding: '20px' }}>
+                            {presetModalMode === 'save' ? (
+                                <>
+                                    <div style={{ marginBottom: '16px' }}>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>Preset Name</div>
+                                        <input
+                                            autoFocus
+                                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }}
+                                            placeholder="e.g. Convert Pine to Python"
+                                            value={presetNameInput}
+                                            onChange={(e) => setPresetNameInput(e.target.value)}
+                                        />
+                                    </div>
+                                    <div style={{ marginBottom: '16px' }}>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>Prompt Template</div>
+                                        <textarea
+                                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', minHeight: '100px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }}
+                                            placeholder="Enter the prompt you want to save..."
+                                            value={presetPromptInput}
+                                            onChange={(e) => setPresetPromptInput(e.target.value)}
+                                        />
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '16px', background: 'var(--bg-elevated)', padding: '8px 12px', borderRadius: '6px' }}>
+                                        <span style={{ fontWeight: 600 }}>Tip:</span> You can use placeholders like {'{code}'} or {'{language}'} in your prompts.
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    {promptPresets.length === 0 ? (
+                                        <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                                            No presets saved yet.
+                                        </div>
+                                    ) : (
+                                        <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                                            {promptPresets.map(preset => (
+                                                <div key={preset.id} style={{ marginBottom: '8px', padding: '12px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+                                                        <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>{preset.name}</span>
+                                                        <div style={{ display: 'flex', gap: '4px' }}>
+                                                            <button
+                                                                type="button"
+                                                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--text-muted)', padding: '2px 6px' }}
+                                                                onClick={() => {
+                                                                    setEditingPreset(preset);
+                                                                    setPresetNameInput(preset.name);
+                                                                    setPresetPromptInput(preset.prompt);
+                                                                    setPresetModalMode('save');
+                                                                }}
+                                                                title="Edit"
+                                                            >
+                                                                ✏️
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: '#f87171', padding: '2px 6px' }}
+                                                                onClick={() => deletePreset(preset.id)}
+                                                                title="Delete"
+                                                            >
+                                                                🗑️
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', maxHeight: '40px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        {preset.prompt.length > 60 ? preset.prompt.slice(0, 60) + '…' : preset.prompt}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+
+                        <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between' }}>
+                            {presetModalMode === 'save' ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                        onClick={() => { setShowPresetModal(false); setPresetNameInput(''); setPresetPromptInput(''); }}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <button
+                                            type="button"
+                                            style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                            onClick={() => { setPresetModalMode('manage'); setEditingPreset(null); }}
+                                        >
+                                            Manage
+                                        </button>
+                                        <button
+                                            type="button"
+                                            style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', opacity: (!presetNameInput.trim() || !presetPromptInput.trim()) ? 0.5 : 1 }}
+                                            disabled={!presetNameInput.trim() || !presetPromptInput.trim()}
+                                            onClick={() => {
+                                                if (editingPreset) {
+                                                    // Update existing
+                                                    setPromptPresets(prev => prev.map(p =>
+                                                        p.id === editingPreset.id
+                                                            ? { ...p, name: presetNameInput.trim(), prompt: presetPromptInput.trim() }
+                                                            : p
+                                                    ));
+                                                } else {
+                                                    // Save new
+                                                    savePreset(presetNameInput, presetPromptInput);
+                                                }
+                                                setEditingPreset(null);
+                                                setPresetNameInput('');
+                                                setPresetPromptInput('');
+                                                setShowPresetModal(false);
+                                            }}
+                                        >
+                                            {editingPreset ? 'Update' : 'Save'}
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <button
+                                        type="button"
+                                        style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                        onClick={() => setShowPresetModal(false)}
+                                    >
+                                        Close
+                                    </button>
+                                    <button
+                                        type="button"
+                                        style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                        onClick={() => { setPresetModalMode('save'); setEditingPreset(null); setPresetNameInput(''); setPresetPromptInput(''); }}
+                                    >
+                                        + New Preset
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Rename Snippet Modal */}
             {renameModalId && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
