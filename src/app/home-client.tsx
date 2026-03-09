@@ -6,7 +6,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Session } from "@supabase/supabase-js";
 import Image from "next/image";
 import MonacoEditor from "@monaco-editor/react";
+import type * as Monaco from 'monaco-editor';
 import DiffViewer from 'react-diff-viewer-continued';
+import { lintCode, severityIcon, severityColor, type Diagnostic } from '@/lib/linter';
 import {
     listConversations,
     getMessages,
@@ -319,6 +321,13 @@ export default function HomeClient() {
     const [monacoTheme, setMonacoTheme] = useState<'vs-dark' | 'light' | 'hc-black'>('vs-dark');
     const [openTabs, setOpenTabs] = useState<string[]>([]); // snippet ids open as tabs
     const [activeTab, setActiveTab] = useState<string | null>(null);
+    const monacoEditorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+    const monacoInstanceRef = useRef<typeof Monaco | null>(null);
+
+    // Diagnostics panel
+    const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
+    const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+    const [diagnosticsFilter, setDiagnosticsFilter] = useState<'all' | 'error' | 'warning' | 'info'>('all');
 
     // Prompt Preset Library
     type PromptPreset = {
@@ -663,6 +672,14 @@ export default function HomeClient() {
 
         // If no markers, fall back to the existing truncation marker logic
         return applyPartialCodePatch(existingCode, patchCode);
+    }
+
+    function runDiagnostics(code: string) {
+        const results = lintCode(code, selectedDomain);
+        setDiagnostics(results);
+        if (results.length > 0 && results.some(d => d.severity === 'error' || d.severity === 'warning')) {
+            setDiagnosticsOpen(true);
+        }
     }
 
     function addToHistory(newCode: string, opts?: { allowEmpty?: boolean }) {
@@ -4424,6 +4441,7 @@ ${codeContext}` : ""}${projectContext}`
                                                 const newValue = val ?? '';
                                                 setCodeText(newValue);
                                                 addToHistory(newValue);
+                                                runDiagnostics(newValue);
                                                 if (activeCodeId) {
                                                     setHasUnsavedChanges(true);
                                                 } else if (newValue.trim()) {
@@ -4431,6 +4449,11 @@ ${codeContext}` : ""}${projectContext}`
                                                     setHasUnsavedChanges(true);
                                                     setActiveCodeId(null);
                                                 }
+                                            }}
+                                            onMount={(editor, monaco) => {
+                                                monacoEditorRef.current = editor;
+                                                monacoInstanceRef.current = monaco;
+                                                runDiagnostics(codeText);
                                             }}
                                         />
                                     </div>
@@ -4445,6 +4468,7 @@ ${codeContext}` : ""}${projectContext}`
                                             const newValue = e.target.value;
                                             setCodeText(newValue);
                                             addToHistory(newValue);
+                                            runDiagnostics(newValue);
                                             if (activeCodeId) {
                                                 setHasUnsavedChanges(true);
                                             } else if (newValue.trim()) {
@@ -4707,6 +4731,141 @@ ${codeContext}` : ""}${projectContext}`
                                         )}
                                     </div>
                                 )}
+                            {/* ── Diagnostics Panel ── */}
+                            {codeText.trim() && (
+                                <div style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', flexShrink: 0 }}>
+                                    {/* Header row */}
+                                    <button
+                                        type="button"
+                                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', textAlign: 'left' }}
+                                        onClick={() => {
+                                            if (!diagnosticsOpen) runDiagnostics(codeText);
+                                            setDiagnosticsOpen(v => !v);
+                                        }}
+                                    >
+                                        <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', flex: 1 }}>
+                                            🔎 Diagnostics
+                                        </span>
+                                        {/* Severity counts */}
+                                        {diagnostics.filter(d => d.severity === 'error').length > 0 && (
+                                            <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '10px', background: 'rgba(248,113,113,0.15)', color: '#f87171', fontWeight: 700 }}>
+                                                🔴 {diagnostics.filter(d => d.severity === 'error').length}
+                                            </span>
+                                        )}
+                                        {diagnostics.filter(d => d.severity === 'warning').length > 0 && (
+                                            <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '10px', background: 'rgba(251,191,36,0.15)', color: '#fbbf24', fontWeight: 700 }}>
+                                                🟡 {diagnostics.filter(d => d.severity === 'warning').length}
+                                            </span>
+                                        )}
+                                        {diagnostics.filter(d => d.severity === 'info').length > 0 && (
+                                            <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '10px', background: 'rgba(96,165,250,0.15)', color: '#60a5fa', fontWeight: 700 }}>
+                                                ℹ️ {diagnostics.filter(d => d.severity === 'info').length}
+                                            </span>
+                                        )}
+                                        {diagnostics.length === 0 && (
+                                            <span style={{ fontSize: '10px', color: '#4ade80' }}>✓ No issues</span>
+                                        )}
+                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{diagnosticsOpen ? '▲' : '▼'}</span>
+                                    </button>
+
+                                    {diagnosticsOpen && (
+                                        <div>
+                                            {/* Filter bar */}
+                                            <div style={{ display: 'flex', gap: '4px', padding: '4px 10px', borderTop: '1px solid var(--border-subtle)' }}>
+                                                {(['all', 'error', 'warning', 'info'] as const).map(f => (
+                                                    <button
+                                                        key={f}
+                                                        type="button"
+                                                        onClick={() => setDiagnosticsFilter(f)}
+                                                        style={{ padding: '2px 8px', fontSize: '10px', borderRadius: '4px', border: '1px solid var(--border-default)', background: diagnosticsFilter === f ? 'var(--accent-glow)' : 'none', color: diagnosticsFilter === f ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: diagnosticsFilter === f ? 700 : 400, textTransform: 'capitalize' }}
+                                                    >
+                                                        {f}
+                                                    </button>
+                                                ))}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => runDiagnostics(codeText)}
+                                                    style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: '10px', borderRadius: '4px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                                    title="Re-run diagnostics"
+                                                >
+                                                    ↺ Run
+                                                </button>
+                                            </div>
+
+                                            {/* Diagnostic list */}
+                                            <div style={{ maxHeight: '180px', overflowY: 'auto', padding: '4px 0' }}>
+                                                {(() => {
+                                                    const filtered = diagnosticsFilter === 'all'
+                                                        ? diagnostics
+                                                        : diagnostics.filter(d => d.severity === diagnosticsFilter);
+
+                                                    if (filtered.length === 0) {
+                                                        return (
+                                                            <div style={{ padding: '12px 10px', fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                                                                {diagnostics.length === 0 ? '✓ No issues found' : `No ${diagnosticsFilter}s`}
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    return filtered.map((d, i) => (
+                                                        <div
+                                                            key={i}
+                                                            style={{ padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', alignItems: 'flex-start', cursor: 'pointer' }}
+                                                            onClick={() => {
+                                                                // Jump to line in textarea
+                                                                const ta = codeTextareaRef.current;
+                                                                if (ta && !useMonaco) {
+                                                                    const lines = codeText.split('\n');
+                                                                    const charsBefore = lines.slice(0, d.line - 1).join('\n').length + (d.line > 1 ? 1 : 0);
+                                                                    const charsToEnd = charsBefore + lines[d.line - 1].length;
+                                                                    ta.focus();
+                                                                    ta.setSelectionRange(charsBefore, charsToEnd);
+                                                                    const lineHeight = 20;
+                                                                    ta.scrollTop = Math.max(0, (d.line - 3) * lineHeight);
+                                                                }
+                                                                // Jump to line in Monaco
+                                                                if (useMonaco && monacoEditorRef.current) {
+                                                                    monacoEditorRef.current.revealLineInCenter(d.line);
+                                                                    monacoEditorRef.current.setPosition({ lineNumber: d.line, column: d.col });
+                                                                    monacoEditorRef.current.focus();
+                                                                }
+                                                            }}
+                                                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                        >
+                                                            <span style={{ fontSize: '11px', flexShrink: 0, marginTop: '1px' }}>{severityIcon(d.severity)}</span>
+                                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                                <div style={{ fontSize: '12px', color: severityColor(d.severity), lineHeight: 1.4 }}>{d.message}</div>
+                                                                <div style={{ display: 'flex', gap: '8px', marginTop: '2px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Line {d.line} · {d.code}</span>
+                                                                    {d.quickFix && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                const lines = codeText.split('\n');
+                                                                                lines[d.line - 1] = d.quickFix!.replacement;
+                                                                                const fixed = lines.join('\n');
+                                                                                setCodeText(fixed);
+                                                                                addToHistory(fixed);
+                                                                                setHasUnsavedChanges(true);
+                                                                                setTimeout(() => runDiagnostics(fixed), 50);
+                                                                            }}
+                                                                            style={{ fontSize: '10px', padding: '1px 7px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.08)', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
+                                                                        >
+                                                                            ⚡ {d.quickFix.label}
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ));
+                                                })()}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                             </div>
                         </aside>
                     )}
