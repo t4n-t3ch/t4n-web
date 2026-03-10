@@ -95,6 +95,17 @@ declare global {
     }
 }
 
+function useIsMobile() {
+    const [isMobile, setIsMobile] = useState(false);
+    useEffect(() => {
+        const check = () => setIsMobile(window.innerWidth < 768);
+        check();
+        window.addEventListener('resize', check);
+        return () => window.removeEventListener('resize', check);
+    }, []);
+    return isMobile;
+}
+
 export default function HomeClient() {
     const [session, setSession] = useState<Session | null>(null);
     const [authLoading, setAuthLoading] = useState(true);
@@ -137,6 +148,8 @@ export default function HomeClient() {
     const abortRef = useRef<AbortController | null>(null);
     const [streaming, setStreaming] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const isMobile = useIsMobile();
+    const [mobileTab, setMobileTab] = useState<'chat' | 'code' | 'sessions'>('chat');
     const [promptDisplayMode, setPromptDisplayMode] = useState<'description' | 'minimal'>('description');
     const [pluginName, setPluginName] = useState<
         "healthcheck" | "summariseConversation" | "exportConversation"
@@ -2357,6 +2370,290 @@ ${codeContext}` : ""}${projectContext}`
         }
 
         return `\n\n[PROJECT CONTEXT]\n${parts.join('\n')}\n[END PROJECT CONTEXT]`;
+    }
+
+    if (isMobile) {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: 'var(--bg-primary)', overflow: 'hidden' }}>
+
+                {/* ── SESSIONS TAB ── */}
+                {mobileTab === 'sessions' && (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '10px', borderBottom: '1px solid var(--border-subtle)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Image src="/t4n-logo.png" alt="T4N" width={22} height={22} className="h-5 w-5 object-contain opacity-90" />
+                                <span style={{ fontWeight: 700, fontSize: '16px', color: 'var(--text-primary)' }}>Chats</span>
+                            </div>
+                            <button type="button"
+                                style={{ padding: '7px 16px', fontSize: '13px', borderRadius: '8px', background: 'var(--accent)', border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                onClick={async () => { await startNewChat(); setMobileTab('chat'); }}>
+                                + New
+                            </button>
+                        </div>
+
+                        <input
+                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '10px 14px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box' }}
+                            placeholder="Search conversations…"
+                            value={convSearch}
+                            onChange={e => setConvSearch(e.target.value)}
+                        />
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {filteredConversations.map(c => (
+                                <div key={c.id}
+                                    style={{ padding: '12px 14px', borderRadius: '10px', background: activeId === c.id ? 'var(--accent-glow)' : 'var(--bg-secondary)', border: `1px solid ${activeId === c.id ? 'rgba(249,115,22,0.3)' : 'var(--border-subtle)'}`, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                                    onClick={() => { void openConversation(c.id); setMobileTab('chat'); }}>
+                                    <span style={{ fontSize: '13px', color: activeId === c.id ? 'var(--accent)' : 'var(--text-primary)', fontWeight: activeId === c.id ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                        {titles[c.id] ?? c.title ?? c.id.slice(0, 8)}
+                                    </span>
+                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0, marginLeft: '8px' }}>
+                                        {new Date(c.updated_at).toLocaleDateString()}
+                                    </span>
+                                </div>
+                            ))}
+                            {filteredConversations.length === 0 && (
+                                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: '13px' }}>No conversations yet</div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* ── CODE TAB ── */}
+                {mobileTab === 'code' && (
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                        {/* Code toolbar */}
+                        <div style={{ display: 'flex', gap: '6px', padding: '8px 10px', overflowX: 'auto', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', flexShrink: 0, WebkitOverflowScrolling: 'touch' }}>
+                            <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap' }} onClick={handleNewCode}>📄 New</button>
+                            <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap', opacity: historyIndex > 0 ? 1 : 0.4 }} onClick={handleUndo} disabled={historyIndex <= 0}>↩ Undo</button>
+                            <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap', opacity: historyIndex < codeHistory.length - 1 ? 1 : 0.4 }} onClick={handleRedo} disabled={historyIndex >= codeHistory.length - 1}>↪ Redo</button>
+                            <button type="button" className="btn-secondary"
+                                style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap', background: hasUnsavedChanges ? 'rgba(34,197,94,0.1)' : undefined }}
+                                onClick={() => { if (activeCodeId) { updateActiveSnippet(); setHasUnsavedChanges(false); } else if (hasUnsavedChanges) { saveCurrentCode(); setHasUnsavedChanges(false); setUnsavedCode(''); } }}
+                                disabled={!codeText.trim() || !hasUnsavedChanges}>
+                                {activeCodeId ? 'Update' : 'Save'}
+                            </button>
+                            <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
+                                onClick={async () => { try { await navigator.clipboard.writeText(codeText || ''); } catch { } }}
+                                disabled={!codeText.trim()}>Copy</button>
+                            <select value={selectedDomain} onChange={e => setSelectedDomain(e.target.value)}
+                                style={{ fontSize: '12px', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                <option value="pinescript">🌲 Pine Script</option>
+                                <option value="ctrader">📊 cTrader</option>
+                                <option value="python">🐍 Python</option>
+                                <option value="mql5">⚙️ MQL5</option>
+                                <option value="react">⚛️ React</option>
+                                <option value="blender">🎨 Blender</option>
+                                <option value="unity">🎮 Unity</option>
+                                <option value="generic">💻 Generic</option>
+                            </select>
+                        </div>
+
+                        {/* Snippet selector */}
+                        <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', flexShrink: 0 }}>
+                            <select
+                                style={{ width: '100%', fontSize: '13px', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}
+                                value={activeCodeId ?? (hasUnsavedChanges ? UNSAVED_ID : '')}
+                                onChange={async e => {
+                                    const id = e.target.value || null;
+                                    if (id === UNSAVED_ID) { setActiveCodeId(null); setCodeText(unsavedCode); return; }
+                                    setActiveCodeId(id);
+                                    setHasUnsavedChanges(false);
+                                    const found = savedCodes.find(s => s.id === id);
+                                    if (found && id) { setCodeText(found.code); addToHistory(found.code); runDiagnostics(found.code); await loadVersions(id); }
+                                }}>
+                                <option value="">Saved snippets…</option>
+                                {hasUnsavedChanges && <option value={UNSAVED_ID}>📝 Unsaved (new)</option>}
+                                {savedCodes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                        </div>
+
+                        {/* Code textarea — fills remaining height */}
+                        <textarea
+                            ref={codeTextareaRef}
+                            style={{ flex: 1, background: '#0d0d10', color: '#e2e2e8', border: 'none', padding: '12px', fontSize: '12px', lineHeight: '1.7', fontFamily: 'JetBrains Mono, monospace', resize: 'none', outline: 'none', WebkitOverflowScrolling: 'touch' }}
+                            value={codeText}
+                            placeholder="Paste or write code here…"
+                            onChange={e => {
+                                const v = e.target.value;
+                                setCodeText(v);
+                                addToHistory(v);
+                                runDiagnostics(v);
+                                if (activeCodeId) { setHasUnsavedChanges(true); }
+                                else if (v.trim()) { setUnsavedCode(v); setHasUnsavedChanges(true); setActiveCodeId(null); }
+                            }}
+                            onKeyDown={e => {
+                                if (e.key === 'Tab') {
+                                    e.preventDefault();
+                                    const el = e.currentTarget;
+                                    const start = el.selectionStart ?? 0;
+                                    const end = el.selectionEnd ?? 0;
+                                    const next = codeText.slice(0, start) + '  ' + codeText.slice(end);
+                                    setCodeText(next);
+                                    addToHistory(next);
+                                    requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + 2; });
+                                }
+                            }}
+                        />
+
+                        {/* Diagnostics summary bar */}
+                        {codeText.trim() && diagnostics.length > 0 && (
+                            <div style={{ padding: '6px 10px', background: 'var(--bg-elevated)', borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', flexShrink: 0 }}
+                                onClick={() => { runDiagnostics(codeText); setDiagnosticsOpen(v => !v); }}>
+                                {diagnostics.filter(d => d.severity === 'error').length > 0 && (
+                                    <span style={{ fontSize: '11px', color: '#f87171' }}>🔴 {diagnostics.filter(d => d.severity === 'error').length} error{diagnostics.filter(d => d.severity === 'error').length !== 1 ? 's' : ''}</span>
+                                )}
+                                {diagnostics.filter(d => d.severity === 'warning').length > 0 && (
+                                    <span style={{ fontSize: '11px', color: '#fbbf24' }}>🟡 {diagnostics.filter(d => d.severity === 'warning').length} warning{diagnostics.filter(d => d.severity === 'warning').length !== 1 ? 's' : ''}</span>
+                                )}
+                                {diagnostics.length === 0 && <span style={{ fontSize: '11px', color: '#4ade80' }}>✓ No issues</span>}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* ── CHAT TAB ── */}
+                {mobileTab === 'chat' && (
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                        {/* Chat header */}
+                        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                            <span style={{ fontSize: '13px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                {activeId ? (titles[activeId] ?? 'Chat') : 'New chat'}
+                            </span>
+                            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                {codeText.trim() && (
+                                    <button type="button"
+                                        style={{ padding: '5px 10px', fontSize: '11px', borderRadius: '6px', border: '1px solid rgba(249,115,22,0.3)', background: 'rgba(249,115,22,0.08)', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}
+                                        onClick={() => setMobileTab('code')}>
+                                        ⌨️ Code{hasUnsavedChanges ? ' •' : ''}
+                                    </button>
+                                )}
+                                <button type="button"
+                                    style={{ padding: '5px 10px', fontSize: '11px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                    onClick={() => {
+                                        if (!giveAiAccessToCode || !activeCodeId) {
+                                            if (activeCodeId) {
+                                                setGiveAiAccessToCode(true);
+                                                setAccessLockedCode(codeText);
+                                            }
+                                        } else {
+                                            setGiveAiAccessToCode(false);
+                                            setAccessLockedCode('');
+                                        }
+                                    }}>
+                                    {giveAiAccessToCode ? '🟢 AI' : '⚫ AI'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Messages */}
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', WebkitOverflowScrolling: 'touch' }}>
+                            {loading && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                        {[0, 150, 300].map(d => <div key={d} className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--accent)', animationDelay: `${d}ms` }} />)}
+                                    </div>
+                                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>T4N is thinking…</span>
+                                </div>
+                            )}
+                            {messages.length === 0 && !loading && (
+                                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                                    {activeId ? 'No messages yet' : 'Start a new chat below'}
+                                </div>
+                            )}
+                            {messages.map(m => {
+                                const isUser = m.role === 'user';
+                                const isActiveStreaming = !isUser && streaming && m.id === activeAssistantIdRef.current;
+                                const isStopped = !isUser && /\[Stopped\]\s*$/.test(m.content || '');
+                                const cleanText = isStopped ? (m.content || '').replace(/\n?\n?\[Stopped\]\s*$/, '') : (m.content || '');
+
+                                return (
+                                    <div key={m.id} style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
+                                        <div style={{
+                                            maxWidth: '85%', padding: '10px 14px', borderRadius: '12px', fontSize: '13px', lineHeight: '1.6', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                                            background: isUser ? 'var(--accent)' : 'var(--bg-secondary)',
+                                            color: isUser ? '#fff' : 'var(--text-primary)',
+                                            border: isUser ? 'none' : '1px solid var(--border-subtle)',
+                                        }}>
+                                            {cleanText}{isActiveStreaming ? ' ▍' : ''}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {error && (
+                                <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', fontSize: '12px', color: '#f87171' }}>
+                                    ⚠️ {error}
+                                </div>
+                            )}
+                            <div ref={bottomRef} />
+                        </div>
+
+                        {/* Composer — sits above tab bar, keyboard pushes it up */}
+                        <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', flexShrink: 0, display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                            <input
+                                ref={inputRef}
+                                style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '20px', padding: '10px 16px', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
+                                placeholder="Message T4N…"
+                                value={input}
+                                onChange={e => setInput(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSend(); } }}
+                                disabled={loading}
+                            />
+                            {streaming ? (
+                                <button type="button"
+                                    style={{ padding: '10px 18px', borderRadius: '20px', background: '#ef4444', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14px', cursor: 'pointer', flexShrink: 0 }}
+                                    onClick={stopStreaming}>Stop</button>
+                            ) : (
+                                <button type="button"
+                                    style={{ padding: '10px 18px', borderRadius: '20px', background: input.trim() ? 'var(--accent)' : 'var(--bg-elevated)', border: `1px solid ${input.trim() ? 'transparent' : 'var(--border-default)'}`, color: input.trim() ? '#fff' : 'var(--text-muted)', fontWeight: 700, fontSize: '14px', cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s' }}
+                                    onClick={() => void handleSend()}
+                                    disabled={loading || !input.trim()}>Send</button>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* ── BOTTOM TAB BAR ── */}
+                <div style={{
+                    display: 'flex',
+                    borderTop: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-secondary)',
+                    flexShrink: 0,
+                    paddingBottom: 'env(safe-area-inset-bottom)',
+                }}>
+                    {([
+                        { id: 'chat', icon: '💬', label: 'Chat' },
+                        { id: 'code', icon: '⌨️', label: 'Code' },
+                        { id: 'sessions', icon: '☰', label: 'Sessions' },
+                    ] as const).map(tab => (
+                        <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setMobileTab(tab.id)}
+                            style={{
+                                flex: 1,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '3px',
+                                padding: '10px 0',
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontFamily: 'DM Sans, sans-serif',
+                                borderTop: mobileTab === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
+                                transition: 'all 0.15s',
+                            }}
+                        >
+                            <span style={{ fontSize: '18px' }}>{tab.icon}</span>
+                            <span style={{ fontSize: '10px', fontWeight: mobileTab === tab.id ? 700 : 400, color: mobileTab === tab.id ? 'var(--accent)' : 'var(--text-muted)' }}>
+                                {tab.label}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+        );
     }
 
     return (
