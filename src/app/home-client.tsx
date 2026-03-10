@@ -2415,6 +2415,40 @@ ${codeContext}` : ""}${projectContext}`
                                 <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: '13px' }}>No conversations yet</div>
                             )}
                         </div>
+
+                        {/* Settings + account footer */}
+                        <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {/* Plan badge */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: '10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Plan</span>
+                                {userPlan === 'pro' ? (
+                                    <button type="button"
+                                        onClick={() => void openBillingPortal()}
+                                        style={{ padding: '4px 12px', fontSize: '11px', borderRadius: '20px', border: '1px solid rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)', color: '#4ade80', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                        ✓ Pro · Manage
+                                    </button>
+                                ) : (
+                                    <button type="button"
+                                        onClick={() => setShowUpgradeModal(true)}
+                                        style={{ padding: '4px 12px', fontSize: '11px', borderRadius: '20px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.08)', color: 'var(--accent)', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                        Free → Upgrade Pro
+                                    </button>
+                                )}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button type="button"
+                                    onClick={() => setSettingsOpen(true)}
+                                    style={{ flex: 1, padding: '10px', borderRadius: '10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: '13px', fontWeight: 500, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                    ⚙️ Settings
+                                </button>
+                                <button type="button"
+                                    onClick={async () => { if (confirm('Sign out?')) await supabase.auth.signOut(); }}
+                                    style={{ flex: 1, padding: '10px', borderRadius: '10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                    Sign out
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
 
