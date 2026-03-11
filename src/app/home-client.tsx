@@ -2270,13 +2270,13 @@ ${codeContext}` : ""}${projectContext}`
         setPromptPresets(prev => prev.filter(p => p.id !== id));
     }
 
-    function usePreset(preset: PromptPreset) {
+    function _usePreset(preset: PromptPreset) {
         // Inject the preset into the conversion flow
         // This will be used when the user clicks a preset
         setInput(preset.prompt);
     }
 
-    function getVersionById(id: string): SnippetVersion | undefined {
+    function _getVersionById(id: string): SnippetVersion | undefined {
         return snippetVersions.find(v => v.id === id);
     }
 
