@@ -181,7 +181,7 @@ export default function HomeClient() {
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
-    const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins' | 'appearance' | 'billing'>('prompts');
+    const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins' | 'appearance' | 'billing' | 'contact'>('prompts');
 
     const [, setPluginResult] = useState<unknown>(null);
     const [copiedBlockId, setCopiedBlockId] = useState<string | null>(null);
@@ -1116,9 +1116,9 @@ export default function HomeClient() {
     useEffect(() => {
         if (!session) return;
         void refreshConversations();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
         void syncProjectsFromApi();
         void fetchUserPlan(session.access_token);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [session]);
 
     // Re-fetch plan when user returns from Stripe billing page
@@ -3506,7 +3506,7 @@ ${codeContext}` : ""}${projectContext}`
                             </div>
 
                             <div className="flex" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                                {(['prompts', 'plugins', 'appearance', 'billing'] as const).map((tab) => (
+                                {(['prompts', 'plugins', 'appearance', 'billing', 'contact'] as const).map((tab) => (
                                     <button
                                         key={tab}
                                         onClick={() => setActiveSettingsTab(tab)}
@@ -3523,7 +3523,7 @@ ${codeContext}` : ""}${projectContext}`
                                             borderBottom: activeSettingsTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
                                         }}
                                     >
-                                        {tab === 'prompts' ? 'Prompt Settings' : tab === 'plugins' ? 'Plugins' : tab === 'appearance' ? 'Appearance' : 'Subscription'}
+                                        {tab === 'prompts' ? 'Prompt Settings' : tab === 'plugins' ? 'Plugins' : tab === 'appearance' ? 'Appearance' : tab === 'billing' ? 'Subscription' : 'Contact'}
                                     </button>
                                 ))}
                             </div>
@@ -3619,6 +3619,81 @@ ${codeContext}` : ""}${projectContext}`
                                         </div>
                                         <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                             Manage your subscription, update payment details, or cancel via the Stripe billing portal.
+                                        </p>
+                                    </div>
+                                )}
+
+                                {activeSettingsTab === 'contact' && (
+                                    <div className="space-y-4">
+                                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Get in touch</p>
+
+                                        {/* Email */}
+                                        <a href="mailto:t4nt3ch@gmail.com"
+                                            style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', borderRadius: '10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', textDecoration: 'none', transition: 'border-color 0.15s' }}
+                                            onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                                            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-default)')}>
+                                            <span style={{ fontSize: '22px', width: '32px', textAlign: 'center' }}>✉️</span>
+                                            <div>
+                                                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Email</div>
+                                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>t4nt3ch@gmail.com</div>
+                                            </div>
+                                            <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)' }}>↗</span>
+                                        </a>
+
+                                        {/* Instagram */}
+                                        <a href="https://www.instagram.com/t4nt3ch/" target="_blank" rel="noopener noreferrer"
+                                            style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', borderRadius: '10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', textDecoration: 'none', transition: 'border-color 0.15s' }}
+                                            onMouseEnter={e => (e.currentTarget.style.borderColor = '#e1306c')}
+                                            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-default)')}>
+                                            <span style={{ fontSize: '22px', width: '32px', textAlign: 'center' }}>📸</span>
+                                            <div>
+                                                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Instagram</div>
+                                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>@t4nt3ch</div>
+                                            </div>
+                                            <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)' }}>↗</span>
+                                        </a>
+
+                                        {/* YouTube */}
+                                        <a href="https://www.youtube.com/@TanTechTrades" target="_blank" rel="noopener noreferrer"
+                                            style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', borderRadius: '10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', textDecoration: 'none', transition: 'border-color 0.15s' }}
+                                            onMouseEnter={e => (e.currentTarget.style.borderColor = '#ff0000')}
+                                            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-default)')}>
+                                            <span style={{ fontSize: '22px', width: '32px', textAlign: 'center' }}>▶️</span>
+                                            <div>
+                                                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>YouTube</div>
+                                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>@TanTechTrades</div>
+                                            </div>
+                                            <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)' }}>↗</span>
+                                        </a>
+
+                                        {/* Discord — Pro only */}
+                                        {userPlan === 'pro' ? (
+                                            <a href="https://discord.com/channels/1480956412434841671/1480987063590457425" target="_blank" rel="noopener noreferrer"
+                                                style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', borderRadius: '10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', textDecoration: 'none', transition: 'border-color 0.15s' }}
+                                                onMouseEnter={e => (e.currentTarget.style.borderColor = '#5865f2')}
+                                                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-default)')}>
+                                                <span style={{ fontSize: '22px', width: '32px', textAlign: 'center' }}>💬</span>
+                                                <div>
+                                                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Discord <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '10px', background: 'rgba(34,197,94,0.1)', color: '#4ade80', marginLeft: '6px' }}>Pro</span></div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>T4N Community Server</div>
+                                                </div>
+                                                <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)' }}>↗</span>
+                                            </a>
+                                        ) : (
+                                            <div
+                                                style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', borderRadius: '10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', opacity: 0.6, cursor: 'pointer' }}
+                                                onClick={() => { setSettingsOpen(false); setShowUpgradeModal(true); }}>
+                                                <span style={{ fontSize: '22px', width: '32px', textAlign: 'center' }}>💬</span>
+                                                <div>
+                                                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Discord <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '10px', background: 'rgba(249,115,22,0.1)', color: 'var(--accent)', marginLeft: '6px' }}>&#10022; Pro only</span></div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Upgrade to access the community</div>
+                                                </div>
+                                                <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--accent)' }}>Upgrade &#8594;</span>
+                                            </div>
+                                        )}
+
+                                        <p style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', paddingTop: '4px' }}>
+                                            Note: the Discord link requires you to already be a member of the server. If you can&apos;t access it, email us and we&apos;ll send you an invite.
                                         </p>
                                     </div>
                                 )}
@@ -5585,7 +5660,7 @@ ${codeContext}` : ""}${projectContext}`
                                         />
                                     </div>
                                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '16px', background: 'var(--bg-elevated)', padding: '8px 12px', borderRadius: '6px' }}>
-                                        <span style={{ fontWeight: 600 }}>Tip:</span> You can use placeholders like {'{code}'} or {'{language}'} in your prompts.
+                                        <span style={{ fontWeight: 600 }}>Tip:</span> You can use placeholders like {String.fromCharCode(123) + 'code' + String.fromCharCode(125)} or {String.fromCharCode(123) + 'language' + String.fromCharCode(125)} in your prompts.
                                     </div>
                                 </>
                             ) : (
