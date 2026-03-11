@@ -181,7 +181,7 @@ export default function HomeClient() {
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
-    const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins' | 'appearance' | 'billing' | 'contact'>('prompts');
+    const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins' | 'appearance' | 'billing' | 'contact' | 'howto'>('prompts');
 
     const [, setPluginResult] = useState<unknown>(null);
     const [copiedBlockId, setCopiedBlockId] = useState<string | null>(null);
@@ -2979,7 +2979,7 @@ ${codeContext}` : ""}${projectContext}`
                                                     </div>
                                                     <textarea
                                                         style={{ width: '100%', minHeight: '300px', fontSize: '13px', color: 'var(--text-primary)', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '12px', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', lineHeight: '1.6', boxSizing: 'border-box' }}
-                                                        placeholder={"Example:\n- Always respond in Pine Script v5\n- Prefer efficiency over readability\n- When I say 'fix it', look for the most likely error first"}
+                                                        placeholder={"Example:\n- Always respond in Pine Script v5\n- Prefer efficiency over readability\n- When I say &apos;fix it&apos;, look for the most likely error first"}
                                                         value={isEditing ? (editingProject.ai_instructions ?? '') : (proj.ai_instructions ?? '')}
                                                         onChange={e => {
                                                             if (!isEditing) {
@@ -3506,7 +3506,7 @@ ${codeContext}` : ""}${projectContext}`
                             </div>
 
                             <div className="flex" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                                {(['prompts', 'plugins', 'appearance', 'billing', 'contact'] as const).map((tab) => (
+                                {(['prompts', 'plugins', 'appearance', 'billing', 'contact', 'howto'] as const).map((tab) => (
                                     <button
                                         key={tab}
                                         onClick={() => setActiveSettingsTab(tab)}
@@ -3523,7 +3523,12 @@ ${codeContext}` : ""}${projectContext}`
                                             borderBottom: activeSettingsTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
                                         }}
                                     >
-                                        {tab === 'prompts' ? 'Prompt Settings' : tab === 'plugins' ? 'Plugins' : tab === 'appearance' ? 'Appearance' : tab === 'billing' ? 'Subscription' : 'Contact'}
+                                        {tab === 'prompts' ? 'Prompt Settings' :
+                                            tab === 'plugins' ? 'Plugins' :
+                                                tab === 'appearance' ? 'Appearance' :
+                                                    tab === 'billing' ? 'Subscription' :
+                                                        tab === 'contact' ? 'Contact' :
+                                                            'How to Use'}
                                     </button>
                                 ))}
                             </div>
@@ -3695,6 +3700,168 @@ ${codeContext}` : ""}${projectContext}`
                                         <p style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', paddingTop: '4px' }}>
                                             Note: the Discord link requires you to already be a member of the server. If you can&apos;t access it, email us and we&apos;ll send you an invite.
                                         </p>
+                                    </div>
+                                )}
+
+                                {activeSettingsTab === 'howto' && (
+                                    <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin' }}>
+                                        {/* Overview */}
+                                        <div>
+                                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>Overview</p>
+                                            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '16px' }}>
+                                                T4N is an AI coding workspace built for generating, editing, debugging, and organizing code inside focused projects. It is designed for users working across areas such as Pine Script, Python, JavaScript, TypeScript, Unity, Blender, web development, automation, and other coding tasks.
+                                            </p>
+                                            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                                                The platform combines chat, project context, snippets, and version history so work stays organized instead of getting lost in a single conversation.
+                                            </p>
+                                        </div>
+
+                                        {/* What T4N Can Do */}
+                                        <div>
+                                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>What T4N Can Do</p>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                {[
+                                                    { title: 'Project-based coding', desc: 'Create separate projects for different tasks, tools, or clients. Each project keeps its own chat context, code snippets, and workflow history.' },
+                                                    { title: 'AI-assisted code generation', desc: 'Describe what you want to build and T4N can generate code, functions, scripts, logic updates, or full file drafts.' },
+                                                    { title: 'Debugging and fixing code', desc: 'Paste broken code or error messages into chat and ask for a fix, explanation, or rewrite.' },
+                                                    { title: 'Editing existing code', desc: 'Use T4N to improve structure, refactor code, add features, optimize logic, or convert styles and patterns.' },
+                                                    { title: 'Snippet management', desc: 'Store code inside snippets so work is organized by file or feature instead of being mixed into chat messages.' },
+                                                    { title: 'Version history', desc: 'Track changes to snippets and restore previous versions when needed.' },
+                                                    { title: 'Multi-domain support', desc: 'Use T4N for different coding areas such as trading scripts, Python automation, frontend development, game scripting, and more.' },
+                                                ].map(({ title, desc }) => (
+                                                    <div key={title} style={{ background: 'var(--bg-elevated)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+                                                        <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--accent)', marginBottom: '4px' }}>{title}</div>
+                                                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.5' }}>{desc}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Getting Started */}
+                                        <div>
+                                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>Getting Started</p>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                                <div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                                        <span style={{ background: 'var(--accent)', color: '#fff', width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold' }}>1</span>
+                                                        <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>Create a project</span>
+                                                    </div>
+                                                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '28px' }}>
+                                                        Start by creating a new project for the thing you want to build. Examples: Trading strategy, Python automation script, React component, Unity system, Bug fixing session.
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                                        <span style={{ background: 'var(--accent)', color: '#fff', width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold' }}>2</span>
+                                                        <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>Choose the correct topic or language</span>
+                                                    </div>
+                                                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '28px' }}>
+                                                        Before prompting, decide what stack or language you are working in: Pine Script, Python, JavaScript, TypeScript, C#, Blender Python, cTrader / trading logic.
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                                        <span style={{ background: 'var(--accent)', color: '#fff', width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold' }}>3</span>
+                                                        <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>Create or open a snippet</span>
+                                                    </div>
+                                                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '28px' }}>
+                                                        A snippet acts like a working file. Use snippets to store generated code, edits, and iterations. Examples: strategy.pine, main.py, auth.ts, indicator.cs.
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                                        <span style={{ background: 'var(--accent)', color: '#fff', width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold' }}>4</span>
+                                                        <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>Start chatting with the AI</span>
+                                                    </div>
+                                                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '28px' }}>
+                                                        Ask clearly for what you want. Better prompts include: the language, the goal, any errors, any rules to follow, whether you want full code or just a change.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Best Ways to Use Chat */}
+                                        <div>
+                                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>Best Ways to Use Chat</p>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                                {[
+                                                    { type: 'Ask for new code', example: 'Build a Python script that reads a CSV and calculates monthly totals.' },
+                                                    { type: 'Ask for edits', example: 'Add error handling but keep everything else the same.' },
+                                                    { type: 'Ask for debugging', example: 'This script fails on line 42. Explain the issue and rewrite only the broken section.' },
+                                                    { type: 'Ask for refactors', example: 'Refactor this into smaller reusable functions.' },
+                                                    { type: 'Ask for explanation', example: 'Explain what this code is doing and why.' },
+                                                ].map(({ type, example }) => (
+                                                    <div key={type} style={{ background: 'var(--bg-elevated)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+                                                        <div style={{ fontWeight: 600, fontSize: '12px', color: 'var(--accent)', marginBottom: '4px' }}>{type}</div>
+                                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>"{example}"</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Tips for Better Results */}
+                                        <div>
+                                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>Tips for Better Results</p>
+                                            <div style={{ background: 'var(--bg-elevated)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+                                                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.8' }}>
+                                                    <li><span style={{ color: 'var(--accent)' }}>Be specific</span> — Clear prompts produce better code than broad ones</li>
+                                                    <li><span style={{ color: 'var(--accent)' }}>Include constraints</span> — Mention anything the AI must preserve</li>
+                                                    <li><span style={{ color: 'var(--accent)' }}>Include the full error</span> — Paste actual error text, don't paraphrase</li>
+                                                    <li><span style={{ color: 'var(--accent)' }}>Mention output format</span> — Full file, updated function, explanation plus code</li>
+                                                </ul>
+                                            </div>
+                                        </div>
+
+                                        {/* Working With Snippets */}
+                                        <div>
+                                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>Working With Snippets</p>
+                                            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '12px' }}>
+                                                Snippets are where your code is stored and edited. Use snippets when you want to keep code saved inside a project, maintain separate files, compare versions, or continue improving code over time.
+                                            </p>
+                                            <div style={{ background: 'var(--bg-elevated)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+                                                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 4px 0', fontWeight: 500 }}>Recommended approach:</p>
+                                                <ol style={{ margin: '4px 0 0 0', paddingLeft: '20px', fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.8' }}>
+                                                    <li>Create a project</li>
+                                                    <li>Create a snippet</li>
+                                                    <li>Generate code in chat</li>
+                                                    <li>Move good output into the snippet</li>
+                                                    <li>Continue iterating</li>
+                                                </ol>
+                                            </div>
+                                        </div>
+
+                                        {/* Version History */}
+                                        <div>
+                                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>Version History</p>
+                                            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                                                T4N keeps version history for snippets so changes can be reviewed and restored. Use version history when a recent change made the file worse, you want to compare an older working version, or you want to restore a previous draft.
+                                            </p>
+                                        </div>
+
+                                        {/* What T4N Is Best At */}
+                                        <div>
+                                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>What T4N Is Best At</p>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                                {['Generating first drafts', 'Fixing errors', 'Rewriting messy code', 'Converting logic into code', 'Iterating on existing files', 'Organizing work'].map(item => (
+                                                    <span key={item} style={{ background: 'rgba(249,115,22,0.1)', color: 'var(--accent)', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', border: '1px solid rgba(249,115,22,0.2)' }}>{item}</span>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Limitations */}
+                                        <div>
+                                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>Limitations to Keep in Mind</p>
+                                            <div style={{ background: 'rgba(239,68,68,0.08)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.2)' }}>
+                                                <p style={{ fontSize: '12px', color: '#f87171', margin: '0 0 8px 0', fontWeight: 500 }}>⚠ AI-generated code should still be reviewed and tested before production use.</p>
+                                                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '11px', color: 'var(--text-muted)', lineHeight: '1.7' }}>
+                                                    <li>Check logic carefully</li>
+                                                    <li>Test strategy behaviour</li>
+                                                    <li>Verify syntax</li>
+                                                    <li>Review security-sensitive code</li>
+                                                    <li>Confirm imports and dependencies</li>
+                                                </ul>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
 
