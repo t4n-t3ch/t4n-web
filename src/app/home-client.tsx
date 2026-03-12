@@ -4727,6 +4727,148 @@ ${codeContext}` : ""}${projectContext}`
                                     </button>
                                 ))}
 
+                                {/* ── ✦ Pro divider ── */}
+                                <span style={{
+                                    fontSize: '9px',
+                                    color: 'var(--accent)',
+                                    fontWeight: 700,
+                                    letterSpacing: '0.12em',
+                                    textTransform: 'uppercase',
+                                    opacity: 0.7,
+                                    whiteSpace: 'nowrap',
+                                    alignSelf: 'center',
+                                    borderLeft: '1px solid rgba(249,115,22,0.3)',
+                                    marginLeft: '2px',
+                                    paddingLeft: '8px',
+                                }}>
+                                    ✦ Pro
+                                </span>
+
+                                {/* ── Pro feature buttons ── */}
+                                {([
+                                    {
+                                        label: '🔬 AI Code Review',
+                                        prompt: `Perform a comprehensive code review. Return your analysis in this exact format:\n\n## 🔒 Security Issues\nList any security vulnerabilities, injection risks, or unsafe patterns. If none, say "None found."\n\n## ⚡ Performance Problems\nList any performance issues, unnecessary loops, memory leaks. If none, say "None found."\n\n## ❌ Bad Patterns\nList anti-patterns, code smells, poor naming. If none, say "None found."\n\n## ✅ Better Approaches\nSuggest concrete improvements with Ctrl+F format where applicable.\n\nBe specific with line references.`,
+                                        proOnly: true,
+                                    },
+                                    {
+                                        label: '🐛 Debug Mode',
+                                        prompt: `Debug this code thoroughly. Return your analysis in this exact format:\n\n## 🔴 Error Identified\nDescribe the most likely bug or error\n\n## 🔍 Possible Causes\n1. First possible root cause\n2. Second possible root cause\n3. Third possible root cause\n\n## 🛠 Suggested Fix\nProvide the exact fix using Ctrl+F find-and-replace format.`,
+                                        proOnly: true,
+                                    },
+                                    {
+                                        label: '🧪 Generate Tests',
+                                        prompt: `Generate comprehensive unit tests for this code. Include happy path, edge cases, and error handling. Use the correct framework (Jest/Vitest for TS/JS, pytest for Python, NUnit for C#). Output the full test file, ready to run.`,
+                                        proOnly: true,
+                                    },
+                                    {
+                                        label: '🏗️ Project Analysis',
+                                        prompt: `Analyse this entire codebase/file and return:\n\n## 📐 Architecture Overview\nDescribe structure and patterns.\n\n## 🚨 Issues Found\n- Duplicated functions\n- Circular dependencies\n- Missing error handling\n- Performance bottlenecks\n\n## 🔧 Suggested Improvements\nPrioritised list with Ctrl+F format fixes.\n\n## 📊 Code Quality Score\nScore out of 10 with justification.`,
+                                        proOnly: true,
+                                    },
+                                    {
+                                        label: '🔀 Multi-File Refactor',
+                                        prompt: `Refactor this code to clean architecture:\n- Extract repeated logic into reusable functions\n- Separate concerns (auth, data, UI)\n- Convert callbacks to async/await\n- Add TypeScript types where missing\n- Remove dead code\n\nOutput the FULL refactored file — no truncation.`,
+                                        proOnly: true,
+                                    },
+                                    {
+                                        label: '🚀 DevOps Assist',
+                                        prompt: `Generate DevOps config for this project:\n\n## 🐳 Docker Setup\nDockerfile and docker-compose.yml\n\n## ⚙️ CI/CD Pipeline\nGitHub Actions YAML\n\n## 🚢 Deployment Commands\nStep-by-step shell commands\n\n## 🔑 Environment Variables\nRequired env vars with descriptions`,
+                                        proOnly: true,
+                                    },
+                                    {
+                                        label: '💬 Ask Project',
+                                        prompt: `You are a codebase assistant. Analyse the provided code and answer questions about it — where features are, how things connect, what functions do. Be specific with line numbers and function names.\n\nCurrent code to analyse:`,
+                                        proOnly: true,
+                                    },
+                                ] as { label: string; prompt: string; proOnly: boolean }[]).map(({ label, prompt, proOnly }) => (
+                                    <button
+                                        key={label}
+                                        type="button"
+                                        disabled={!codeText.trim() || inlineActionBusy}
+                                        style={{
+                                            padding: '3px 9px',
+                                            fontSize: '11px',
+                                            borderRadius: '5px',
+                                            border: '1px solid rgba(249,115,22,0.45)',
+                                            background: inlineActionLabel === label ? 'var(--accent-glow)' : 'rgba(249,115,22,0.06)',
+                                            color: inlineActionLabel === label ? 'var(--accent)' : 'var(--accent)',
+                                            cursor: (!codeText.trim() || inlineActionBusy) ? 'not-allowed' : 'pointer',
+                                            opacity: (!codeText.trim() || inlineActionBusy) ? 0.5 : 1,
+                                            fontFamily: 'DM Sans, sans-serif',
+                                            transition: 'all 0.15s',
+                                            whiteSpace: 'nowrap',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '3px',
+                                        }}
+                                        onClick={async () => {
+                                            if (!codeText.trim() || inlineActionBusy) return;
+                                            if (proOnly && userPlan !== 'pro') {
+                                                setShowUpgradeModal(true);
+                                                return;
+                                            }
+                                            const finalPrompt = label === '💬 Ask Project'
+                                                ? `${prompt}\n\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\``
+                                                : `USER REQUEST:\n${prompt}\n\nSOURCE CODE (${selectedDomain}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${buildProjectContext()}`;
+                                            setInlineActionBusy(true);
+                                            setInlineActionLabel(label);
+                                            try {
+                                                let cid = activeId;
+                                                if (!cid) {
+                                                    const newId = await startNewChat();
+                                                    if (!newId) throw new Error('Failed to create conversation');
+                                                    cid = newId;
+                                                }
+                                                setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `${label} — running on current code…` }]);
+                                                const assistantId = globalThis.crypto.randomUUID();
+                                                activeAssistantIdRef.current = assistantId;
+                                                setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+                                                abortRef.current?.abort();
+                                                const controller = new AbortController();
+                                                abortRef.current = controller;
+                                                setStreaming(true);
+                                                setLoading(true);
+                                                const res = await streamMessage(finalPrompt, cid, controller.signal);
+                                                let streamed = '';
+                                                await readSseStream(res,
+                                                    (delta) => {
+                                                        streamed += delta;
+                                                        const extracted = extractCodeBlocks(streamed);
+                                                        if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                                                            const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
+                                                            setCodeText(merged);
+                                                            addToHistory(merged);
+                                                            setHasUnsavedChanges(true);
+                                                            if (!activeCodeId) setUnsavedCode(merged);
+                                                            if (giveAiAccessToCode) setAccessLockedCode(merged);
+                                                            setCodeOpen(true);
+                                                        }
+                                                        const isCtrlF = /ctrl\+f:/i.test(streamed);
+                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : extractCodeBlocks(streamed) ? `[${label} → check Code panel]` : stripCodeBlocks(streamed) } : msg));
+                                                    },
+                                                    (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
+                                                    undefined, undefined, controller.signal,
+                                                );
+                                            } catch (err) {
+                                                setError(err instanceof Error ? err.message : 'Action failed');
+                                            } finally {
+                                                setInlineActionBusy(false);
+                                                setInlineActionLabel(null);
+                                                setStreaming(false);
+                                                setLoading(false);
+                                                activeAssistantIdRef.current = null;
+                                                abortRef.current = null;
+                                            }
+                                        }}
+                                    >
+                                        {inlineActionLabel === label ? '⏳' : label}
+                                        {proOnly && userPlan !== 'pro' && (
+                                            <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', marginLeft: '2px', fontWeight: 700 }}>PRO</span>
+                                        )}
+                                    </button>
+                                ))}
+
                                 {/* Preset star button */}
                                 <button
                                     type="button"
