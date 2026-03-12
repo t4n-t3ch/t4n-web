@@ -2979,7 +2979,7 @@ ${codeContext}` : ""}${projectContext}`
                                                     </div>
                                                     <textarea
                                                         style={{ width: '100%', minHeight: '300px', fontSize: '13px', color: 'var(--text-primary)', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '12px', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', lineHeight: '1.6', boxSizing: 'border-box' }}
-                                                        placeholder={"Example:\n- Always respond in Pine Script v5\n- Prefer efficiency over readability\n- When I say &apos;fix it&apos;, look for the most likely error first"}
+                                                        placeholder={"Example:\n- Always respond in Pine Script v5\n- Prefer efficiency over readability\n- When I say 'fix it', look for the most likely error first"}
                                                         value={isEditing ? (editingProject.ai_instructions ?? '') : (proj.ai_instructions ?? '')}
                                                         onChange={e => {
                                                             if (!isEditing) {
@@ -4726,30 +4726,6 @@ ${codeContext}` : ""}${projectContext}`
                                         {inlineActionLabel === label ? '⏳' : label}
                                     </button>
                                 ))}
-                                <button
-                                    type="button"
-                                    disabled={!codeText.trim()}
-                                    style={{
-                                        padding: '3px 9px',
-                                        fontSize: '11px',
-                                        borderRadius: '5px',
-                                        border: '1px solid var(--border-default)',
-                                        background: 'var(--bg-elevated)',
-                                        color: 'var(--text-secondary)',
-                                        cursor: !codeText.trim() ? 'not-allowed' : 'pointer',
-                                        opacity: !codeText.trim() ? 0.5 : 1,
-                                        fontFamily: 'DM Sans, sans-serif',
-                                        whiteSpace: 'nowrap',
-                                    }}
-                                    onClick={() => {
-                                        const formatted = formatCode(codeText, selectedDomain);
-                                        setCodeText(formatted);
-                                        addToHistory(formatted);
-                                        setHasUnsavedChanges(true);
-                                    }}
-                                >
-                                    🧹 Format
-                                </button>
 
                                 {/* Preset star button */}
                                 <button
@@ -5763,10 +5739,16 @@ ${codeContext}` : ""}${projectContext}`
                         {/* Features */}
                         <div style={{ padding: '20px 24px' }}>
                             {[
-                                { icon: '🔁', text: 'Unlimited AI messages' },
-                                { icon: '💾', text: 'Unlimited saved snippets' },
-                                { icon: '📁', text: 'Unlimited projects' },
-                                { icon: '⚡', text: 'Priority response speed' },
+                                { icon: '🔬', text: 'AI Code Review' },
+                                { icon: '🐛', text: 'Debug Mode' },
+                                { icon: '🧪', text: 'Test Generation' },
+                                { icon: '🏗️', text: 'Project Analysis' },
+                                { icon: '🔀', text: 'Multi-File Refactor' },
+                                { icon: '🚀', text: 'DevOps Assistant' },
+                                { icon: '💬', text: 'Codebase Chat' },
+                                { icon: '🔄', text: 'Smart Code Conversion' },
+                                { icon: '🧠', text: 'AI Memory (learns your style)' },
+                                { icon: '⚡', text: 'Higher usage limits (500/day)' },
                             ].map(({ icon, text }) => (
                                 <div key={text} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', fontSize: '13px', color: 'var(--text-primary)' }}>
                                     <span>{icon}</span><span>{text}</span>
