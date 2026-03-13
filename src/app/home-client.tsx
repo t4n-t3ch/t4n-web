@@ -4191,8 +4191,9 @@ ${codeContext}` : ""}${projectContext}`
                             className="max-w-[45vw] flex flex-col shrink-0 overflow-hidden"
                             style={{ width: codeWidth, background: 'var(--bg-secondary)', borderLeft: '1px solid var(--border-subtle)' }}
                         >
-                            <div className="flex items-center gap-2 p-2 flex-wrap" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)' }}>
-                                <div className="flex items-center gap-1.5 flex-wrap">
+                            <div style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)' }}>
+                                {/* ── ROW 1: File actions ── */}
+                                <div className="flex items-center gap-1.5 flex-wrap" style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-subtle)' }}>
                                     {/* New Code Button */}
                                     <button
                                         type="button"
@@ -4422,6 +4423,11 @@ ${codeContext}` : ""}${projectContext}`
                                         <option value="generic">💻 Generic Code</option>
                                     </select>
 
+                                </div>
+
+                                {/* ── ROW 2: Snippet selector + management ── */}
+                                <div className="flex items-center gap-1.5 flex-wrap" style={{ padding: '5px 8px', borderBottom: '1px solid var(--border-subtle)' }}>
+
                                     {/* Open Tabs bar */}
                                     {useMonaco && openTabs.length > 0 && (
                                         <div style={{ display: 'flex', gap: '2px', flexWrap: 'nowrap', overflowX: 'auto', padding: '0 2px', maxWidth: '100%' }}>
@@ -4601,47 +4607,478 @@ ${codeContext}` : ""}${projectContext}`
                                     )}
                                 </div>
                             </div>
+                        </div>
+                    </div>
 
-                            {/* Inline AI Action Toolbar */}
-                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-primary)' }}>
-                                {([
-                                    { label: '🔍 Explain', prompt: 'Explain what this code does in plain English. Be concise.' },
-                                    { label: '🔧 Fix Errors', prompt: 'Find and fix any errors, bugs, or issues in this code. Use Ctrl+F format for changes.' },
-                                    { label: '✨ Improve', prompt: 'Suggest and apply improvements to this code for readability, performance, and best practices. Use Ctrl+F format.' },
-                                    { label: '📋 Add Comments', prompt: 'Add clear inline comments to this code explaining what each section does. Use Ctrl+F format.' },
-                                    { label: '⚡ Optimise', prompt: 'Optimise this code for speed and efficiency. Use Ctrl+F format for changes.' },
-                                ] as const).map(({ label, prompt }) => (
+                {/* Inline AI Action Toolbar — ROW 3 */}
+                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-primary)' }}>
+                    {([
+                        { label: '🔍 Explain', prompt: 'Explain what this code does in plain English. Be concise.' },
+                        { label: '🔧 Fix Errors', prompt: 'Find and fix any errors, bugs, or issues in this code. Use Ctrl+F format for changes.' },
+                        { label: '✨ Improve', prompt: 'Suggest and apply improvements to this code for readability, performance, and best practices. Use Ctrl+F format.' },
+                        { label: '📋 Add Comments', prompt: 'Add clear inline comments to this code explaining what each section does. Use Ctrl+F format.' },
+                        { label: '⚡ Optimise', prompt: 'Optimise this code for speed and efficiency. Use Ctrl+F format for changes.' },
+                    ] as const).map(({ label, prompt }) => (
+                        <button
+                            key={label}
+                            type="button"
+                            disabled={!codeText.trim() || inlineActionBusy}
+                            style={{
+                                padding: '3px 9px',
+                                fontSize: '11px',
+                                borderRadius: '5px',
+                                border: '1px solid var(--border-default)',
+                                background: inlineActionLabel === label ? 'var(--accent-glow)' : 'var(--bg-elevated)',
+                                color: inlineActionLabel === label ? 'var(--accent)' : 'var(--text-secondary)',
+                                cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer',
+                                opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
+                                fontFamily: 'DM Sans, sans-serif',
+                                transition: 'all 0.15s',
+                                whiteSpace: 'nowrap',
+                            }}
+                            onClick={async () => {
+                                if (!codeText.trim() || inlineActionBusy) return;
+
+                                setInlineActionBusy(true);
+                                setInlineActionLabel(label);
+
+                                // Build the full prompt including the code
+                                const domain = selectedDomain;
+                                const projectContext = buildProjectContext();
+                                const fullPrompt = `USER REQUEST:\n${prompt}\n\nEXISTING CODE (${domain}) — output the FULL corrected file, no truncation:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+
+                                // Inject into chat input and fire
+                                try {
+                                    // Create a new chat if needed
+                                    let cid = activeId;
+                                    if (!cid) {
+                                        const newId = await startNewChat();
+                                        if (!newId) throw new Error('Failed to create conversation');
+                                        cid = newId;
+                                    }
+
+                                    // Add user message to UI
+                                    const userMsgId = globalThis.crypto.randomUUID();
+                                    setMessages(m => [...m, { id: userMsgId, role: 'user', content: `${label} — running on current code…` }]);
+
+                                    // Stream the response
+                                    const assistantId = globalThis.crypto.randomUUID();
+                                    activeAssistantIdRef.current = assistantId;
+                                    setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+
+                                    abortRef.current?.abort();
+                                    const controller = new AbortController();
+                                    abortRef.current = controller;
+                                    setStreaming(true);
+                                    setLoading(true);
+
+                                    const res = await streamMessage(fullPrompt, cid, controller.signal);
+                                    let streamed = '';
+
+                                    await readSseStream(
+                                        res,
+                                        (delta) => {
+                                            streamed += delta;
+                                            const extracted = extractCodeBlocks(streamed);
+
+                                            if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                                                const merged = (giveAiAccessToCode && accessLockedCode.trim())
+                                                    ? mergePatchWithExisting(accessLockedCode, extracted)
+                                                    : extracted;
+                                                setCodeText(merged);
+                                                addToHistory(merged);
+                                                setHasUnsavedChanges(true);
+                                                // Keep the active snippet ID — don't drift to unsaved
+                                                if (!activeCodeId) {
+                                                    setUnsavedCode(merged);
+                                                }
+                                                if (giveAiAccessToCode) setAccessLockedCode(merged);
+                                                setCodeOpen(true);
+                                            }
+
+                                            const isCtrlF = /ctrl\+f:/i.test(streamed);
+                                            let messageToShow = '';
+                                            if (isCtrlF) {
+                                                messageToShow = streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim();
+                                            } else if (extracted) {
+                                                messageToShow = '[Code updated → check the Code panel]';
+                                            } else {
+                                                messageToShow = stripCodeBlocks(streamed);
+                                            }
+
+                                            setMessages(m => m.map(msg =>
+                                                msg.id === assistantId ? { ...msg, content: messageToShow } : msg
+                                            ));
+                                        },
+                                        (doneData) => {
+                                            const finalCid = doneData?.conversationId || cid;
+                                            if (finalCid) void refreshPluginRuns(finalCid);
+                                        },
+                                        undefined,
+                                        undefined,
+                                        controller.signal,
+                                    );
+                                } catch (err) {
+                                    const msg = err instanceof Error ? err.message : 'Action failed';
+                                    setError(msg);
+                                } finally {
+                                    setInlineActionBusy(false);
+                                    setInlineActionLabel(null);
+                                    setStreaming(false);
+                                    setLoading(false);
+                                    activeAssistantIdRef.current = null;
+                                    abortRef.current = null;
+                                }
+                            }}
+                        >
+                            {inlineActionLabel === label ? '⏳' : label}
+                        </button>
+                    ))}
+
+                    {/* ── ✦ Pro divider ── */}
+                    <span style={{
+                        fontSize: '9px',
+                        color: 'var(--accent)',
+                        fontWeight: 700,
+                        letterSpacing: '0.12em',
+                        textTransform: 'uppercase',
+                        opacity: 0.7,
+                        whiteSpace: 'nowrap',
+                        alignSelf: 'center',
+                        borderLeft: '1px solid rgba(249,115,22,0.3)',
+                        marginLeft: '2px',
+                        paddingLeft: '8px',
+                    }}>
+                        ✦ Pro
+                    </span>
+
+                    {/* ── Pro feature buttons ── */}
+                    {([
+                        {
+                            label: '🔬 AI Code Review',
+                            prompt: `Perform a comprehensive code review. Return your analysis in this exact format:\n\n## 🔒 Security Issues\nList any security vulnerabilities, injection risks, or unsafe patterns. If none, say "None found."\n\n## ⚡ Performance Problems\nList any performance issues, unnecessary loops, memory leaks. If none, say "None found."\n\n## ❌ Bad Patterns\nList anti-patterns, code smells, poor naming. If none, say "None found."\n\n## ✅ Better Approaches\nSuggest concrete improvements with Ctrl+F format where applicable.\n\nBe specific with line references.`,
+                            proOnly: true,
+                        },
+                        {
+                            label: '🐛 Debug Mode',
+                            prompt: `Debug this code thoroughly. Return your analysis in this exact format:\n\n## 🔴 Error Identified\nDescribe the most likely bug or error\n\n## 🔍 Possible Causes\n1. First possible root cause\n2. Second possible root cause\n3. Third possible root cause\n\n## 🛠 Suggested Fix\nProvide the exact fix using Ctrl+F find-and-replace format.`,
+                            proOnly: true,
+                        },
+                        {
+                            label: '🧪 Generate Tests',
+                            prompt: `Generate comprehensive unit tests for this code. Include happy path, edge cases, and error handling. Use the correct framework (Jest/Vitest for TS/JS, pytest for Python, NUnit for C#). Output the full test file, ready to run.`,
+                            proOnly: true,
+                        },
+                        {
+                            label: '🏗️ Project Analysis',
+                            prompt: `Analyse this entire codebase/file and return:\n\n## 📐 Architecture Overview\nDescribe structure and patterns.\n\n## 🚨 Issues Found\n- Duplicated functions\n- Circular dependencies\n- Missing error handling\n- Performance bottlenecks\n\n## 🔧 Suggested Improvements\nPrioritised list with Ctrl+F format fixes.\n\n## 📊 Code Quality Score\nScore out of 10 with justification.`,
+                            proOnly: true,
+                        },
+                        {
+                            label: '🔀 Multi-File Refactor',
+                            prompt: `Refactor this code to clean architecture:\n- Extract repeated logic into reusable functions\n- Separate concerns (auth, data, UI)\n- Convert callbacks to async/await\n- Add TypeScript types where missing\n- Remove dead code\n\nOutput the FULL refactored file — no truncation.`,
+                            proOnly: true,
+                        },
+                        {
+                            label: '🚀 DevOps Assist',
+                            prompt: `Generate DevOps config for this project:\n\n## 🐳 Docker Setup\nDockerfile and docker-compose.yml\n\n## ⚙️ CI/CD Pipeline\nGitHub Actions YAML\n\n## 🚢 Deployment Commands\nStep-by-step shell commands\n\n## 🔑 Environment Variables\nRequired env vars with descriptions`,
+                            proOnly: true,
+                        },
+                        {
+                            label: '💬 Ask Project',
+                            prompt: `You are a codebase assistant. Analyse the provided code and answer questions about it — where features are, how things connect, what functions do. Be specific with line numbers and function names.\n\nCurrent code to analyse:`,
+                            proOnly: true,
+                        },
+                    ] as { label: string; prompt: string; proOnly: boolean }[]).map(({ label, prompt, proOnly }) => (
+                        <button
+                            key={label}
+                            type="button"
+                            disabled={!codeText.trim() || inlineActionBusy}
+                            style={{
+                                padding: '3px 9px',
+                                fontSize: '11px',
+                                borderRadius: '5px',
+                                border: '1px solid rgba(249,115,22,0.45)',
+                                background: inlineActionLabel === label ? 'var(--accent-glow)' : 'rgba(249,115,22,0.06)',
+                                color: inlineActionLabel === label ? 'var(--accent)' : 'var(--accent)',
+                                cursor: (!codeText.trim() || inlineActionBusy) ? 'not-allowed' : 'pointer',
+                                opacity: (!codeText.trim() || inlineActionBusy) ? 0.5 : 1,
+                                fontFamily: 'DM Sans, sans-serif',
+                                transition: 'all 0.15s',
+                                whiteSpace: 'nowrap',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                            }}
+                            onClick={async () => {
+                                if (!codeText.trim() || inlineActionBusy) return;
+                                if (proOnly && userPlan !== 'pro') {
+                                    setShowUpgradeModal(true);
+                                    return;
+                                }
+                                const finalPrompt = label === '💬 Ask Project'
+                                    ? `${prompt}\n\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\``
+                                    : `USER REQUEST:\n${prompt}\n\nSOURCE CODE (${selectedDomain}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${buildProjectContext()}`;
+                                setInlineActionBusy(true);
+                                setInlineActionLabel(label);
+                                try {
+                                    let cid = activeId;
+                                    if (!cid) {
+                                        const newId = await startNewChat();
+                                        if (!newId) throw new Error('Failed to create conversation');
+                                        cid = newId;
+                                    }
+                                    setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `${label} — running on current code…` }]);
+                                    const assistantId = globalThis.crypto.randomUUID();
+                                    activeAssistantIdRef.current = assistantId;
+                                    setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+                                    abortRef.current?.abort();
+                                    const controller = new AbortController();
+                                    abortRef.current = controller;
+                                    setStreaming(true);
+                                    setLoading(true);
+                                    const res = await streamMessage(finalPrompt, cid, controller.signal);
+                                    let streamed = '';
+                                    await readSseStream(res,
+                                        (delta) => {
+                                            streamed += delta;
+                                            const extracted = extractCodeBlocks(streamed);
+                                            if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                                                const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
+                                                setCodeText(merged);
+                                                addToHistory(merged);
+                                                setHasUnsavedChanges(true);
+                                                if (!activeCodeId) setUnsavedCode(merged);
+                                                if (giveAiAccessToCode) setAccessLockedCode(merged);
+                                                setCodeOpen(true);
+                                            }
+                                            const isCtrlF = /ctrl\+f:/i.test(streamed);
+                                            setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : extractCodeBlocks(streamed) ? `[${label} → check Code panel]` : stripCodeBlocks(streamed) } : msg));
+                                        },
+                                        (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
+                                        undefined, undefined, controller.signal,
+                                    );
+                                } catch (err) {
+                                    setError(err instanceof Error ? err.message : 'Action failed');
+                                } finally {
+                                    setInlineActionBusy(false);
+                                    setInlineActionLabel(null);
+                                    setStreaming(false);
+                                    setLoading(false);
+                                    activeAssistantIdRef.current = null;
+                                    abortRef.current = null;
+                                }
+                            }}
+                        >
+                            {inlineActionLabel === label ? '⏳' : label}
+                            {proOnly && userPlan !== 'pro' && (
+                                <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', marginLeft: '2px', fontWeight: 700 }}>PRO</span>
+                            )}
+                        </button>
+                    ))}
+
+                    {/* Preset star button */}
+                    <button
+                        type="button"
+                        style={{
+                            padding: '3px 9px',
+                            fontSize: '11px',
+                            borderRadius: '5px',
+                            border: '1px solid var(--border-default)',
+                            background: promptPresets.length > 0 ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)',
+                            color: promptPresets.length > 0 ? 'var(--accent)' : 'var(--text-secondary)',
+                            cursor: 'pointer',
+                            fontFamily: 'DM Sans, sans-serif',
+                        }}
+                        onClick={() => {
+                            setPresetModalMode('manage');
+                            setShowPresetModal(true);
+                        }}
+                        title="Manage prompt presets"
+                    >
+                        ⭐ {promptPresets.length > 0 ? promptPresets.length : ''}
+                    </button>
+
+                    {/* Preset quick-launch buttons */}
+                    {promptPresets.slice(0, 3).map(preset => (
+                        <button
+                            key={preset.id}
+                            type="button"
+                            disabled={!codeText.trim() || inlineActionBusy}
+                            title={preset.prompt}
+                            style={{
+                                padding: '3px 9px',
+                                fontSize: '11px',
+                                borderRadius: '5px',
+                                border: '1px solid rgba(249,115,22,0.3)',
+                                background: inlineActionLabel === `preset-${preset.id}` ? 'var(--accent-glow)' : 'rgba(249,115,22,0.06)',
+                                color: inlineActionLabel === `preset-${preset.id}` ? 'var(--accent)' : 'var(--text-secondary)',
+                                cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer',
+                                opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
+                                fontFamily: 'DM Sans, sans-serif',
+                                whiteSpace: 'nowrap',
+                                maxWidth: '100px',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                            }}
+                            onClick={async () => {
+                                if (!codeText.trim() || inlineActionBusy) return;
+
+                                setInlineActionBusy(true);
+                                setInlineActionLabel(`preset-${preset.id}`);
+
+                                const projectContext = buildProjectContext();
+                                const fullPrompt = `USER REQUEST:\n${preset.prompt}\n\nSOURCE CODE:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+
+                                try {
+                                    let cid = activeId;
+                                    if (!cid) {
+                                        const newId = await startNewChat();
+                                        if (!newId) throw new Error('Failed to create conversation');
+                                        cid = newId;
+                                    }
+
+                                    const userMsgId = globalThis.crypto.randomUUID();
+                                    setMessages(m => [...m, { id: userMsgId, role: 'user', content: `📋 ${preset.name}` }]);
+
+                                    const assistantId = globalThis.crypto.randomUUID();
+                                    activeAssistantIdRef.current = assistantId;
+                                    setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+
+                                    abortRef.current?.abort();
+                                    const controller = new AbortController();
+                                    abortRef.current = controller;
+                                    setStreaming(true);
+                                    setLoading(true);
+
+                                    const res = await streamMessage(fullPrompt, cid, controller.signal);
+                                    let streamed = '';
+
+                                    await readSseStream(
+                                        res,
+                                        (delta) => {
+                                            streamed += delta;
+                                            const extracted = extractCodeBlocks(streamed);
+                                            if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                                                setCodeText(extracted);
+                                                addToHistory(extracted);
+                                                setHasUnsavedChanges(true);
+                                                if (!activeCodeId) setUnsavedCode(extracted);
+                                                if (giveAiAccessToCode) setAccessLockedCode(extracted);
+                                                setCodeOpen(true);
+                                            }
+                                            const isCtrlF = /ctrl\+f:/i.test(streamed);
+                                            const extracted2 = extractCodeBlocks(streamed);
+                                            setMessages(m => m.map(msg =>
+                                                msg.id === assistantId ? {
+                                                    ...msg,
+                                                    content: isCtrlF ? streamed : extracted2 ? `[${preset.name} → open Code panel]` : stripCodeBlocks(streamed)
+                                                } : msg
+                                            ));
+                                        },
+                                        (doneData) => {
+                                            const finalCid = doneData?.conversationId || cid;
+                                            if (finalCid) void refreshPluginRuns(finalCid);
+                                        },
+                                        undefined, undefined,
+                                        controller.signal,
+                                    );
+                                } catch (err) {
+                                    setError(err instanceof Error ? err.message : 'Preset failed');
+                                } finally {
+                                    setInlineActionBusy(false);
+                                    setInlineActionLabel(null);
+                                    setStreaming(false);
+                                    setLoading(false);
+                                    activeAssistantIdRef.current = null;
+                                    abortRef.current = null;
+                                }
+                            }}
+                        >
+                            {inlineActionLabel === `preset-${preset.id}` ? '⏳' : `📋 ${preset.name}`}
+                        </button>
+                    ))}
+
+                    {/* Convert dropdown — Pro only */}
+                    <div style={{ position: 'relative' }}>
+                        <button
+                            type="button"
+                            disabled={!codeText.trim() || inlineActionBusy}
+                            style={{
+                                padding: '3px 9px',
+                                fontSize: '11px',
+                                borderRadius: '5px',
+                                border: '1px solid var(--border-default)',
+                                background: convertDropdownOpen ? 'var(--accent-glow)' : 'var(--bg-elevated)',
+                                color: convertDropdownOpen ? 'var(--accent)' : 'var(--text-secondary)',
+                                cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer',
+                                opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
+                                fontFamily: 'DM Sans, sans-serif',
+                                whiteSpace: 'nowrap',
+                            }}
+                            onClick={() => {
+                                if (userPlan !== 'pro') {
+                                    setShowUpgradeModal(true);
+                                    return;
+                                }
+                                setConvertDropdownOpen(v => !v);
+                            }}
+                        >
+                            🔄 Convert ▾ {userPlan !== 'pro' && <span style={{ fontSize: '9px', marginLeft: '2px', opacity: 0.7 }}>✦ Pro</span>}
+                        </button>
+
+                        {convertDropdownOpen && (
+                            <div
+                                style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 100, marginBottom: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'hidden' }}
+                                onMouseLeave={() => setConvertDropdownOpen(false)}
+                            >
+                                {(() => {
+                                    const allConversions: { from: string; to: string; lang: string; domains: string[] }[] = [
+                                        { from: 'Pine Script', to: 'Python', lang: 'Python', domains: ['pinescript'] },
+                                        { from: 'Pine Script', to: 'cTrader C#', lang: 'cTrader C#', domains: ['pinescript'] },
+                                        { from: 'Pine Script', to: 'MQL5', lang: 'MQL5', domains: ['pinescript'] },
+                                        { from: 'Pine Script', to: 'JavaScript', lang: 'JavaScript', domains: ['pinescript'] },
+                                        { from: 'Pine Script', to: 'TypeScript', lang: 'TypeScript', domains: ['pinescript'] },
+                                        { from: 'Python', to: 'Pine Script', lang: 'Pine Script v5', domains: ['python'] },
+                                        { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['python'] },
+                                        { from: 'Python', to: 'TypeScript', lang: 'TypeScript', domains: ['python'] },
+                                        { from: 'Python', to: 'MQL5', lang: 'MQL5', domains: ['python'] },
+                                        { from: 'cTrader C#', to: 'Pine Script', lang: 'Pine Script v5', domains: ['ctrader'] },
+                                        { from: 'cTrader C#', to: 'Python', lang: 'Python', domains: ['ctrader'] },
+                                        { from: 'cTrader C#', to: 'MQL5', lang: 'MQL5', domains: ['ctrader'] },
+                                        { from: 'MQL5', to: 'Pine Script', lang: 'Pine Script v5', domains: ['mql5'] },
+                                        { from: 'MQL5', to: 'Python', lang: 'Python', domains: ['mql5'] },
+                                        { from: 'MQL5', to: 'cTrader C#', lang: 'cTrader C#', domains: ['mql5'] },
+                                        { from: 'JavaScript', to: 'TypeScript', lang: 'TypeScript', domains: ['javascript'] },
+                                        { from: 'JavaScript', to: 'Python', lang: 'Python', domains: ['javascript'] },
+                                        { from: 'TypeScript', to: 'JavaScript', lang: 'JavaScript', domains: ['typescript', 'react'] },
+                                        { from: 'TypeScript', to: 'Python', lang: 'Python', domains: ['typescript', 'react'] },
+                                        { from: 'C#', to: 'Python', lang: 'Python', domains: ['unity'] },
+                                        { from: 'C#', to: 'TypeScript', lang: 'TypeScript', domains: ['unity'] },
+                                        { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['blender'] },
+                                        { from: 'Code', to: 'Python', lang: 'Python', domains: ['generic'] },
+                                        { from: 'Code', to: 'TypeScript', lang: 'TypeScript', domains: ['generic'] },
+                                        { from: 'Code', to: 'JavaScript', lang: 'JavaScript', domains: ['generic'] },
+                                    ];
+                                    return allConversions.filter(c => c.domains.includes(selectedDomain));
+                                })().map(({ from, to, lang }) => (
                                     <button
-                                        key={label}
+                                        key={`${from}-${to}`}
                                         type="button"
-                                        disabled={!codeText.trim() || inlineActionBusy}
-                                        style={{
-                                            padding: '3px 9px',
-                                            fontSize: '11px',
-                                            borderRadius: '5px',
-                                            border: '1px solid var(--border-default)',
-                                            background: inlineActionLabel === label ? 'var(--accent-glow)' : 'var(--bg-elevated)',
-                                            color: inlineActionLabel === label ? 'var(--accent)' : 'var(--text-secondary)',
-                                            cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer',
-                                            opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
-                                            fontFamily: 'DM Sans, sans-serif',
-                                            transition: 'all 0.15s',
-                                            whiteSpace: 'nowrap',
-                                        }}
+                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
+                                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                        onMouseLeave={e => (e.currentTarget.style.background = 'none')}
                                         onClick={async () => {
+                                            setConvertDropdownOpen(false);
                                             if (!codeText.trim() || inlineActionBusy) return;
 
                                             setInlineActionBusy(true);
-                                            setInlineActionLabel(label);
+                                            setInlineActionLabel('🔄 Convert');
 
-                                            // Build the full prompt including the code
-                                            const domain = selectedDomain;
                                             const projectContext = buildProjectContext();
-                                            const fullPrompt = `USER REQUEST:\n${prompt}\n\nEXISTING CODE (${domain}) — output the FULL corrected file, no truncation:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+                                            const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
 
-                                            // Inject into chat input and fire
                                             try {
-                                                // Create a new chat if needed
                                                 let cid = activeId;
                                                 if (!cid) {
                                                     const newId = await startNewChat();
@@ -4649,11 +5086,9 @@ ${codeContext}` : ""}${projectContext}`
                                                     cid = newId;
                                                 }
 
-                                                // Add user message to UI
                                                 const userMsgId = globalThis.crypto.randomUUID();
-                                                setMessages(m => [...m, { id: userMsgId, role: 'user', content: `${label} — running on current code…` }]);
+                                                setMessages(m => [...m, { id: userMsgId, role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
 
-                                                // Stream the response
                                                 const assistantId = globalThis.crypto.randomUUID();
                                                 activeAssistantIdRef.current = assistantId;
                                                 setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
@@ -4672,300 +5107,24 @@ ${codeContext}` : ""}${projectContext}`
                                                     (delta) => {
                                                         streamed += delta;
                                                         const extracted = extractCodeBlocks(streamed);
-
-                                                        if (extracted && !/ctrl\+f:/i.test(streamed)) {
-                                                            const merged = (giveAiAccessToCode && accessLockedCode.trim())
-                                                                ? mergePatchWithExisting(accessLockedCode, extracted)
-                                                                : extracted;
-                                                            setCodeText(merged);
-                                                            addToHistory(merged);
-                                                            setHasUnsavedChanges(true);
-                                                            // Keep the active snippet ID — don't drift to unsaved
-                                                            if (!activeCodeId) {
-                                                                setUnsavedCode(merged);
-                                                            }
-                                                            if (giveAiAccessToCode) setAccessLockedCode(merged);
-                                                            setCodeOpen(true);
-                                                        }
-
-                                                        const isCtrlF = /ctrl\+f:/i.test(streamed);
-                                                        let messageToShow = '';
-                                                        if (isCtrlF) {
-                                                            messageToShow = streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim();
-                                                        } else if (extracted) {
-                                                            messageToShow = '[Code updated → check the Code panel]';
-                                                        } else {
-                                                            messageToShow = stripCodeBlocks(streamed);
-                                                        }
-
-                                                        setMessages(m => m.map(msg =>
-                                                            msg.id === assistantId ? { ...msg, content: messageToShow } : msg
-                                                        ));
-                                                    },
-                                                    (doneData) => {
-                                                        const finalCid = doneData?.conversationId || cid;
-                                                        if (finalCid) void refreshPluginRuns(finalCid);
-                                                    },
-                                                    undefined,
-                                                    undefined,
-                                                    controller.signal,
-                                                );
-                                            } catch (err) {
-                                                const msg = err instanceof Error ? err.message : 'Action failed';
-                                                setError(msg);
-                                            } finally {
-                                                setInlineActionBusy(false);
-                                                setInlineActionLabel(null);
-                                                setStreaming(false);
-                                                setLoading(false);
-                                                activeAssistantIdRef.current = null;
-                                                abortRef.current = null;
-                                            }
-                                        }}
-                                    >
-                                        {inlineActionLabel === label ? '⏳' : label}
-                                    </button>
-                                ))}
-
-                                {/* ── ✦ Pro divider ── */}
-                                <span style={{
-                                    fontSize: '9px',
-                                    color: 'var(--accent)',
-                                    fontWeight: 700,
-                                    letterSpacing: '0.12em',
-                                    textTransform: 'uppercase',
-                                    opacity: 0.7,
-                                    whiteSpace: 'nowrap',
-                                    alignSelf: 'center',
-                                    borderLeft: '1px solid rgba(249,115,22,0.3)',
-                                    marginLeft: '2px',
-                                    paddingLeft: '8px',
-                                }}>
-                                    ✦ Pro
-                                </span>
-
-                                {/* ── Pro feature buttons ── */}
-                                {([
-                                    {
-                                        label: '🔬 AI Code Review',
-                                        prompt: `Perform a comprehensive code review. Return your analysis in this exact format:\n\n## 🔒 Security Issues\nList any security vulnerabilities, injection risks, or unsafe patterns. If none, say "None found."\n\n## ⚡ Performance Problems\nList any performance issues, unnecessary loops, memory leaks. If none, say "None found."\n\n## ❌ Bad Patterns\nList anti-patterns, code smells, poor naming. If none, say "None found."\n\n## ✅ Better Approaches\nSuggest concrete improvements with Ctrl+F format where applicable.\n\nBe specific with line references.`,
-                                        proOnly: true,
-                                    },
-                                    {
-                                        label: '🐛 Debug Mode',
-                                        prompt: `Debug this code thoroughly. Return your analysis in this exact format:\n\n## 🔴 Error Identified\nDescribe the most likely bug or error\n\n## 🔍 Possible Causes\n1. First possible root cause\n2. Second possible root cause\n3. Third possible root cause\n\n## 🛠 Suggested Fix\nProvide the exact fix using Ctrl+F find-and-replace format.`,
-                                        proOnly: true,
-                                    },
-                                    {
-                                        label: '🧪 Generate Tests',
-                                        prompt: `Generate comprehensive unit tests for this code. Include happy path, edge cases, and error handling. Use the correct framework (Jest/Vitest for TS/JS, pytest for Python, NUnit for C#). Output the full test file, ready to run.`,
-                                        proOnly: true,
-                                    },
-                                    {
-                                        label: '🏗️ Project Analysis',
-                                        prompt: `Analyse this entire codebase/file and return:\n\n## 📐 Architecture Overview\nDescribe structure and patterns.\n\n## 🚨 Issues Found\n- Duplicated functions\n- Circular dependencies\n- Missing error handling\n- Performance bottlenecks\n\n## 🔧 Suggested Improvements\nPrioritised list with Ctrl+F format fixes.\n\n## 📊 Code Quality Score\nScore out of 10 with justification.`,
-                                        proOnly: true,
-                                    },
-                                    {
-                                        label: '🔀 Multi-File Refactor',
-                                        prompt: `Refactor this code to clean architecture:\n- Extract repeated logic into reusable functions\n- Separate concerns (auth, data, UI)\n- Convert callbacks to async/await\n- Add TypeScript types where missing\n- Remove dead code\n\nOutput the FULL refactored file — no truncation.`,
-                                        proOnly: true,
-                                    },
-                                    {
-                                        label: '🚀 DevOps Assist',
-                                        prompt: `Generate DevOps config for this project:\n\n## 🐳 Docker Setup\nDockerfile and docker-compose.yml\n\n## ⚙️ CI/CD Pipeline\nGitHub Actions YAML\n\n## 🚢 Deployment Commands\nStep-by-step shell commands\n\n## 🔑 Environment Variables\nRequired env vars with descriptions`,
-                                        proOnly: true,
-                                    },
-                                    {
-                                        label: '💬 Ask Project',
-                                        prompt: `You are a codebase assistant. Analyse the provided code and answer questions about it — where features are, how things connect, what functions do. Be specific with line numbers and function names.\n\nCurrent code to analyse:`,
-                                        proOnly: true,
-                                    },
-                                ] as { label: string; prompt: string; proOnly: boolean }[]).map(({ label, prompt, proOnly }) => (
-                                    <button
-                                        key={label}
-                                        type="button"
-                                        disabled={!codeText.trim() || inlineActionBusy}
-                                        style={{
-                                            padding: '3px 9px',
-                                            fontSize: '11px',
-                                            borderRadius: '5px',
-                                            border: '1px solid rgba(249,115,22,0.45)',
-                                            background: inlineActionLabel === label ? 'var(--accent-glow)' : 'rgba(249,115,22,0.06)',
-                                            color: inlineActionLabel === label ? 'var(--accent)' : 'var(--accent)',
-                                            cursor: (!codeText.trim() || inlineActionBusy) ? 'not-allowed' : 'pointer',
-                                            opacity: (!codeText.trim() || inlineActionBusy) ? 0.5 : 1,
-                                            fontFamily: 'DM Sans, sans-serif',
-                                            transition: 'all 0.15s',
-                                            whiteSpace: 'nowrap',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '3px',
-                                        }}
-                                        onClick={async () => {
-                                            if (!codeText.trim() || inlineActionBusy) return;
-                                            if (proOnly && userPlan !== 'pro') {
-                                                setShowUpgradeModal(true);
-                                                return;
-                                            }
-                                            const finalPrompt = label === '💬 Ask Project'
-                                                ? `${prompt}\n\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\``
-                                                : `USER REQUEST:\n${prompt}\n\nSOURCE CODE (${selectedDomain}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${buildProjectContext()}`;
-                                            setInlineActionBusy(true);
-                                            setInlineActionLabel(label);
-                                            try {
-                                                let cid = activeId;
-                                                if (!cid) {
-                                                    const newId = await startNewChat();
-                                                    if (!newId) throw new Error('Failed to create conversation');
-                                                    cid = newId;
-                                                }
-                                                setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `${label} — running on current code…` }]);
-                                                const assistantId = globalThis.crypto.randomUUID();
-                                                activeAssistantIdRef.current = assistantId;
-                                                setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-                                                abortRef.current?.abort();
-                                                const controller = new AbortController();
-                                                abortRef.current = controller;
-                                                setStreaming(true);
-                                                setLoading(true);
-                                                const res = await streamMessage(finalPrompt, cid, controller.signal);
-                                                let streamed = '';
-                                                await readSseStream(res,
-                                                    (delta) => {
-                                                        streamed += delta;
-                                                        const extracted = extractCodeBlocks(streamed);
-                                                        if (extracted && !/ctrl\+f:/i.test(streamed)) {
-                                                            const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
-                                                            setCodeText(merged);
-                                                            addToHistory(merged);
-                                                            setHasUnsavedChanges(true);
-                                                            if (!activeCodeId) setUnsavedCode(merged);
-                                                            if (giveAiAccessToCode) setAccessLockedCode(merged);
-                                                            setCodeOpen(true);
-                                                        }
-                                                        const isCtrlF = /ctrl\+f:/i.test(streamed);
-                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : extractCodeBlocks(streamed) ? `[${label} → check Code panel]` : stripCodeBlocks(streamed) } : msg));
-                                                    },
-                                                    (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
-                                                    undefined, undefined, controller.signal,
-                                                );
-                                            } catch (err) {
-                                                setError(err instanceof Error ? err.message : 'Action failed');
-                                            } finally {
-                                                setInlineActionBusy(false);
-                                                setInlineActionLabel(null);
-                                                setStreaming(false);
-                                                setLoading(false);
-                                                activeAssistantIdRef.current = null;
-                                                abortRef.current = null;
-                                            }
-                                        }}
-                                    >
-                                        {inlineActionLabel === label ? '⏳' : label}
-                                        {proOnly && userPlan !== 'pro' && (
-                                            <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', marginLeft: '2px', fontWeight: 700 }}>PRO</span>
-                                        )}
-                                    </button>
-                                ))}
-
-                                {/* Preset star button */}
-                                <button
-                                    type="button"
-                                    style={{
-                                        padding: '3px 9px',
-                                        fontSize: '11px',
-                                        borderRadius: '5px',
-                                        border: '1px solid var(--border-default)',
-                                        background: promptPresets.length > 0 ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)',
-                                        color: promptPresets.length > 0 ? 'var(--accent)' : 'var(--text-secondary)',
-                                        cursor: 'pointer',
-                                        fontFamily: 'DM Sans, sans-serif',
-                                    }}
-                                    onClick={() => {
-                                        setPresetModalMode('manage');
-                                        setShowPresetModal(true);
-                                    }}
-                                    title="Manage prompt presets"
-                                >
-                                    ⭐ {promptPresets.length > 0 ? promptPresets.length : ''}
-                                </button>
-
-                                {/* Preset quick-launch buttons */}
-                                {promptPresets.slice(0, 3).map(preset => (
-                                    <button
-                                        key={preset.id}
-                                        type="button"
-                                        disabled={!codeText.trim() || inlineActionBusy}
-                                        title={preset.prompt}
-                                        style={{
-                                            padding: '3px 9px',
-                                            fontSize: '11px',
-                                            borderRadius: '5px',
-                                            border: '1px solid rgba(249,115,22,0.3)',
-                                            background: inlineActionLabel === `preset-${preset.id}` ? 'var(--accent-glow)' : 'rgba(249,115,22,0.06)',
-                                            color: inlineActionLabel === `preset-${preset.id}` ? 'var(--accent)' : 'var(--text-secondary)',
-                                            cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer',
-                                            opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
-                                            fontFamily: 'DM Sans, sans-serif',
-                                            whiteSpace: 'nowrap',
-                                            maxWidth: '100px',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                        }}
-                                        onClick={async () => {
-                                            if (!codeText.trim() || inlineActionBusy) return;
-
-                                            setInlineActionBusy(true);
-                                            setInlineActionLabel(`preset-${preset.id}`);
-
-                                            const projectContext = buildProjectContext();
-                                            const fullPrompt = `USER REQUEST:\n${preset.prompt}\n\nSOURCE CODE:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
-
-                                            try {
-                                                let cid = activeId;
-                                                if (!cid) {
-                                                    const newId = await startNewChat();
-                                                    if (!newId) throw new Error('Failed to create conversation');
-                                                    cid = newId;
-                                                }
-
-                                                const userMsgId = globalThis.crypto.randomUUID();
-                                                setMessages(m => [...m, { id: userMsgId, role: 'user', content: `📋 ${preset.name}` }]);
-
-                                                const assistantId = globalThis.crypto.randomUUID();
-                                                activeAssistantIdRef.current = assistantId;
-                                                setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-
-                                                abortRef.current?.abort();
-                                                const controller = new AbortController();
-                                                abortRef.current = controller;
-                                                setStreaming(true);
-                                                setLoading(true);
-
-                                                const res = await streamMessage(fullPrompt, cid, controller.signal);
-                                                let streamed = '';
-
-                                                await readSseStream(
-                                                    res,
-                                                    (delta) => {
-                                                        streamed += delta;
-                                                        const extracted = extractCodeBlocks(streamed);
-                                                        if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                                                        if (extracted) {
                                                             setCodeText(extracted);
                                                             addToHistory(extracted);
                                                             setHasUnsavedChanges(true);
-                                                            if (!activeCodeId) setUnsavedCode(extracted);
-                                                            if (giveAiAccessToCode) setAccessLockedCode(extracted);
                                                             setCodeOpen(true);
+                                                            const domainMap: Record<string, string> = {
+                                                                'Python': 'python',
+                                                                'Pine Script': 'pinescript',
+                                                                'Pine Script v5': 'pinescript',
+                                                                'cTrader C#': 'ctrader',
+                                                                'MQL5': 'mql5',
+                                                                'JavaScript': 'javascript',
+                                                                'TypeScript': 'typescript',
+                                                            };
+                                                            if (domainMap[to]) setSelectedDomain(domainMap[to]);
                                                         }
-                                                        const isCtrlF = /ctrl\+f:/i.test(streamed);
-                                                        const extracted2 = extractCodeBlocks(streamed);
                                                         setMessages(m => m.map(msg =>
-                                                            msg.id === assistantId ? {
-                                                                ...msg,
-                                                                content: isCtrlF ? streamed : extracted2 ? `[${preset.name} → open Code panel]` : stripCodeBlocks(streamed)
-                                                            } : msg
+                                                            msg.id === assistantId ? { ...msg, content: extracted ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg
                                                         ));
                                                     },
                                                     (doneData) => {
@@ -4976,7 +5135,7 @@ ${codeContext}` : ""}${projectContext}`
                                                     controller.signal,
                                                 );
                                             } catch (err) {
-                                                setError(err instanceof Error ? err.message : 'Preset failed');
+                                                setError(err instanceof Error ? err.message : 'Conversion failed');
                                             } finally {
                                                 setInlineActionBusy(false);
                                                 setInlineActionLabel(null);
@@ -4987,1121 +5146,976 @@ ${codeContext}` : ""}${projectContext}`
                                             }
                                         }}
                                     >
-                                        {inlineActionLabel === `preset-${preset.id}` ? '⏳' : `📋 ${preset.name}`}
+                                        <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{from} → {to}</span>
+                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
                                     </button>
                                 ))}
 
-                                {/* Convert dropdown — Pro only */}
-                                <div style={{ position: 'relative' }}>
+                                {/* Presets Section */}
+                                {promptPresets.length > 0 && (
+                                    <>
+                                        <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '4px 0' }} />
+                                        <div style={{ padding: '4px 14px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Your Presets</div>
+                                        {promptPresets.map(preset => (
+                                            <button
+                                                key={preset.id}
+                                                type="button"
+                                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
+                                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                onClick={async () => {
+                                                    setConvertDropdownOpen(false);
+                                                    if (!codeText.trim() || inlineActionBusy) return;
+
+                                                    setInlineActionBusy(true);
+                                                    setInlineActionLabel('📋 Preset');
+
+                                                    const projectContext = buildProjectContext();
+                                                    const fullPrompt = `USER REQUEST:\n${preset.prompt}\n\nSOURCE CODE:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+
+                                                    try {
+                                                        let cid = activeId;
+                                                        if (!cid) {
+                                                            const newId = await startNewChat();
+                                                            if (!newId) throw new Error('Failed to create conversation');
+                                                            cid = newId;
+                                                        }
+
+                                                        const userMsgId = globalThis.crypto.randomUUID();
+                                                        setMessages(m => [...m, { id: userMsgId, role: 'user', content: `📋 ${preset.name}` }]);
+
+                                                        const assistantId = globalThis.crypto.randomUUID();
+                                                        activeAssistantIdRef.current = assistantId;
+                                                        setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+
+                                                        abortRef.current?.abort();
+                                                        const controller = new AbortController();
+                                                        abortRef.current = controller;
+                                                        setStreaming(true);
+                                                        setLoading(true);
+
+                                                        const res = await streamMessage(fullPrompt, cid, controller.signal);
+                                                        let streamed = '';
+
+                                                        await readSseStream(
+                                                            res,
+                                                            (delta) => {
+                                                                streamed += delta;
+                                                                const extracted = extractCodeBlocks(streamed);
+                                                                if (extracted) {
+                                                                    setCodeText(extracted);
+                                                                    addToHistory(extracted);
+                                                                    setHasUnsavedChanges(true);
+                                                                    setCodeOpen(true);
+                                                                }
+                                                                setMessages(m => m.map(msg =>
+                                                                    msg.id === assistantId ? { ...msg, content: extracted ? `[${preset.name} → open Code panel]` : stripCodeBlocks(streamed) } : msg
+                                                                ));
+                                                            },
+                                                            (doneData) => {
+                                                                const finalCid = doneData?.conversationId || cid;
+                                                                if (finalCid) void refreshPluginRuns(finalCid);
+                                                            },
+                                                            undefined, undefined,
+                                                            controller.signal,
+                                                        );
+                                                    } catch (err) {
+                                                        setError(err instanceof Error ? err.message : 'Preset failed');
+                                                    } finally {
+                                                        setInlineActionBusy(false);
+                                                        setInlineActionLabel(null);
+                                                        setStreaming(false);
+                                                        setLoading(false);
+                                                        activeAssistantIdRef.current = null;
+                                                        abortRef.current = null;
+                                                    }
+                                                }}
+                                            >
+                                                <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>📋 {preset.name}</span>
+                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>preset</span>
+                                            </button>
+                                        ))}
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="p-3 overflow-y-auto pb-8">
+                    {useMonaco ? (
+                        <div style={{ height: '55vh', border: '1px solid var(--border-default)', borderRadius: '6px', overflow: 'hidden' }}>
+                            <MonacoEditor
+                                height="100%"
+                                language={
+                                    selectedDomain === 'python' ? 'python'
+                                        : selectedDomain === 'react' ? 'typescript'
+                                            : selectedDomain === 'typescript' ? 'typescript'
+                                                : selectedDomain === 'javascript' ? 'javascript'
+                                                    : selectedDomain === 'mql5' ? 'cpp'
+                                                        : selectedDomain === 'ctrader' ? 'csharp'
+                                                            : selectedDomain === 'unity' ? 'csharp'
+                                                                : 'plaintext'
+                                }
+                                theme={monacoTheme}
+                                value={codeText}
+                                options={{
+                                    minimap: { enabled: monacoMinimap },
+                                    fontSize: 12,
+                                    lineHeight: 20,
+                                    fontFamily: 'JetBrains Mono, monospace',
+                                    scrollBeyondLastLine: false,
+                                    wordWrap: 'on',
+                                    automaticLayout: true,
+                                    tabSize: 4,
+                                    renderLineHighlight: 'line',
+                                    smoothScrolling: true,
+                                }}
+                                onChange={(val: string | undefined) => {
+                                    const newValue = val ?? '';
+                                    setCodeText(newValue);
+                                    addToHistory(newValue);
+                                    runDiagnostics(newValue);
+                                    if (activeCodeId) {
+                                        setHasUnsavedChanges(true);
+                                    } else if (newValue.trim()) {
+                                        setUnsavedCode(newValue);
+                                        setHasUnsavedChanges(true);
+                                        setActiveCodeId(null);
+                                    }
+                                }}
+                                onMount={(editor, monaco) => {
+                                    monacoEditorRef.current = editor;
+                                    monacoInstanceRef.current = monaco;
+                                    runDiagnostics(codeText);
+
+                                    // Subscribe to Monaco's own language diagnostics
+                                    const syncMonacoMarkers = () => {
+                                        const model = editor.getModel();
+                                        if (!model) return;
+                                        const markers = monaco.editor.getModelMarkers({ resource: model.uri });
+                                        const monacoSeverityMap: Record<number, 'error' | 'warning' | 'info'> = {
+                                            8: 'error',   // MarkerSeverity.Error
+                                            4: 'warning', // MarkerSeverity.Warning
+                                            2: 'info',    // MarkerSeverity.Info
+                                            1: 'info',    // MarkerSeverity.Hint
+                                        };
+                                        const monacodiags: Diagnostic[] = markers.map((m: Monaco.editor.IMarker) => ({
+                                            line: m.startLineNumber,
+                                            col: m.startColumn,
+                                            endCol: m.endColumn,
+                                            severity: monacoSeverityMap[m.severity] ?? 'info',
+                                            message: m.message,
+                                            code: `MC${m.code ?? '000'}`,
+                                        }));
+                                        // Merge with custom linter results
+                                        const customDiags = lintCode(codeText, selectedDomain);
+                                        const merged = [...customDiags, ...monacodiags].sort((a, b) => {
+                                            const order = { error: 0, warning: 1, info: 2 };
+                                            return order[a.severity] - order[b.severity] || a.line - b.line;
+                                        });
+                                        setDiagnostics(merged);
+                                        if (merged.some(d => d.severity === 'error' || d.severity === 'warning')) {
+                                            setDiagnosticsOpen(true);
+                                        }
+                                    };
+
+                                    // Fire on every marker change (real-time)
+                                    monaco.editor.onDidChangeMarkers((_uris: readonly Monaco.Uri[]) => syncMonacoMarkers());
+                                    // Also run once immediately after mount
+                                    setTimeout(syncMonacoMarkers, 1500);
+                                }}
+                            />
+                        </div>
+                    ) : (
+                        <textarea
+                            ref={codeTextareaRef}
+                            className="w-full h-[55vh] whitespace-pre font-mono break-words overflow-auto"
+                            style={{ background: '#0d0d10', color: '#e2e2e8', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '10px', fontSize: '12px', lineHeight: '1.7', fontFamily: 'JetBrains Mono, monospace', resize: 'none' }}
+                            value={codeText}
+                            placeholder="Paste code here, ask the AI, or type directly…"
+                            onChange={(e) => {
+                                const newValue = e.target.value;
+                                setCodeText(newValue);
+                                addToHistory(newValue);
+                                runDiagnostics(newValue);
+                                if (activeCodeId) {
+                                    setHasUnsavedChanges(true);
+                                } else if (newValue.trim()) {
+                                    setUnsavedCode(newValue);
+                                    setHasUnsavedChanges(true);
+                                    setActiveCodeId(null);
+                                }
+                            }}
+                            onPaste={(e) => {
+                                const pastedText = e.clipboardData?.getData("text") ?? "";
+                                setTimeout(() => {
+                                    if (pastedText.trim()) {
+                                        setUnsavedCode(pastedText);
+                                        setHasUnsavedChanges(true);
+                                        setActiveCodeId(null);
+                                        addToHistory(pastedText);
+                                    }
+                                }, 0);
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === "Tab") {
+                                    e.preventDefault();
+                                    const el = e.currentTarget;
+                                    const start = el.selectionStart ?? 0;
+                                    const end = el.selectionEnd ?? 0;
+                                    const insert = "  ";
+                                    const next = codeText.slice(0, start) + insert + codeText.slice(end);
+                                    setCodeText(next);
+                                    addToHistory(next);
+                                    requestAnimationFrame(() => {
+                                        el.selectionStart = el.selectionEnd = start + insert.length;
+                                    });
+                                }
+                            }}
+                        />
+                    )}
+
+                    {showVersions && activeCodeId && (
+                        <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                            <div className="flex items-center justify-between mb-2">
+                                <h4 style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                    {showDiffView ? 'Version Diff' : 'Version History'}
+                                </h4>
+                                <div className="flex items-center gap-2">
+                                    {showDiffView && (
+                                        <button
+                                            type="button"
+                                            className="btn-secondary"
+                                            style={{ padding: '2px 8px', fontSize: '10px' }}
+                                            onClick={() => {
+                                                setShowDiffView(false);
+                                                setSelectedVersionId(null);
+                                                setCompareVersionId(null);
+                                            }}
+                                        >
+                                            ← Back
+                                        </button>
+                                    )}
                                     <button
                                         type="button"
-                                        disabled={!codeText.trim() || inlineActionBusy}
-                                        style={{
-                                            padding: '3px 9px',
-                                            fontSize: '11px',
-                                            borderRadius: '5px',
-                                            border: '1px solid var(--border-default)',
-                                            background: convertDropdownOpen ? 'var(--accent-glow)' : 'var(--bg-elevated)',
-                                            color: convertDropdownOpen ? 'var(--accent)' : 'var(--text-secondary)',
-                                            cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer',
-                                            opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
-                                            fontFamily: 'DM Sans, sans-serif',
-                                            whiteSpace: 'nowrap',
-                                        }}
+                                        style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
                                         onClick={() => {
-                                            if (userPlan !== 'pro') {
-                                                setShowUpgradeModal(true);
-                                                return;
-                                            }
-                                            setConvertDropdownOpen(v => !v);
+                                            setShowVersions(false);
+                                            setShowDiffView(false);
+                                            setSelectedVersionId(null);
+                                            setCompareVersionId(null);
                                         }}
                                     >
-                                        🔄 Convert ▾ {userPlan !== 'pro' && <span style={{ fontSize: '9px', marginLeft: '2px', opacity: 0.7 }}>✦ Pro</span>}
+                                        ✕
                                     </button>
-
-                                    {convertDropdownOpen && (
-                                        <div
-                                            style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 100, marginBottom: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'hidden' }}
-                                            onMouseLeave={() => setConvertDropdownOpen(false)}
-                                        >
-                                            {(() => {
-                                                const allConversions: { from: string; to: string; lang: string; domains: string[] }[] = [
-                                                    { from: 'Pine Script', to: 'Python', lang: 'Python', domains: ['pinescript'] },
-                                                    { from: 'Pine Script', to: 'cTrader C#', lang: 'cTrader C#', domains: ['pinescript'] },
-                                                    { from: 'Pine Script', to: 'MQL5', lang: 'MQL5', domains: ['pinescript'] },
-                                                    { from: 'Pine Script', to: 'JavaScript', lang: 'JavaScript', domains: ['pinescript'] },
-                                                    { from: 'Pine Script', to: 'TypeScript', lang: 'TypeScript', domains: ['pinescript'] },
-                                                    { from: 'Python', to: 'Pine Script', lang: 'Pine Script v5', domains: ['python'] },
-                                                    { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['python'] },
-                                                    { from: 'Python', to: 'TypeScript', lang: 'TypeScript', domains: ['python'] },
-                                                    { from: 'Python', to: 'MQL5', lang: 'MQL5', domains: ['python'] },
-                                                    { from: 'cTrader C#', to: 'Pine Script', lang: 'Pine Script v5', domains: ['ctrader'] },
-                                                    { from: 'cTrader C#', to: 'Python', lang: 'Python', domains: ['ctrader'] },
-                                                    { from: 'cTrader C#', to: 'MQL5', lang: 'MQL5', domains: ['ctrader'] },
-                                                    { from: 'MQL5', to: 'Pine Script', lang: 'Pine Script v5', domains: ['mql5'] },
-                                                    { from: 'MQL5', to: 'Python', lang: 'Python', domains: ['mql5'] },
-                                                    { from: 'MQL5', to: 'cTrader C#', lang: 'cTrader C#', domains: ['mql5'] },
-                                                    { from: 'JavaScript', to: 'TypeScript', lang: 'TypeScript', domains: ['javascript'] },
-                                                    { from: 'JavaScript', to: 'Python', lang: 'Python', domains: ['javascript'] },
-                                                    { from: 'TypeScript', to: 'JavaScript', lang: 'JavaScript', domains: ['typescript', 'react'] },
-                                                    { from: 'TypeScript', to: 'Python', lang: 'Python', domains: ['typescript', 'react'] },
-                                                    { from: 'C#', to: 'Python', lang: 'Python', domains: ['unity'] },
-                                                    { from: 'C#', to: 'TypeScript', lang: 'TypeScript', domains: ['unity'] },
-                                                    { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['blender'] },
-                                                    { from: 'Code', to: 'Python', lang: 'Python', domains: ['generic'] },
-                                                    { from: 'Code', to: 'TypeScript', lang: 'TypeScript', domains: ['generic'] },
-                                                    { from: 'Code', to: 'JavaScript', lang: 'JavaScript', domains: ['generic'] },
-                                                ];
-                                                return allConversions.filter(c => c.domains.includes(selectedDomain));
-                                            })().map(({ from, to, lang }) => (
-                                                <button
-                                                    key={`${from}-${to}`}
-                                                    type="button"
-                                                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
-                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
-                                                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                                                    onClick={async () => {
-                                                        setConvertDropdownOpen(false);
-                                                        if (!codeText.trim() || inlineActionBusy) return;
-
-                                                        setInlineActionBusy(true);
-                                                        setInlineActionLabel('🔄 Convert');
-
-                                                        const projectContext = buildProjectContext();
-                                                        const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
-
-                                                        try {
-                                                            let cid = activeId;
-                                                            if (!cid) {
-                                                                const newId = await startNewChat();
-                                                                if (!newId) throw new Error('Failed to create conversation');
-                                                                cid = newId;
-                                                            }
-
-                                                            const userMsgId = globalThis.crypto.randomUUID();
-                                                            setMessages(m => [...m, { id: userMsgId, role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
-
-                                                            const assistantId = globalThis.crypto.randomUUID();
-                                                            activeAssistantIdRef.current = assistantId;
-                                                            setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-
-                                                            abortRef.current?.abort();
-                                                            const controller = new AbortController();
-                                                            abortRef.current = controller;
-                                                            setStreaming(true);
-                                                            setLoading(true);
-
-                                                            const res = await streamMessage(fullPrompt, cid, controller.signal);
-                                                            let streamed = '';
-
-                                                            await readSseStream(
-                                                                res,
-                                                                (delta) => {
-                                                                    streamed += delta;
-                                                                    const extracted = extractCodeBlocks(streamed);
-                                                                    if (extracted) {
-                                                                        setCodeText(extracted);
-                                                                        addToHistory(extracted);
-                                                                        setHasUnsavedChanges(true);
-                                                                        setCodeOpen(true);
-                                                                        const domainMap: Record<string, string> = {
-                                                                            'Python': 'python',
-                                                                            'Pine Script': 'pinescript',
-                                                                            'Pine Script v5': 'pinescript',
-                                                                            'cTrader C#': 'ctrader',
-                                                                            'MQL5': 'mql5',
-                                                                            'JavaScript': 'javascript',
-                                                                            'TypeScript': 'typescript',
-                                                                        };
-                                                                        if (domainMap[to]) setSelectedDomain(domainMap[to]);
-                                                                    }
-                                                                    setMessages(m => m.map(msg =>
-                                                                        msg.id === assistantId ? { ...msg, content: extracted ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg
-                                                                    ));
-                                                                },
-                                                                (doneData) => {
-                                                                    const finalCid = doneData?.conversationId || cid;
-                                                                    if (finalCid) void refreshPluginRuns(finalCid);
-                                                                },
-                                                                undefined, undefined,
-                                                                controller.signal,
-                                                            );
-                                                        } catch (err) {
-                                                            setError(err instanceof Error ? err.message : 'Conversion failed');
-                                                        } finally {
-                                                            setInlineActionBusy(false);
-                                                            setInlineActionLabel(null);
-                                                            setStreaming(false);
-                                                            setLoading(false);
-                                                            activeAssistantIdRef.current = null;
-                                                            abortRef.current = null;
-                                                        }
-                                                    }}
-                                                >
-                                                    <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{from} → {to}</span>
-                                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
-                                                </button>
-                                            ))}
-
-                                            {/* Presets Section */}
-                                            {promptPresets.length > 0 && (
-                                                <>
-                                                    <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '4px 0' }} />
-                                                    <div style={{ padding: '4px 14px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Your Presets</div>
-                                                    {promptPresets.map(preset => (
-                                                        <button
-                                                            key={preset.id}
-                                                            type="button"
-                                                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
-                                                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
-                                                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                                                            onClick={async () => {
-                                                                setConvertDropdownOpen(false);
-                                                                if (!codeText.trim() || inlineActionBusy) return;
-
-                                                                setInlineActionBusy(true);
-                                                                setInlineActionLabel('📋 Preset');
-
-                                                                const projectContext = buildProjectContext();
-                                                                const fullPrompt = `USER REQUEST:\n${preset.prompt}\n\nSOURCE CODE:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
-
-                                                                try {
-                                                                    let cid = activeId;
-                                                                    if (!cid) {
-                                                                        const newId = await startNewChat();
-                                                                        if (!newId) throw new Error('Failed to create conversation');
-                                                                        cid = newId;
-                                                                    }
-
-                                                                    const userMsgId = globalThis.crypto.randomUUID();
-                                                                    setMessages(m => [...m, { id: userMsgId, role: 'user', content: `📋 ${preset.name}` }]);
-
-                                                                    const assistantId = globalThis.crypto.randomUUID();
-                                                                    activeAssistantIdRef.current = assistantId;
-                                                                    setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-
-                                                                    abortRef.current?.abort();
-                                                                    const controller = new AbortController();
-                                                                    abortRef.current = controller;
-                                                                    setStreaming(true);
-                                                                    setLoading(true);
-
-                                                                    const res = await streamMessage(fullPrompt, cid, controller.signal);
-                                                                    let streamed = '';
-
-                                                                    await readSseStream(
-                                                                        res,
-                                                                        (delta) => {
-                                                                            streamed += delta;
-                                                                            const extracted = extractCodeBlocks(streamed);
-                                                                            if (extracted) {
-                                                                                setCodeText(extracted);
-                                                                                addToHistory(extracted);
-                                                                                setHasUnsavedChanges(true);
-                                                                                setCodeOpen(true);
-                                                                            }
-                                                                            setMessages(m => m.map(msg =>
-                                                                                msg.id === assistantId ? { ...msg, content: extracted ? `[${preset.name} → open Code panel]` : stripCodeBlocks(streamed) } : msg
-                                                                            ));
-                                                                        },
-                                                                        (doneData) => {
-                                                                            const finalCid = doneData?.conversationId || cid;
-                                                                            if (finalCid) void refreshPluginRuns(finalCid);
-                                                                        },
-                                                                        undefined, undefined,
-                                                                        controller.signal,
-                                                                    );
-                                                                } catch (err) {
-                                                                    setError(err instanceof Error ? err.message : 'Preset failed');
-                                                                } finally {
-                                                                    setInlineActionBusy(false);
-                                                                    setInlineActionLabel(null);
-                                                                    setStreaming(false);
-                                                                    setLoading(false);
-                                                                    activeAssistantIdRef.current = null;
-                                                                    abortRef.current = null;
-                                                                }
-                                                            }}
-                                                        >
-                                                            <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>📋 {preset.name}</span>
-                                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>preset</span>
-                                                        </button>
-                                                    ))}
-                                                </>
-                                            )}
-                                        </div>
-                                    )}
                                 </div>
                             </div>
 
-                            <div className="p-3 overflow-y-auto pb-8">
-                                {useMonaco ? (
-                                    <div style={{ height: '55vh', border: '1px solid var(--border-default)', borderRadius: '6px', overflow: 'hidden' }}>
-                                        <MonacoEditor
-                                            height="100%"
-                                            language={
-                                                selectedDomain === 'python' ? 'python'
-                                                    : selectedDomain === 'react' ? 'typescript'
-                                                        : selectedDomain === 'typescript' ? 'typescript'
-                                                            : selectedDomain === 'javascript' ? 'javascript'
-                                                                : selectedDomain === 'mql5' ? 'cpp'
-                                                                    : selectedDomain === 'ctrader' ? 'csharp'
-                                                                        : selectedDomain === 'unity' ? 'csharp'
-                                                                            : 'plaintext'
-                                            }
-                                            theme={monacoTheme}
-                                            value={codeText}
-                                            options={{
-                                                minimap: { enabled: monacoMinimap },
-                                                fontSize: 12,
-                                                lineHeight: 20,
-                                                fontFamily: 'JetBrains Mono, monospace',
-                                                scrollBeyondLastLine: false,
-                                                wordWrap: 'on',
-                                                automaticLayout: true,
-                                                tabSize: 4,
-                                                renderLineHighlight: 'line',
-                                                smoothScrolling: true,
-                                            }}
-                                            onChange={(val: string | undefined) => {
-                                                const newValue = val ?? '';
-                                                setCodeText(newValue);
-                                                addToHistory(newValue);
-                                                runDiagnostics(newValue);
-                                                if (activeCodeId) {
-                                                    setHasUnsavedChanges(true);
-                                                } else if (newValue.trim()) {
-                                                    setUnsavedCode(newValue);
-                                                    setHasUnsavedChanges(true);
-                                                    setActiveCodeId(null);
-                                                }
-                                            }}
-                                            onMount={(editor, monaco) => {
-                                                monacoEditorRef.current = editor;
-                                                monacoInstanceRef.current = monaco;
-                                                runDiagnostics(codeText);
-
-                                                // Subscribe to Monaco's own language diagnostics
-                                                const syncMonacoMarkers = () => {
-                                                    const model = editor.getModel();
-                                                    if (!model) return;
-                                                    const markers = monaco.editor.getModelMarkers({ resource: model.uri });
-                                                    const monacoSeverityMap: Record<number, 'error' | 'warning' | 'info'> = {
-                                                        8: 'error',   // MarkerSeverity.Error
-                                                        4: 'warning', // MarkerSeverity.Warning
-                                                        2: 'info',    // MarkerSeverity.Info
-                                                        1: 'info',    // MarkerSeverity.Hint
-                                                    };
-                                                    const monacodiags: Diagnostic[] = markers.map((m: Monaco.editor.IMarker) => ({
-                                                        line: m.startLineNumber,
-                                                        col: m.startColumn,
-                                                        endCol: m.endColumn,
-                                                        severity: monacoSeverityMap[m.severity] ?? 'info',
-                                                        message: m.message,
-                                                        code: `MC${m.code ?? '000'}`,
-                                                    }));
-                                                    // Merge with custom linter results
-                                                    const customDiags = lintCode(codeText, selectedDomain);
-                                                    const merged = [...customDiags, ...monacodiags].sort((a, b) => {
-                                                        const order = { error: 0, warning: 1, info: 2 };
-                                                        return order[a.severity] - order[b.severity] || a.line - b.line;
-                                                    });
-                                                    setDiagnostics(merged);
-                                                    if (merged.some(d => d.severity === 'error' || d.severity === 'warning')) {
-                                                        setDiagnosticsOpen(true);
-                                                    }
-                                                };
-
-                                                // Fire on every marker change (real-time)
-                                                monaco.editor.onDidChangeMarkers((_uris: readonly Monaco.Uri[]) => syncMonacoMarkers());
-                                                // Also run once immediately after mount
-                                                setTimeout(syncMonacoMarkers, 1500);
-                                            }}
-                                        />
-                                    </div>
-                                ) : (
-                                    <textarea
-                                        ref={codeTextareaRef}
-                                        className="w-full h-[55vh] whitespace-pre font-mono break-words overflow-auto"
-                                        style={{ background: '#0d0d10', color: '#e2e2e8', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '10px', fontSize: '12px', lineHeight: '1.7', fontFamily: 'JetBrains Mono, monospace', resize: 'none' }}
-                                        value={codeText}
-                                        placeholder="Paste code here, ask the AI, or type directly…"
-                                        onChange={(e) => {
-                                            const newValue = e.target.value;
-                                            setCodeText(newValue);
-                                            addToHistory(newValue);
-                                            runDiagnostics(newValue);
-                                            if (activeCodeId) {
-                                                setHasUnsavedChanges(true);
-                                            } else if (newValue.trim()) {
-                                                setUnsavedCode(newValue);
-                                                setHasUnsavedChanges(true);
-                                                setActiveCodeId(null);
-                                            }
-                                        }}
-                                        onPaste={(e) => {
-                                            const pastedText = e.clipboardData?.getData("text") ?? "";
-                                            setTimeout(() => {
-                                                if (pastedText.trim()) {
-                                                    setUnsavedCode(pastedText);
-                                                    setHasUnsavedChanges(true);
-                                                    setActiveCodeId(null);
-                                                    addToHistory(pastedText);
-                                                }
-                                            }, 0);
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Tab") {
-                                                e.preventDefault();
-                                                const el = e.currentTarget;
-                                                const start = el.selectionStart ?? 0;
-                                                const end = el.selectionEnd ?? 0;
-                                                const insert = "  ";
-                                                const next = codeText.slice(0, start) + insert + codeText.slice(end);
-                                                setCodeText(next);
-                                                addToHistory(next);
-                                                requestAnimationFrame(() => {
-                                                    el.selectionStart = el.selectionEnd = start + insert.length;
-                                                });
-                                            }
-                                        }}
-                                    />
-                                )}
-
-                                {showVersions && activeCodeId && (
-                                    <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                                        <div className="flex items-center justify-between mb-2">
-                                            <h4 style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                                                {showDiffView ? 'Version Diff' : 'Version History'}
-                                            </h4>
-                                            <div className="flex items-center gap-2">
-                                                {showDiffView && (
+                            {loadingSnippets ? (
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '20px 0', textAlign: 'center' }}>Loading versions...</div>
+                            ) : snippetVersions.length > 0 ? (
+                                <>
+                                    {/* Diff View */}
+                                    {showDiffView && selectedVersionId && compareVersionId && (
+                                        <div className="mb-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-3">
+                                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                                        Comparing v{getVersionNumberById(compareVersionId)}
+                                                        <span style={{ margin: '0 6px' }}>→</span>
+                                                        v{getVersionNumberById(selectedVersionId)}
+                                                    </span>
                                                     <button
                                                         type="button"
                                                         className="btn-secondary"
                                                         style={{ padding: '2px 8px', fontSize: '10px' }}
                                                         onClick={() => {
-                                                            setShowDiffView(false);
-                                                            setSelectedVersionId(null);
-                                                            setCompareVersionId(null);
+                                                            // Swap comparison
+                                                            setSelectedVersionId(compareVersionId);
+                                                            setCompareVersionId(selectedVersionId);
                                                         }}
                                                     >
-                                                        ← Back
+                                                        Swap
                                                     </button>
-                                                )}
-                                                <button
-                                                    type="button"
-                                                    style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
-                                                    onClick={() => {
-                                                        setShowVersions(false);
-                                                        setShowDiffView(false);
-                                                        setSelectedVersionId(null);
-                                                        setCompareVersionId(null);
-                                                    }}
-                                                >
-                                                    ✕
-                                                </button>
+                                                </div>
+                                            </div>
+                                            <div style={{
+                                                border: '1px solid var(--border-subtle)',
+                                                borderRadius: '6px',
+                                                overflow: 'hidden',
+                                                background: 'var(--bg-primary)',
+                                                maxHeight: '400px',
+                                                overflowY: 'auto'
+                                            }}>
+                                                {(() => {
+                                                    const oldVersion = snippetVersions.find(v => v.id === compareVersionId);
+                                                    const newVersion = snippetVersions.find(v => v.id === selectedVersionId);
+                                                    if (!oldVersion || !newVersion) return null;
+
+                                                    return (
+                                                        <DiffViewer
+                                                            oldValue={oldVersion.code}
+                                                            newValue={newVersion.code}
+                                                            splitView={true}
+                                                            useDarkTheme={theme === 'dark'}
+                                                            showDiffOnly={false}
+                                                            styles={{
+                                                                variables: {
+                                                                    dark: {
+                                                                        diffViewerBackground: '#1e1e24',
+                                                                        diffViewerColor: '#e2e2e8',
+                                                                        addedBackground: 'rgba(34,197,94,0.15)',
+                                                                        addedColor: '#4ade80',
+                                                                        removedBackground: 'rgba(239,68,68,0.15)',
+                                                                        removedColor: '#f87171',
+                                                                        wordAddedBackground: 'rgba(34,197,94,0.3)',
+                                                                        wordRemovedBackground: 'rgba(239,68,68,0.3)',
+                                                                        addedGutterBackground: 'rgba(34,197,94,0.2)',
+                                                                        removedGutterBackground: 'rgba(239,68,68,0.2)',
+                                                                        gutterBackground: '#2a2a32',
+                                                                        gutterBackgroundDark: '#2a2a32',
+                                                                        highlightBackground: '#2a2a35',
+                                                                        highlightGutterBackground: '#2a2a35'
+                                                                    }
+                                                                }
+                                                            }}
+                                                        />
+                                                    );
+                                                })()}
                                             </div>
                                         </div>
+                                    )}
 
-                                        {loadingSnippets ? (
-                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '20px 0', textAlign: 'center' }}>Loading versions...</div>
-                                        ) : snippetVersions.length > 0 ? (
-                                            <>
-                                                {/* Diff View */}
-                                                {showDiffView && selectedVersionId && compareVersionId && (
-                                                    <div className="mb-4">
-                                                        <div className="flex items-center justify-between mb-2">
-                                                            <div className="flex items-center gap-3">
-                                                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                                                    Comparing v{getVersionNumberById(compareVersionId)}
-                                                                    <span style={{ margin: '0 6px' }}>→</span>
-                                                                    v{getVersionNumberById(selectedVersionId)}
+                                    {/* Version List */}
+                                    {!showDiffView && (
+                                        <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                                            {snippetVersions.map((version) => (
+                                                <div
+                                                    key={version.id}
+                                                    className="group relative"
+                                                    style={{
+                                                        fontSize: '12px',
+                                                        padding: '8px',
+                                                        border: '1px solid var(--border-subtle)',
+                                                        borderRadius: '6px',
+                                                        background: 'var(--bg-elevated)',
+                                                        cursor: 'pointer',
+                                                        ...(selectedVersionId === version.id ? { borderColor: 'var(--accent)', background: 'var(--accent-glow)' } : {})
+                                                    }}
+                                                >
+                                                    <div className="flex justify-between items-start">
+                                                        <div className="flex-1">
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                                        v{version.version_number}
+                                                                    </span>
+                                                                    <span style={{
+                                                                        fontSize: '9px',
+                                                                        padding: '2px 6px',
+                                                                        borderRadius: '10px',
+                                                                        background: 'var(--bg-hover)',
+                                                                        color: 'var(--text-muted)'
+                                                                    }}>
+                                                                        {formatVersionSource(version.source)}
+                                                                    </span>
+                                                                </div>
+                                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                                                    {new Date(version.created_at).toLocaleDateString()}
                                                                 </span>
+                                                            </div>
+
+                                                            {version.change_summary && (
+                                                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                                                                    {version.change_summary}
+                                                                </div>
+                                                            )}
+
+                                                            {/* Action buttons */}
+                                                            <div className="flex items-center gap-1 mt-1">
                                                                 <button
                                                                     type="button"
                                                                     className="btn-secondary"
                                                                     style={{ padding: '2px 8px', fontSize: '10px' }}
-                                                                    onClick={() => {
-                                                                        // Swap comparison
-                                                                        setSelectedVersionId(compareVersionId);
-                                                                        setCompareVersionId(selectedVersionId);
+                                                                    onClick={async (e) => {
+                                                                        e.stopPropagation();
+                                                                        if (!activeCodeId) return;
+                                                                        if (confirm(`Restore version ${version.version_number}?`)) {
+                                                                            try {
+                                                                                setLoadingSnippets(true);
+                                                                                const res = await restoreSnippetVersion(activeCodeId, version.version_number);
+                                                                                if (res.ok) {
+                                                                                    const snippetsRes = await getSnippets();
+                                                                                    if (snippetsRes.ok) setSavedCodes(snippetsRes.data.snippets);
+                                                                                    await loadVersions(activeCodeId);
+                                                                                    const snippetRes = await getSnippet(activeCodeId);
+                                                                                    if (snippetRes.ok) {
+                                                                                        setCodeText(snippetRes.data.snippet.code);
+                                                                                        setHasUnsavedChanges(false);
+                                                                                    }
+                                                                                }
+                                                                            } catch (error) {
+                                                                                console.error("Error restoring version:", error);
+                                                                            } finally {
+                                                                                setLoadingSnippets(false);
+                                                                            }
+                                                                        }
                                                                     }}
                                                                 >
-                                                                    Swap
+                                                                    Restore
+                                                                </button>
+
+                                                                <button
+                                                                    type="button"
+                                                                    className="btn-secondary"
+                                                                    style={{ padding: '2px 8px', fontSize: '10px' }}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (!selectedVersionId) {
+                                                                            setSelectedVersionId(version.id);
+                                                                        } else if (selectedVersionId === version.id) {
+                                                                            setSelectedVersionId(null);
+                                                                            setCompareVersionId(null);
+                                                                        } else if (!compareVersionId) {
+                                                                            setCompareVersionId(selectedVersionId);
+                                                                            setSelectedVersionId(version.id);
+                                                                            setShowDiffView(true);
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    {selectedVersionId === version.id ? 'Cancel' : 'Compare'}
                                                                 </button>
                                                             </div>
                                                         </div>
-                                                        <div style={{
-                                                            border: '1px solid var(--border-subtle)',
-                                                            borderRadius: '6px',
-                                                            overflow: 'hidden',
-                                                            background: 'var(--bg-primary)',
-                                                            maxHeight: '400px',
-                                                            overflowY: 'auto'
-                                                        }}>
-                                                            {(() => {
-                                                                const oldVersion = snippetVersions.find(v => v.id === compareVersionId);
-                                                                const newVersion = snippetVersions.find(v => v.id === selectedVersionId);
-                                                                if (!oldVersion || !newVersion) return null;
-
-                                                                return (
-                                                                    <DiffViewer
-                                                                        oldValue={oldVersion.code}
-                                                                        newValue={newVersion.code}
-                                                                        splitView={true}
-                                                                        useDarkTheme={theme === 'dark'}
-                                                                        showDiffOnly={false}
-                                                                        styles={{
-                                                                            variables: {
-                                                                                dark: {
-                                                                                    diffViewerBackground: '#1e1e24',
-                                                                                    diffViewerColor: '#e2e2e8',
-                                                                                    addedBackground: 'rgba(34,197,94,0.15)',
-                                                                                    addedColor: '#4ade80',
-                                                                                    removedBackground: 'rgba(239,68,68,0.15)',
-                                                                                    removedColor: '#f87171',
-                                                                                    wordAddedBackground: 'rgba(34,197,94,0.3)',
-                                                                                    wordRemovedBackground: 'rgba(239,68,68,0.3)',
-                                                                                    addedGutterBackground: 'rgba(34,197,94,0.2)',
-                                                                                    removedGutterBackground: 'rgba(239,68,68,0.2)',
-                                                                                    gutterBackground: '#2a2a32',
-                                                                                    gutterBackgroundDark: '#2a2a32',
-                                                                                    highlightBackground: '#2a2a35',
-                                                                                    highlightGutterBackground: '#2a2a35'
-                                                                                }
-                                                                            }
-                                                                        }}
-                                                                    />
-                                                                );
-                                                            })()}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {/* Version List */}
-                                                {!showDiffView && (
-                                                    <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
-                                                        {snippetVersions.map((version) => (
-                                                            <div
-                                                                key={version.id}
-                                                                className="group relative"
-                                                                style={{
-                                                                    fontSize: '12px',
-                                                                    padding: '8px',
-                                                                    border: '1px solid var(--border-subtle)',
-                                                                    borderRadius: '6px',
-                                                                    background: 'var(--bg-elevated)',
-                                                                    cursor: 'pointer',
-                                                                    ...(selectedVersionId === version.id ? { borderColor: 'var(--accent)', background: 'var(--accent-glow)' } : {})
-                                                                }}
-                                                            >
-                                                                <div className="flex justify-between items-start">
-                                                                    <div className="flex-1">
-                                                                        <div className="flex justify-between items-center mb-1">
-                                                                            <div className="flex items-center gap-2">
-                                                                                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                                                    v{version.version_number}
-                                                                                </span>
-                                                                                <span style={{
-                                                                                    fontSize: '9px',
-                                                                                    padding: '2px 6px',
-                                                                                    borderRadius: '10px',
-                                                                                    background: 'var(--bg-hover)',
-                                                                                    color: 'var(--text-muted)'
-                                                                                }}>
-                                                                                    {formatVersionSource(version.source)}
-                                                                                </span>
-                                                                            </div>
-                                                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                                                                                {new Date(version.created_at).toLocaleDateString()}
-                                                                            </span>
-                                                                        </div>
-
-                                                                        {version.change_summary && (
-                                                                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                                                                                {version.change_summary}
-                                                                            </div>
-                                                                        )}
-
-                                                                        {/* Action buttons */}
-                                                                        <div className="flex items-center gap-1 mt-1">
-                                                                            <button
-                                                                                type="button"
-                                                                                className="btn-secondary"
-                                                                                style={{ padding: '2px 8px', fontSize: '10px' }}
-                                                                                onClick={async (e) => {
-                                                                                    e.stopPropagation();
-                                                                                    if (!activeCodeId) return;
-                                                                                    if (confirm(`Restore version ${version.version_number}?`)) {
-                                                                                        try {
-                                                                                            setLoadingSnippets(true);
-                                                                                            const res = await restoreSnippetVersion(activeCodeId, version.version_number);
-                                                                                            if (res.ok) {
-                                                                                                const snippetsRes = await getSnippets();
-                                                                                                if (snippetsRes.ok) setSavedCodes(snippetsRes.data.snippets);
-                                                                                                await loadVersions(activeCodeId);
-                                                                                                const snippetRes = await getSnippet(activeCodeId);
-                                                                                                if (snippetRes.ok) {
-                                                                                                    setCodeText(snippetRes.data.snippet.code);
-                                                                                                    setHasUnsavedChanges(false);
-                                                                                                }
-                                                                                            }
-                                                                                        } catch (error) {
-                                                                                            console.error("Error restoring version:", error);
-                                                                                        } finally {
-                                                                                            setLoadingSnippets(false);
-                                                                                        }
-                                                                                    }
-                                                                                }}
-                                                                            >
-                                                                                Restore
-                                                                            </button>
-
-                                                                            <button
-                                                                                type="button"
-                                                                                className="btn-secondary"
-                                                                                style={{ padding: '2px 8px', fontSize: '10px' }}
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    if (!selectedVersionId) {
-                                                                                        setSelectedVersionId(version.id);
-                                                                                    } else if (selectedVersionId === version.id) {
-                                                                                        setSelectedVersionId(null);
-                                                                                        setCompareVersionId(null);
-                                                                                    } else if (!compareVersionId) {
-                                                                                        setCompareVersionId(selectedVersionId);
-                                                                                        setSelectedVersionId(version.id);
-                                                                                        setShowDiffView(true);
-                                                                                    }
-                                                                                }}
-                                                                            >
-                                                                                {selectedVersionId === version.id ? 'Cancel' : 'Compare'}
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </>
-                                        ) : (
-                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '20px 0', textAlign: 'center' }}>
-                                                No version history yet
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                                {/* ── Diagnostics Panel ── */}
-                                {codeText.trim() && (
-                                    <div style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', flexShrink: 0 }}>
-                                        {/* Header row */}
-                                        <button
-                                            type="button"
-                                            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', textAlign: 'left' }}
-                                            onClick={() => {
-                                                runDiagnostics(codeText);
-                                                setDiagnosticsOpen(v => !v);
-                                            }}
-                                        >
-                                            <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', flex: 1 }}>
-                                                🔎 Diagnostics
-                                            </span>
-                                            {/* Severity counts */}
-                                            {diagnostics.filter(d => d.severity === 'error').length > 0 && (
-                                                <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '10px', background: 'rgba(248,113,113,0.15)', color: '#f87171', fontWeight: 700 }}>
-                                                    🔴 {diagnostics.filter(d => d.severity === 'error').length}
-                                                </span>
-                                            )}
-                                            {diagnostics.filter(d => d.severity === 'warning').length > 0 && (
-                                                <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '10px', background: 'rgba(251,191,36,0.15)', color: '#fbbf24', fontWeight: 700 }}>
-                                                    🟡 {diagnostics.filter(d => d.severity === 'warning').length}
-                                                </span>
-                                            )}
-                                            {diagnostics.filter(d => d.severity === 'info').length > 0 && (
-                                                <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '10px', background: 'rgba(96,165,250,0.15)', color: '#60a5fa', fontWeight: 700 }}>
-                                                    ℹ️ {diagnostics.filter(d => d.severity === 'info').length}
-                                                </span>
-                                            )}
-                                            {diagnostics.length === 0 && (
-                                                <span style={{ fontSize: '10px', color: '#4ade80' }}>✓ No issues</span>
-                                            )}
-                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{diagnosticsOpen ? '▲' : '▼'}</span>
-                                        </button>
-
-                                        {diagnosticsOpen && (
-                                            <div>
-                                                {/* Filter bar */}
-                                                <div style={{ display: 'flex', gap: '4px', padding: '4px 10px', borderTop: '1px solid var(--border-subtle)' }}>
-                                                    {(['all', 'error', 'warning', 'info'] as const).map(f => (
-                                                        <button
-                                                            key={f}
-                                                            type="button"
-                                                            onClick={() => setDiagnosticsFilter(f)}
-                                                            style={{ padding: '2px 8px', fontSize: '10px', borderRadius: '4px', border: '1px solid var(--border-default)', background: diagnosticsFilter === f ? 'var(--accent-glow)' : 'none', color: diagnosticsFilter === f ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: diagnosticsFilter === f ? 700 : 400, textTransform: 'capitalize' }}
-                                                        >
-                                                            {f}
-                                                        </button>
-                                                    ))}
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => runDiagnostics(codeText)}
-                                                        style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: '10px', borderRadius: '4px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
-                                                        title="Re-run diagnostics"
-                                                    >
-                                                        ↺ Run
-                                                    </button>
-                                                </div>
-
-                                                {/* Diagnostic list */}
-                                                <div style={{ maxHeight: '180px', overflowY: 'auto', padding: '4px 0' }}>
-                                                    {(() => {
-                                                        const filtered = diagnosticsFilter === 'all'
-                                                            ? diagnostics
-                                                            : diagnostics.filter(d => d.severity === diagnosticsFilter);
-
-                                                        if (filtered.length === 0) {
-                                                            return (
-                                                                <div style={{ padding: '12px 10px', fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center' }}>
-                                                                    {diagnostics.length === 0 ? '✓ No issues found' : `No ${diagnosticsFilter}s`}
-                                                                </div>
-                                                            );
-                                                        }
-
-                                                        return filtered.map((d, i) => (
-                                                            <div
-                                                                key={i}
-                                                                style={{ padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', alignItems: 'flex-start', cursor: 'pointer' }}
-                                                                onClick={() => {
-                                                                    // Jump to line in textarea
-                                                                    const ta = codeTextareaRef.current;
-                                                                    if (ta && !useMonaco) {
-                                                                        const lines = codeText.split('\n');
-                                                                        const charsBefore = lines.slice(0, d.line - 1).join('\n').length + (d.line > 1 ? 1 : 0);
-                                                                        const charsToEnd = charsBefore + lines[d.line - 1].length;
-                                                                        ta.focus();
-                                                                        ta.setSelectionRange(charsBefore, charsToEnd);
-                                                                        const lineHeight = 20;
-                                                                        ta.scrollTop = Math.max(0, (d.line - 3) * lineHeight);
-                                                                    }
-                                                                    // Jump to line in Monaco
-                                                                    if (useMonaco && monacoEditorRef.current) {
-                                                                        monacoEditorRef.current.revealLineInCenter(d.line);
-                                                                        monacoEditorRef.current.setPosition({ lineNumber: d.line, column: d.col });
-                                                                        monacoEditorRef.current.focus();
-                                                                    }
-                                                                }}
-                                                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
-                                                                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                                                            >
-                                                                <span style={{ fontSize: '11px', flexShrink: 0, marginTop: '1px' }}>{severityIcon(d.severity)}</span>
-                                                                <div style={{ flex: 1, minWidth: 0 }}>
-                                                                    <div style={{ fontSize: '12px', color: severityColor(d.severity), lineHeight: 1.4 }}>{d.message}</div>
-                                                                    <div style={{ display: 'flex', gap: '8px', marginTop: '2px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Line {d.line} · {d.code}</span>
-                                                                        {d.quickFix && (
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    const lines = codeText.split('\n');
-                                                                                    lines[d.line - 1] = d.quickFix!.replacement;
-                                                                                    const fixed = lines.join('\n');
-                                                                                    setCodeText(fixed);
-                                                                                    addToHistory(fixed);
-                                                                                    setHasUnsavedChanges(true);
-                                                                                    setTimeout(() => runDiagnostics(fixed), 50);
-                                                                                }}
-                                                                                style={{ fontSize: '10px', padding: '1px 7px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.08)', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
-                                                                            >
-                                                                                ⚡ {d.quickFix.label}
-                                                                            </button>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        ));
-                                                    })()}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </aside>
-                    )}
-                </div>
-
-
-                {/* ALWAYS SHOW COMPOSER */}
-                <form
-                    className="p-3 flex gap-2"
-                    style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                        void handleSend();
-                    }}
-                >
-                    <div className="flex-1 flex flex-col gap-2">
-                        {attachments.length > 0 && (
-                            <div className="flex items-center gap-2 flex-wrap">
-                                {attachments.map((a) => (
-                                    <div key={a.id} className="flex items-center gap-2 rounded p-1" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)' }}>
-                                        {/* thumbnail */}
-                                        <Image
-                                            src={a.url}
-                                            alt={a.file?.name || "attachment"}
-                                            width={40}
-                                            height={40}
-                                            className="h-10 w-10 object-cover rounded"
-                                            unoptimized
-                                        />
-
-                                        <div className="text-[11px] leading-tight max-w-[220px]">
-                                            <div className="truncate">{a.file?.name || "image"}</div>
-                                            <div className="opacity-60">
-                                                {ocrBusy ? "OCR…" : (a.ocrText ?? "").trim() ? "OCR ready" : "No OCR"}
-                                            </div>
-                                        </div>
-
-                                        <button
-                                            type="button"
-                                            style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '3px 7px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer' }}
-                                            onClick={() => removeAttachment(a.id)}
-                                            title="Remove"
-                                        >
-                                            ✕
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        <input
-                            ref={inputRef}
-                            className="w-full"
-                            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '10px 14px', color: 'var(--text-primary)', fontSize: '13px' }}
-                            placeholder="Message T4N…"
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            onPaste={(e) => {
-                                const items = Array.from(e.clipboardData?.items ?? []);
-                                const files = items
-                                    .map((it) => (it.kind === "file" ? it.getAsFile() : null))
-                                    .filter((f): f is File => !!f && f.type.startsWith("image/"));
-
-                                if (files.length > 0) {
-                                    e.preventDefault();
-                                    void handleAttachArray(files);
-                                    return;
-                                }
-
-                                // Detect code pasted as text — if it looks like code, route it to the code panel
-                                const text = e.clipboardData?.getData("text") ?? "";
-                                const looksLikeCode =
-                                    /```[\s\S]*```/.test(text) ||
-                                    /(^|\n)\s*\/\/@version=\d+/i.test(text) ||
-                                    /(^|\n)\s*(indicator|strategy|function|const |let |var |def |import |export |class )\s*/m.test(text) ||
-                                    (text.includes("{") && text.includes("}") && text.split("\n").length > 4);
-
-                                if (looksLikeCode && text.trim().length > 80) {
-                                    e.preventDefault();
-                                    // Put it in the code panel as unsaved, open the panel
-                                    setCodeText(text);
-                                    setUnsavedCode(text);
-                                    setHasUnsavedChanges(true);
-                                    setActiveCodeId(null);
-                                    setCodeOpen(true);
-                                }
-                            }}
-                            disabled={loading}
-                        />
-                    </div>
-
-                    {streaming ? (
-                        <button
-                            type="button"
-                            className="btn-primary px-6"
-                            onClick={stopStreaming}
-                        >
-                            Stop
-                        </button>
-                    ) : (
-                        <>
-                            <label className="btn-secondary cursor-pointer select-none">
-                                <input
-                                    type="file"
-                                    accept="image/*"
-                                    multiple
-                                    className="hidden"
-                                    onChange={(e) => {
-                                        void handleAttachFiles(e.target.files);
-                                        // allow attaching the same file again later
-                                        e.currentTarget.value = "";
-                                    }}
-                                    disabled={loading}
-                                />
-                                Attach
-                            </label>
-
-                            <button
-                                type="button"
-                                className="btn-secondary px-4 disabled:opacity-50"
-                                disabled={loading || !canRetry}
-                                onClick={() => {
-                                    cancelStreamSilently();
-                                    void retryLastSend();
-                                }}
-                            >
-                                Retry
-                            </button>
-
-                            <button className="btn-primary">
-                                Send
-                            </button>
-                        </>
-
-                    )}
-                </form>
-            </main>
-
-            {/* Upgrade Modal */}
-            {showUpgradeModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-                    onMouseDown={() => setShowUpgradeModal(false)}>
-                    <div style={{ width: '420px', maxWidth: '95vw', borderRadius: '16px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden' }}
-                        onMouseDown={(e) => e.stopPropagation()}>
-                        {/* Header */}
-                        <div style={{ background: 'linear-gradient(135deg, rgba(249,115,22,0.15), rgba(249,115,22,0.05))', borderBottom: '1px solid var(--border-subtle)', padding: '24px 24px 20px' }}>
-                            <div style={{ fontSize: '28px', marginBottom: '8px' }}>⚡</div>
-                            <div style={{ fontWeight: 700, fontSize: '20px', color: 'var(--text-primary)', marginBottom: '6px' }}>Upgrade to Pro</div>
-                            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Unlock unlimited access with T4N Pro.</div>
-                        </div>
-                        {/* Features */}
-                        <div style={{ padding: '20px 24px' }}>
-                            {[
-                                { icon: '🔬', text: 'AI Code Review' },
-                                { icon: '🐛', text: 'Debug Mode' },
-                                { icon: '🧪', text: 'Test Generation' },
-                                { icon: '🏗️', text: 'Project Analysis' },
-                                { icon: '🔀', text: 'Multi-File Refactor' },
-                                { icon: '🚀', text: 'DevOps Assistant' },
-                                { icon: '💬', text: 'Codebase Chat' },
-                                { icon: '🔄', text: 'Smart Code Conversion' },
-                                { icon: '🧠', text: 'AI Memory (learns your style)' },
-                                { icon: '⚡', text: 'Higher usage limits (500/day)' },
-                            ].map(({ icon, text }) => (
-                                <div key={text} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', fontSize: '13px', color: 'var(--text-primary)' }}>
-                                    <span>{icon}</span><span>{text}</span>
-                                </div>
-                            ))}
-                        </div>
-                        {/* Actions */}
-                        <div style={{ padding: '0 24px 24px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <button type="button"
-                                disabled={checkoutLoading}
-                                onClick={() => void startCheckout()}
-                                style={{ width: '100%', padding: '12px', borderRadius: '8px', background: 'var(--accent)', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14px', cursor: checkoutLoading ? 'not-allowed' : 'pointer', opacity: checkoutLoading ? 0.7 : 1, fontFamily: 'DM Sans, sans-serif' }}>
-                                {checkoutLoading ? 'Redirecting…' : '🚀 Upgrade Now'}
-                            </button>
-                            <button type="button"
-                                onClick={() => setShowUpgradeModal(false)}
-                                style={{ width: '100%', padding: '10px', borderRadius: '8px', background: 'none', border: '1px solid var(--border-default)', color: 'var(--text-muted)', fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                                Maybe later
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-            {/* Preset Modal */}
-            {showPresetModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-                    onMouseDown={() => { setShowPresetModal(false); setPresetModalMode('save'); setEditingPreset(null); }}>
-                    <div
-                        style={{ width: '420px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden' }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                    >
-                        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
-                            <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
-                                {presetModalMode === 'save' ? '⭐ Save as Preset' : '📋 Manage Presets'}
-                            </div>
-                        </div>
-
-                        <div style={{ padding: '20px' }}>
-                            {presetModalMode === 'save' ? (
-                                <>
-                                    <div style={{ marginBottom: '16px' }}>
-                                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>Preset Name</div>
-                                        <input
-                                            autoFocus
-                                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }}
-                                            placeholder="e.g. Convert Pine to Python"
-                                            value={presetNameInput}
-                                            onChange={(e) => setPresetNameInput(e.target.value)}
-                                        />
-                                    </div>
-                                    <div style={{ marginBottom: '16px' }}>
-                                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>Prompt Template</div>
-                                        <textarea
-                                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', minHeight: '100px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }}
-                                            placeholder="Enter the prompt you want to save..."
-                                            value={presetPromptInput}
-                                            onChange={(e) => setPresetPromptInput(e.target.value)}
-                                        />
-                                    </div>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '16px', background: 'var(--bg-elevated)', padding: '8px 12px', borderRadius: '6px' }}>
-                                        <span style={{ fontWeight: 600 }}>Tip:</span> You can use placeholders like {String.fromCharCode(123) + 'code' + String.fromCharCode(125)} or {String.fromCharCode(123) + 'language' + String.fromCharCode(125)} in your prompts.
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    {promptPresets.length === 0 ? (
-                                        <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>
-                                            No presets saved yet.
-                                        </div>
-                                    ) : (
-                                        <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                                            {promptPresets.map(preset => (
-                                                <div key={preset.id} style={{ marginBottom: '8px', padding: '12px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
-                                                        <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>{preset.name}</span>
-                                                        <div style={{ display: 'flex', gap: '4px' }}>
-                                                            <button
-                                                                type="button"
-                                                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--text-muted)', padding: '2px 6px' }}
-                                                                onClick={() => {
-                                                                    setEditingPreset(preset);
-                                                                    setPresetNameInput(preset.name);
-                                                                    setPresetPromptInput(preset.prompt);
-                                                                    setPresetModalMode('save');
-                                                                }}
-                                                                title="Edit"
-                                                            >
-                                                                ✏️
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: '#f87171', padding: '2px 6px' }}
-                                                                onClick={() => deletePreset(preset.id)}
-                                                                title="Delete"
-                                                            >
-                                                                🗑️
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', maxHeight: '40px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                        {preset.prompt.length > 60 ? preset.prompt.slice(0, 60) + '…' : preset.prompt}
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
                                     )}
                                 </>
+                            ) : (
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '20px 0', textAlign: 'center' }}>
+                                    No version history yet
+                                </div>
                             )}
                         </div>
+                    )}
+                    {/* ── Diagnostics Panel ── */}
+                    {codeText.trim() && (
+                        <div style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', flexShrink: 0 }}>
+                            {/* Header row */}
+                            <button
+                                type="button"
+                                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', textAlign: 'left' }}
+                                onClick={() => {
+                                    runDiagnostics(codeText);
+                                    setDiagnosticsOpen(v => !v);
+                                }}
+                            >
+                                <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', flex: 1 }}>
+                                    🔎 Diagnostics
+                                </span>
+                                {/* Severity counts */}
+                                {diagnostics.filter(d => d.severity === 'error').length > 0 && (
+                                    <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '10px', background: 'rgba(248,113,113,0.15)', color: '#f87171', fontWeight: 700 }}>
+                                        🔴 {diagnostics.filter(d => d.severity === 'error').length}
+                                    </span>
+                                )}
+                                {diagnostics.filter(d => d.severity === 'warning').length > 0 && (
+                                    <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '10px', background: 'rgba(251,191,36,0.15)', color: '#fbbf24', fontWeight: 700 }}>
+                                        🟡 {diagnostics.filter(d => d.severity === 'warning').length}
+                                    </span>
+                                )}
+                                {diagnostics.filter(d => d.severity === 'info').length > 0 && (
+                                    <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '10px', background: 'rgba(96,165,250,0.15)', color: '#60a5fa', fontWeight: 700 }}>
+                                        ℹ️ {diagnostics.filter(d => d.severity === 'info').length}
+                                    </span>
+                                )}
+                                {diagnostics.length === 0 && (
+                                    <span style={{ fontSize: '10px', color: '#4ade80' }}>✓ No issues</span>
+                                )}
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{diagnosticsOpen ? '▲' : '▼'}</span>
+                            </button>
 
-                        <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between' }}>
-                            {presetModalMode === 'save' ? (
-                                <>
-                                    <button
-                                        type="button"
-                                        style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
-                                        onClick={() => { setShowPresetModal(false); setPresetNameInput(''); setPresetPromptInput(''); }}
-                                    >
-                                        Cancel
-                                    </button>
-                                    <div style={{ display: 'flex', gap: '8px' }}>
+                            {diagnosticsOpen && (
+                                <div>
+                                    {/* Filter bar */}
+                                    <div style={{ display: 'flex', gap: '4px', padding: '4px 10px', borderTop: '1px solid var(--border-subtle)' }}>
+                                        {(['all', 'error', 'warning', 'info'] as const).map(f => (
+                                            <button
+                                                key={f}
+                                                type="button"
+                                                onClick={() => setDiagnosticsFilter(f)}
+                                                style={{ padding: '2px 8px', fontSize: '10px', borderRadius: '4px', border: '1px solid var(--border-default)', background: diagnosticsFilter === f ? 'var(--accent-glow)' : 'none', color: diagnosticsFilter === f ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: diagnosticsFilter === f ? 700 : 400, textTransform: 'capitalize' }}
+                                            >
+                                                {f}
+                                            </button>
+                                        ))}
                                         <button
                                             type="button"
-                                            style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
-                                            onClick={() => { setPresetModalMode('manage'); setEditingPreset(null); }}
+                                            onClick={() => runDiagnostics(codeText)}
+                                            style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: '10px', borderRadius: '4px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                            title="Re-run diagnostics"
                                         >
-                                            Manage
-                                        </button>
-                                        <button
-                                            type="button"
-                                            style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', opacity: (!presetNameInput.trim() || !presetPromptInput.trim()) ? 0.5 : 1 }}
-                                            disabled={!presetNameInput.trim() || !presetPromptInput.trim()}
-                                            onClick={() => {
-                                                if (editingPreset) {
-                                                    // Update existing
-                                                    setPromptPresets(prev => prev.map(p =>
-                                                        p.id === editingPreset.id
-                                                            ? { ...p, name: presetNameInput.trim(), prompt: presetPromptInput.trim() }
-                                                            : p
-                                                    ));
-                                                } else {
-                                                    // Save new
-                                                    savePreset(presetNameInput, presetPromptInput);
-                                                }
-                                                setEditingPreset(null);
-                                                setPresetNameInput('');
-                                                setPresetPromptInput('');
-                                                setShowPresetModal(false);
-                                            }}
-                                        >
-                                            {editingPreset ? 'Update' : 'Save'}
+                                            ↺ Run
                                         </button>
                                     </div>
-                                </>
-                            ) : (
-                                <>
-                                    <button
-                                        type="button"
-                                        style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
-                                        onClick={() => setShowPresetModal(false)}
-                                    >
-                                        Close
-                                    </button>
-                                    <button
-                                        type="button"
-                                        style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
-                                        onClick={() => { setPresetModalMode('save'); setEditingPreset(null); setPresetNameInput(''); setPresetPromptInput(''); }}
-                                    >
-                                        + New Preset
-                                    </button>
-                                </>
+
+                                    {/* Diagnostic list */}
+                                    <div style={{ maxHeight: '180px', overflowY: 'auto', padding: '4px 0' }}>
+                                        {(() => {
+                                            const filtered = diagnosticsFilter === 'all'
+                                                ? diagnostics
+                                                : diagnostics.filter(d => d.severity === diagnosticsFilter);
+
+                                            if (filtered.length === 0) {
+                                                return (
+                                                    <div style={{ padding: '12px 10px', fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                                                        {diagnostics.length === 0 ? '✓ No issues found' : `No ${diagnosticsFilter}s`}
+                                                    </div>
+                                                );
+                                            }
+
+                                            return filtered.map((d, i) => (
+                                                <div
+                                                    key={i}
+                                                    style={{ padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', alignItems: 'flex-start', cursor: 'pointer' }}
+                                                    onClick={() => {
+                                                        // Jump to line in textarea
+                                                        const ta = codeTextareaRef.current;
+                                                        if (ta && !useMonaco) {
+                                                            const lines = codeText.split('\n');
+                                                            const charsBefore = lines.slice(0, d.line - 1).join('\n').length + (d.line > 1 ? 1 : 0);
+                                                            const charsToEnd = charsBefore + lines[d.line - 1].length;
+                                                            ta.focus();
+                                                            ta.setSelectionRange(charsBefore, charsToEnd);
+                                                            const lineHeight = 20;
+                                                            ta.scrollTop = Math.max(0, (d.line - 3) * lineHeight);
+                                                        }
+                                                        // Jump to line in Monaco
+                                                        if (useMonaco && monacoEditorRef.current) {
+                                                            monacoEditorRef.current.revealLineInCenter(d.line);
+                                                            monacoEditorRef.current.setPosition({ lineNumber: d.line, column: d.col });
+                                                            monacoEditorRef.current.focus();
+                                                        }
+                                                    }}
+                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                >
+                                                    <span style={{ fontSize: '11px', flexShrink: 0, marginTop: '1px' }}>{severityIcon(d.severity)}</span>
+                                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                                        <div style={{ fontSize: '12px', color: severityColor(d.severity), lineHeight: 1.4 }}>{d.message}</div>
+                                                        <div style={{ display: 'flex', gap: '8px', marginTop: '2px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Line {d.line} · {d.code}</span>
+                                                            {d.quickFix && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        const lines = codeText.split('\n');
+                                                                        lines[d.line - 1] = d.quickFix!.replacement;
+                                                                        const fixed = lines.join('\n');
+                                                                        setCodeText(fixed);
+                                                                        addToHistory(fixed);
+                                                                        setHasUnsavedChanges(true);
+                                                                        setTimeout(() => runDiagnostics(fixed), 50);
+                                                                    }}
+                                                                    style={{ fontSize: '10px', padding: '1px 7px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.08)', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
+                                                                >
+                                                                    ⚡ {d.quickFix.label}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ));
+                                        })()}
+                                    </div>
+                                </div>
                             )}
                         </div>
-                    </div>
+                    )}
+                </div>
+            </aside>
+            )}
+        </div>
+
+
+        {/* ALWAYS SHOW COMPOSER */ }
+    <form
+        className="p-3 flex gap-2"
+        style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}
+        onSubmit={(e) => {
+            e.preventDefault();
+            void handleSend();
+        }}
+    >
+        <div className="flex-1 flex flex-col gap-2">
+            {attachments.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                    {attachments.map((a) => (
+                        <div key={a.id} className="flex items-center gap-2 rounded p-1" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)' }}>
+                            {/* thumbnail */}
+                            <Image
+                                src={a.url}
+                                alt={a.file?.name || "attachment"}
+                                width={40}
+                                height={40}
+                                className="h-10 w-10 object-cover rounded"
+                                unoptimized
+                            />
+
+                            <div className="text-[11px] leading-tight max-w-[220px]">
+                                <div className="truncate">{a.file?.name || "image"}</div>
+                                <div className="opacity-60">
+                                    {ocrBusy ? "OCR…" : (a.ocrText ?? "").trim() ? "OCR ready" : "No OCR"}
+                                </div>
+                            </div>
+
+                            <button
+                                type="button"
+                                style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '3px 7px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer' }}
+                                onClick={() => removeAttachment(a.id)}
+                                title="Remove"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                    ))}
                 </div>
             )}
 
-            {/* Rename Snippet Modal */}
-            {renameModalId && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-                    onMouseDown={() => { setRenameModalId(null); setRenameModalValue(''); }}>
-                    <div
-                        style={{ width: '320px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', padding: '20px' }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                    >
-                        <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)', marginBottom: '12px' }}>✏️ Rename snippet</div>
-                        <input
-                            autoFocus
-                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', marginBottom: '12px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }}
-                            value={renameModalValue}
-                            onChange={(e) => setRenameModalValue(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') void commitRename();
-                                if (e.key === 'Escape') { setRenameModalId(null); setRenameModalValue(''); }
-                            }}
-                        />
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                            <button type="button"
-                                style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
-                                onClick={() => { setRenameModalId(null); setRenameModalValue(''); }}>
-                                Cancel
-                            </button>
-                            <button type="button"
-                                style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
-                                onClick={() => void commitRename()}>
-                                Save
-                            </button>
-                        </div>
+            <input
+                ref={inputRef}
+                className="w-full"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '10px 14px', color: 'var(--text-primary)', fontSize: '13px' }}
+                placeholder="Message T4N…"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onPaste={(e) => {
+                    const items = Array.from(e.clipboardData?.items ?? []);
+                    const files = items
+                        .map((it) => (it.kind === "file" ? it.getAsFile() : null))
+                        .filter((f): f is File => !!f && f.type.startsWith("image/"));
+
+                    if (files.length > 0) {
+                        e.preventDefault();
+                        void handleAttachArray(files);
+                        return;
+                    }
+
+                    // Detect code pasted as text — if it looks like code, route it to the code panel
+                    const text = e.clipboardData?.getData("text") ?? "";
+                    const looksLikeCode =
+                        /```[\s\S]*```/.test(text) ||
+                        /(^|\n)\s*\/\/@version=\d+/i.test(text) ||
+                        /(^|\n)\s*(indicator|strategy|function|const |let |var |def |import |export |class )\s*/m.test(text) ||
+                        (text.includes("{") && text.includes("}") && text.split("\n").length > 4);
+
+                    if (looksLikeCode && text.trim().length > 80) {
+                        e.preventDefault();
+                        // Put it in the code panel as unsaved, open the panel
+                        setCodeText(text);
+                        setUnsavedCode(text);
+                        setHasUnsavedChanges(true);
+                        setActiveCodeId(null);
+                        setCodeOpen(true);
+                    }
+                }}
+                disabled={loading}
+            />
+        </div>
+
+        {streaming ? (
+            <button
+                type="button"
+                className="btn-primary px-6"
+                onClick={stopStreaming}
+            >
+                Stop
+            </button>
+        ) : (
+            <>
+                <label className="btn-secondary cursor-pointer select-none">
+                    <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                            void handleAttachFiles(e.target.files);
+                            // allow attaching the same file again later
+                            e.currentTarget.value = "";
+                        }}
+                        disabled={loading}
+                    />
+                    Attach
+                </label>
+
+                <button
+                    type="button"
+                    className="btn-secondary px-4 disabled:opacity-50"
+                    disabled={loading || !canRetry}
+                    onClick={() => {
+                        cancelStreamSilently();
+                        void retryLastSend();
+                    }}
+                >
+                    Retry
+                </button>
+
+                <button className="btn-primary">
+                    Send
+                </button>
+            </>
+
+        )}
+    </form>
+            </main >
+
+        {/* Upgrade Modal */ }
+    {
+        showUpgradeModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                onMouseDown={() => setShowUpgradeModal(false)}>
+                <div style={{ width: '420px', maxWidth: '95vw', borderRadius: '16px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden' }}
+                    onMouseDown={(e) => e.stopPropagation()}>
+                    {/* Header */}
+                    <div style={{ background: 'linear-gradient(135deg, rgba(249,115,22,0.15), rgba(249,115,22,0.05))', borderBottom: '1px solid var(--border-subtle)', padding: '24px 24px 20px' }}>
+                        <div style={{ fontSize: '28px', marginBottom: '8px' }}>⚡</div>
+                        <div style={{ fontWeight: 700, fontSize: '20px', color: 'var(--text-primary)', marginBottom: '6px' }}>Upgrade to Pro</div>
+                        <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Unlock unlimited access with T4N Pro.</div>
+                    </div>
+                    {/* Features */}
+                    <div style={{ padding: '20px 24px' }}>
+                        {[
+                            { icon: '🔬', text: 'AI Code Review' },
+                            { icon: '🐛', text: 'Debug Mode' },
+                            { icon: '🧪', text: 'Test Generation' },
+                            { icon: '🏗️', text: 'Project Analysis' },
+                            { icon: '🔀', text: 'Multi-File Refactor' },
+                            { icon: '🚀', text: 'DevOps Assistant' },
+                            { icon: '💬', text: 'Codebase Chat' },
+                            { icon: '🔄', text: 'Smart Code Conversion' },
+                            { icon: '🧠', text: 'AI Memory (learns your style)' },
+                            { icon: '⚡', text: 'Higher usage limits (500/day)' },
+                        ].map(({ icon, text }) => (
+                            <div key={text} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', fontSize: '13px', color: 'var(--text-primary)' }}>
+                                <span>{icon}</span><span>{text}</span>
+                            </div>
+                        ))}
+                    </div>
+                    {/* Actions */}
+                    <div style={{ padding: '0 24px 24px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <button type="button"
+                            disabled={checkoutLoading}
+                            onClick={() => void startCheckout()}
+                            style={{ width: '100%', padding: '12px', borderRadius: '8px', background: 'var(--accent)', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14px', cursor: checkoutLoading ? 'not-allowed' : 'pointer', opacity: checkoutLoading ? 0.7 : 1, fontFamily: 'DM Sans, sans-serif' }}>
+                            {checkoutLoading ? 'Redirecting…' : '🚀 Upgrade Now'}
+                        </button>
+                        <button type="button"
+                            onClick={() => setShowUpgradeModal(false)}
+                            style={{ width: '100%', padding: '10px', borderRadius: '8px', background: 'none', border: '1px solid var(--border-default)', color: 'var(--text-muted)', fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                            Maybe later
+                        </button>
                     </div>
                 </div>
-            )}
+            </div>
+        )
+    }
+    {/* Preset Modal */ }
+    {
+        showPresetModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                onMouseDown={() => { setShowPresetModal(false); setPresetModalMode('save'); setEditingPreset(null); }}>
+                <div
+                    style={{ width: '420px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden' }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
+                    <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
+                        <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                            {presetModalMode === 'save' ? '⭐ Save as Preset' : '📋 Manage Presets'}
+                        </div>
+                    </div>
+
+                    <div style={{ padding: '20px' }}>
+                        {presetModalMode === 'save' ? (
+                            <>
+                                <div style={{ marginBottom: '16px' }}>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>Preset Name</div>
+                                    <input
+                                        autoFocus
+                                        style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }}
+                                        placeholder="e.g. Convert Pine to Python"
+                                        value={presetNameInput}
+                                        onChange={(e) => setPresetNameInput(e.target.value)}
+                                    />
+                                </div>
+                                <div style={{ marginBottom: '16px' }}>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>Prompt Template</div>
+                                    <textarea
+                                        style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', minHeight: '100px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }}
+                                        placeholder="Enter the prompt you want to save..."
+                                        value={presetPromptInput}
+                                        onChange={(e) => setPresetPromptInput(e.target.value)}
+                                    />
+                                </div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '16px', background: 'var(--bg-elevated)', padding: '8px 12px', borderRadius: '6px' }}>
+                                    <span style={{ fontWeight: 600 }}>Tip:</span> You can use placeholders like {String.fromCharCode(123) + 'code' + String.fromCharCode(125)} or {String.fromCharCode(123) + 'language' + String.fromCharCode(125)} in your prompts.
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                {promptPresets.length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                                        No presets saved yet.
+                                    </div>
+                                ) : (
+                                    <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                                        {promptPresets.map(preset => (
+                                            <div key={preset.id} style={{ marginBottom: '8px', padding: '12px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+                                                    <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>{preset.name}</span>
+                                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                                        <button
+                                                            type="button"
+                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--text-muted)', padding: '2px 6px' }}
+                                                            onClick={() => {
+                                                                setEditingPreset(preset);
+                                                                setPresetNameInput(preset.name);
+                                                                setPresetPromptInput(preset.prompt);
+                                                                setPresetModalMode('save');
+                                                            }}
+                                                            title="Edit"
+                                                        >
+                                                            ✏️
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: '#f87171', padding: '2px 6px' }}
+                                                            onClick={() => deletePreset(preset.id)}
+                                                            title="Delete"
+                                                        >
+                                                            🗑️
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', maxHeight: '40px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {preset.prompt.length > 60 ? preset.prompt.slice(0, 60) + '…' : preset.prompt}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+
+                    <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between' }}>
+                        {presetModalMode === 'save' ? (
+                            <>
+                                <button
+                                    type="button"
+                                    style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                    onClick={() => { setShowPresetModal(false); setPresetNameInput(''); setPresetPromptInput(''); }}
+                                >
+                                    Cancel
+                                </button>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button
+                                        type="button"
+                                        style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                        onClick={() => { setPresetModalMode('manage'); setEditingPreset(null); }}
+                                    >
+                                        Manage
+                                    </button>
+                                    <button
+                                        type="button"
+                                        style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', opacity: (!presetNameInput.trim() || !presetPromptInput.trim()) ? 0.5 : 1 }}
+                                        disabled={!presetNameInput.trim() || !presetPromptInput.trim()}
+                                        onClick={() => {
+                                            if (editingPreset) {
+                                                // Update existing
+                                                setPromptPresets(prev => prev.map(p =>
+                                                    p.id === editingPreset.id
+                                                        ? { ...p, name: presetNameInput.trim(), prompt: presetPromptInput.trim() }
+                                                        : p
+                                                ));
+                                            } else {
+                                                // Save new
+                                                savePreset(presetNameInput, presetPromptInput);
+                                            }
+                                            setEditingPreset(null);
+                                            setPresetNameInput('');
+                                            setPresetPromptInput('');
+                                            setShowPresetModal(false);
+                                        }}
+                                    >
+                                        {editingPreset ? 'Update' : 'Save'}
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <button
+                                    type="button"
+                                    style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                    onClick={() => setShowPresetModal(false)}
+                                >
+                                    Close
+                                </button>
+                                <button
+                                    type="button"
+                                    style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                    onClick={() => { setPresetModalMode('save'); setEditingPreset(null); setPresetNameInput(''); setPresetPromptInput(''); }}
+                                >
+                                    + New Preset
+                                </button>
+                            </>
+                        )}
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    {/* Rename Snippet Modal */ }
+    {
+        renameModalId && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                onMouseDown={() => { setRenameModalId(null); setRenameModalValue(''); }}>
+                <div
+                    style={{ width: '320px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', padding: '20px' }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
+                    <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)', marginBottom: '12px' }}>✏️ Rename snippet</div>
+                    <input
+                        autoFocus
+                        style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', marginBottom: '12px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }}
+                        value={renameModalValue}
+                        onChange={(e) => setRenameModalValue(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') void commitRename();
+                            if (e.key === 'Escape') { setRenameModalId(null); setRenameModalValue(''); }
+                        }}
+                    />
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button type="button"
+                            style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                            onClick={() => { setRenameModalId(null); setRenameModalValue(''); }}>
+                            Cancel
+                        </button>
+                        <button type="button"
+                            style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                            onClick={() => void commitRename()}>
+                            Save
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )
+    }
         </div >
     );
 }
