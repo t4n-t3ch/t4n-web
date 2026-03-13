@@ -188,6 +188,8 @@ export default function HomeClient() {
     const [appliedBlockId, setAppliedBlockId] = useState<string | null>(null);
     const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
     const [convertDropdownOpen, setConvertDropdownOpen] = useState(false);
+    const [actionsDropdownOpen, setActionsDropdownOpen] = useState(false);
+    const [proToolsDropdownOpen, setProToolsDropdownOpen] = useState(false);
     const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
     const [pluginRuns, setPluginRuns] = useState<PluginRun[]>([]);
     // last tool event emitted from /api/chat/stream (server sends `event: tool`)
@@ -4408,10 +4410,29 @@ ${codeContext}` : ""}${projectContext}`
 
                                     <select
                                         value={selectedDomain}
-                                        onChange={(e) => setSelectedDomain(e.target.value)}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (val === 'auto') {
+                                                // Detect from current code
+                                                const c = codeText;
+                                                const detected =
+                                                    /(^|\n)\s*\/\/@version=\d+/i.test(c) || /(^|\n)\s*(indicator|strategy)\s*\(/i.test(c) ? 'pinescript'
+                                                    : /import\s+bpy\b|bpy\.ops\.|bpy\.data\./i.test(c) ? 'blender'
+                                                    : /using\s+cAlgo|cAlgo\.API/i.test(c) ? 'ctrader'
+                                                    : /using\s+UnityEngine|MonoBehaviour/i.test(c) ? 'unity'
+                                                    : /#property\s+copyright|OnTick\(\)|OnInit\(\)/i.test(c) ? 'mql5'
+                                                    : /import\s+React|from\s+'react'|\.tsx?\b/.test(c) ? 'react'
+                                                    : /def\s+\w+\(|import\s+\w+|print\s*\(/.test(c) ? 'python'
+                                                    : 'generic';
+                                                setSelectedDomain(detected);
+                                            } else {
+                                                setSelectedDomain(val);
+                                            }
+                                        }}
                                         style={{ fontSize: '11px', padding: '3px 6px', borderRadius: '5px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
                                         title="Select language / domain"
                                     >
+                                        <option value="auto">🔍 Auto-detect</option>
                                         <option value="pinescript">🌲 Pine Script</option>
                                         <option value="ctrader">📊 cTrader</option>
                                         <option value="python">🐍 Python</option>
@@ -4602,296 +4623,203 @@ ${codeContext}` : ""}${projectContext}`
                                 </div>
                             </div>
 
-                            {/* Inline AI Action Toolbar */}
-                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-primary)' }}>
-                                {([
-                                    { label: '🔍 Explain', prompt: 'Explain what this code does in plain English. Be concise.' },
-                                    { label: '🔧 Fix Errors', prompt: 'Find and fix any errors, bugs, or issues in this code. Use Ctrl+F format for changes.' },
-                                    { label: '✨ Improve', prompt: 'Suggest and apply improvements to this code for readability, performance, and best practices. Use Ctrl+F format.' },
-                                    { label: '📋 Add Comments', prompt: 'Add clear inline comments to this code explaining what each section does. Use Ctrl+F format.' },
-                                    { label: '⚡ Optimise', prompt: 'Optimise this code for speed and efficiency. Use Ctrl+F format for changes.' },
-                                ] as const).map(({ label, prompt }) => (
+                            {/* ── Toolbar: Actions + Pro Tools dropdowns ── */}
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-primary)', flexWrap: 'wrap' }}>
+
+                                {/* ── Actions dropdown ── */}
+                                <div style={{ position: 'relative' }}>
                                     <button
-                                        key={label}
                                         type="button"
                                         disabled={!codeText.trim() || inlineActionBusy}
                                         style={{
-                                            padding: '3px 9px',
-                                            fontSize: '11px',
-                                            borderRadius: '5px',
+                                            padding: '4px 10px', fontSize: '11px', borderRadius: '5px',
                                             border: '1px solid var(--border-default)',
-                                            background: inlineActionLabel === label ? 'var(--accent-glow)' : 'var(--bg-elevated)',
-                                            color: inlineActionLabel === label ? 'var(--accent)' : 'var(--text-secondary)',
+                                            background: actionsDropdownOpen ? 'var(--accent-glow)' : 'var(--bg-elevated)',
+                                            color: actionsDropdownOpen ? 'var(--accent)' : 'var(--text-secondary)',
                                             cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer',
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
-                                            fontFamily: 'DM Sans, sans-serif',
-                                            transition: 'all 0.15s',
-                                            whiteSpace: 'nowrap',
+                                            fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
                                         }}
-                                        onClick={async () => {
-                                            if (!codeText.trim() || inlineActionBusy) return;
-
-                                            setInlineActionBusy(true);
-                                            setInlineActionLabel(label);
-
-                                            // Build the full prompt including the code
-                                            const domain = selectedDomain;
-                                            const projectContext = buildProjectContext();
-                                            const fullPrompt = `USER REQUEST:\n${prompt}\n\nEXISTING CODE (${domain}) — output the FULL corrected file, no truncation:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
-
-                                            // Inject into chat input and fire
-                                            try {
-                                                // Create a new chat if needed
-                                                let cid = activeId;
-                                                if (!cid) {
-                                                    const newId = await startNewChat();
-                                                    if (!newId) throw new Error('Failed to create conversation');
-                                                    cid = newId;
-                                                }
-
-                                                // Add user message to UI
-                                                const userMsgId = globalThis.crypto.randomUUID();
-                                                setMessages(m => [...m, { id: userMsgId, role: 'user', content: `${label} — running on current code…` }]);
-
-                                                // Stream the response
-                                                const assistantId = globalThis.crypto.randomUUID();
-                                                activeAssistantIdRef.current = assistantId;
-                                                setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-
-                                                abortRef.current?.abort();
-                                                const controller = new AbortController();
-                                                abortRef.current = controller;
-                                                setStreaming(true);
-                                                setLoading(true);
-
-                                                const res = await streamMessage(fullPrompt, cid, controller.signal);
-                                                let streamed = '';
-
-                                                await readSseStream(
-                                                    res,
-                                                    (delta) => {
-                                                        streamed += delta;
-                                                        const extracted = extractCodeBlocks(streamed);
-
-                                                        if (extracted && !/ctrl\+f:/i.test(streamed)) {
-                                                            const merged = (giveAiAccessToCode && accessLockedCode.trim())
-                                                                ? mergePatchWithExisting(accessLockedCode, extracted)
-                                                                : extracted;
-                                                            setCodeText(merged);
-                                                            addToHistory(merged);
-                                                            setHasUnsavedChanges(true);
-                                                            // Keep the active snippet ID — don't drift to unsaved
-                                                            if (!activeCodeId) {
-                                                                setUnsavedCode(merged);
-                                                            }
-                                                            if (giveAiAccessToCode) setAccessLockedCode(merged);
-                                                            setCodeOpen(true);
-                                                        }
-
-                                                        const isCtrlF = /ctrl\+f:/i.test(streamed);
-                                                        let messageToShow = '';
-                                                        if (isCtrlF) {
-                                                            messageToShow = streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim();
-                                                        } else if (extracted) {
-                                                            messageToShow = '[Code updated → check the Code panel]';
-                                                        } else {
-                                                            messageToShow = stripCodeBlocks(streamed);
-                                                        }
-
-                                                        setMessages(m => m.map(msg =>
-                                                            msg.id === assistantId ? { ...msg, content: messageToShow } : msg
-                                                        ));
-                                                    },
-                                                    (doneData) => {
-                                                        const finalCid = doneData?.conversationId || cid;
-                                                        if (finalCid) void refreshPluginRuns(finalCid);
-                                                    },
-                                                    undefined,
-                                                    undefined,
-                                                    controller.signal,
-                                                );
-                                            } catch (err) {
-                                                const msg = err instanceof Error ? err.message : 'Action failed';
-                                                setError(msg);
-                                            } finally {
-                                                setInlineActionBusy(false);
-                                                setInlineActionLabel(null);
-                                                setStreaming(false);
-                                                setLoading(false);
-                                                activeAssistantIdRef.current = null;
-                                                abortRef.current = null;
-                                            }
-                                        }}
+                                        onClick={() => { setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}
                                     >
-                                        {inlineActionLabel === label ? '⏳' : label}
+                                        {inlineActionBusy && ['🔍 Explain','🔧 Fix Errors','✨ Improve','📋 Add Comments','⚡ Optimise'].includes(inlineActionLabel ?? '') ? '⏳' : '⚡'} Actions ▾
                                     </button>
-                                ))}
+                                    {actionsDropdownOpen && (
+                                        <div
+                                            style={{ position: 'absolute', top: '100%', left: 0, zIndex: 200, marginTop: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '190px', overflow: 'hidden' }}
+                                            onMouseLeave={() => setActionsDropdownOpen(false)}
+                                        >
+                                            {([
+                                                { label: '🔍 Explain', prompt: 'Explain what this code does in plain English. Be concise.' },
+                                                { label: '🔧 Fix Errors', prompt: 'Find and fix any errors, bugs, or issues in this code. Use Ctrl+F format for changes.' },
+                                                { label: '✨ Improve', prompt: 'Suggest and apply improvements to this code for readability, performance, and best practices. Use Ctrl+F format.' },
+                                                { label: '📋 Add Comments', prompt: 'Add clear inline comments to this code explaining what each section does. Use Ctrl+F format.' },
+                                                { label: '⚡ Optimise', prompt: 'Optimise this code for speed and efficiency. Use Ctrl+F format for changes.' },
+                                            ] as const).map(({ label, prompt }) => (
+                                                <button
+                                                    key={label}
+                                                    type="button"
+                                                    disabled={!codeText.trim() || inlineActionBusy}
+                                                    style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '9px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
+                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                    onClick={async () => {
+                                                        if (!codeText.trim() || inlineActionBusy) return;
+                                                        setActionsDropdownOpen(false);
+                                                        setInlineActionBusy(true);
+                                                        setInlineActionLabel(label);
+                                                        const domain = selectedDomain;
+                                                        const projectContext = buildProjectContext();
+                                                        const fullPrompt = `USER REQUEST:\n${prompt}\n\nEXISTING CODE (${domain}) — output the FULL corrected file, no truncation:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+                                                        try {
+                                                            let cid = activeId;
+                                                            if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
+                                                            setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `${label} — running on current code…` }]);
+                                                            const assistantId = globalThis.crypto.randomUUID();
+                                                            activeAssistantIdRef.current = assistantId;
+                                                            setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+                                                            abortRef.current?.abort();
+                                                            const controller = new AbortController();
+                                                            abortRef.current = controller;
+                                                            setStreaming(true); setLoading(true);
+                                                            const res = await streamMessage(fullPrompt, cid, controller.signal);
+                                                            let streamed = '';
+                                                            await readSseStream(res,
+                                                                (delta) => {
+                                                                    streamed += delta;
+                                                                    const extracted = extractCodeBlocks(streamed);
+                                                                    if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                                                                        const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
+                                                                        setCodeText(merged); addToHistory(merged); setHasUnsavedChanges(true);
+                                                                        if (!activeCodeId) setUnsavedCode(merged);
+                                                                        if (giveAiAccessToCode) setAccessLockedCode(merged);
+                                                                        setCodeOpen(true);
+                                                                    }
+                                                                    const isCtrlF = /ctrl\+f:/i.test(streamed);
+                                                                    setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : extractCodeBlocks(streamed) ? '[Code updated → check Code panel]' : stripCodeBlocks(streamed) } : msg));
+                                                                },
+                                                                (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
+                                                                undefined, undefined, controller.signal,
+                                                            );
+                                                        } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); }
+                                                        finally { setInlineActionBusy(false); setInlineActionLabel(null); setStreaming(false); setLoading(false); activeAssistantIdRef.current = null; abortRef.current = null; }
+                                                    }}
+                                                >
+                                                    <span style={{ fontSize: '12px', color: inlineActionLabel === label ? 'var(--accent)' : 'var(--text-primary)', fontWeight: 500 }}>{inlineActionLabel === label ? '⏳' : label}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
 
-                                {/* ── ✦ Pro divider ── */}
-                                <span style={{
-                                    fontSize: '9px',
-                                    color: 'var(--accent)',
-                                    fontWeight: 700,
-                                    letterSpacing: '0.12em',
-                                    textTransform: 'uppercase',
-                                    opacity: 0.7,
-                                    whiteSpace: 'nowrap',
-                                    alignSelf: 'center',
-                                    borderLeft: '1px solid rgba(249,115,22,0.3)',
-                                    marginLeft: '2px',
-                                    paddingLeft: '8px',
-                                }}>
-                                    ✦ Pro
-                                </span>
-
-                                {/* ── Pro feature buttons ── */}
-                                {([
-                                    {
-                                        label: '🔬 AI Code Review',
-                                        prompt: `Perform a comprehensive code review. Return your analysis in this exact format:\n\n## 🔒 Security Issues\nList any security vulnerabilities, injection risks, or unsafe patterns. If none, say "None found."\n\n## ⚡ Performance Problems\nList any performance issues, unnecessary loops, memory leaks. If none, say "None found."\n\n## ❌ Bad Patterns\nList anti-patterns, code smells, poor naming. If none, say "None found."\n\n## ✅ Better Approaches\nSuggest concrete improvements with Ctrl+F format where applicable.\n\nBe specific with line references.`,
-                                        proOnly: true,
-                                    },
-                                    {
-                                        label: '🐛 Debug Mode',
-                                        prompt: `Debug this code thoroughly. Return your analysis in this exact format:\n\n## 🔴 Error Identified\nDescribe the most likely bug or error\n\n## 🔍 Possible Causes\n1. First possible root cause\n2. Second possible root cause\n3. Third possible root cause\n\n## 🛠 Suggested Fix\nProvide the exact fix using Ctrl+F find-and-replace format.`,
-                                        proOnly: true,
-                                    },
-                                    {
-                                        label: '🧪 Generate Tests',
-                                        prompt: `Generate comprehensive unit tests for this code. Include happy path, edge cases, and error handling. Use the correct framework (Jest/Vitest for TS/JS, pytest for Python, NUnit for C#). Output the full test file, ready to run.`,
-                                        proOnly: true,
-                                    },
-                                    {
-                                        label: '🏗️ Project Analysis',
-                                        prompt: `Analyse this entire codebase/file and return:\n\n## 📐 Architecture Overview\nDescribe structure and patterns.\n\n## 🚨 Issues Found\n- Duplicated functions\n- Circular dependencies\n- Missing error handling\n- Performance bottlenecks\n\n## 🔧 Suggested Improvements\nPrioritised list with Ctrl+F format fixes.\n\n## 📊 Code Quality Score\nScore out of 10 with justification.`,
-                                        proOnly: true,
-                                    },
-                                    {
-                                        label: '🔀 Multi-File Refactor',
-                                        prompt: `Refactor this code to clean architecture:\n- Extract repeated logic into reusable functions\n- Separate concerns (auth, data, UI)\n- Convert callbacks to async/await\n- Add TypeScript types where missing\n- Remove dead code\n\nOutput the FULL refactored file — no truncation.`,
-                                        proOnly: true,
-                                    },
-                                    {
-                                        label: '🚀 DevOps Assist',
-                                        prompt: `Generate DevOps config for this project:\n\n## 🐳 Docker Setup\nDockerfile and docker-compose.yml\n\n## ⚙️ CI/CD Pipeline\nGitHub Actions YAML\n\n## 🚢 Deployment Commands\nStep-by-step shell commands\n\n## 🔑 Environment Variables\nRequired env vars with descriptions`,
-                                        proOnly: true,
-                                    },
-                                    {
-                                        label: '💬 Ask Project',
-                                        prompt: `You are a codebase assistant. Analyse the provided code and answer questions about it — where features are, how things connect, what functions do. Be specific with line numbers and function names.\n\nCurrent code to analyse:`,
-                                        proOnly: true,
-                                    },
-                                ] as { label: string; prompt: string; proOnly: boolean }[]).map(({ label, prompt, proOnly }) => (
+                                {/* ── Pro Tools dropdown ── */}
+                                <div style={{ position: 'relative' }}>
                                     <button
-                                        key={label}
                                         type="button"
                                         disabled={!codeText.trim() || inlineActionBusy}
                                         style={{
-                                            padding: '3px 9px',
-                                            fontSize: '11px',
-                                            borderRadius: '5px',
+                                            padding: '4px 10px', fontSize: '11px', borderRadius: '5px',
                                             border: '1px solid rgba(249,115,22,0.45)',
-                                            background: inlineActionLabel === label ? 'var(--accent-glow)' : 'rgba(249,115,22,0.06)',
-                                            color: inlineActionLabel === label ? 'var(--accent)' : 'var(--accent)',
-                                            cursor: (!codeText.trim() || inlineActionBusy) ? 'not-allowed' : 'pointer',
-                                            opacity: (!codeText.trim() || inlineActionBusy) ? 0.5 : 1,
-                                            fontFamily: 'DM Sans, sans-serif',
-                                            transition: 'all 0.15s',
-                                            whiteSpace: 'nowrap',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '3px',
+                                            background: proToolsDropdownOpen ? 'var(--accent-glow)' : 'rgba(249,115,22,0.06)',
+                                            color: 'var(--accent)',
+                                            cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer',
+                                            opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
+                                            fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
                                         }}
-                                        onClick={async () => {
-                                            if (!codeText.trim() || inlineActionBusy) return;
-                                            if (proOnly && userPlan !== 'pro') {
-                                                setShowUpgradeModal(true);
-                                                return;
-                                            }
-                                            const finalPrompt = label === '💬 Ask Project'
-                                                ? `${prompt}\n\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\``
-                                                : `USER REQUEST:\n${prompt}\n\nSOURCE CODE (${selectedDomain}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${buildProjectContext()}`;
-                                            setInlineActionBusy(true);
-                                            setInlineActionLabel(label);
-                                            try {
-                                                let cid = activeId;
-                                                if (!cid) {
-                                                    const newId = await startNewChat();
-                                                    if (!newId) throw new Error('Failed to create conversation');
-                                                    cid = newId;
-                                                }
-                                                setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `${label} — running on current code…` }]);
-                                                const assistantId = globalThis.crypto.randomUUID();
-                                                activeAssistantIdRef.current = assistantId;
-                                                setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-                                                abortRef.current?.abort();
-                                                const controller = new AbortController();
-                                                abortRef.current = controller;
-                                                setStreaming(true);
-                                                setLoading(true);
-                                                const res = await streamMessage(finalPrompt, cid, controller.signal);
-                                                let streamed = '';
-                                                await readSseStream(res,
-                                                    (delta) => {
-                                                        streamed += delta;
-                                                        const extracted = extractCodeBlocks(streamed);
-                                                        if (extracted && !/ctrl\+f:/i.test(streamed)) {
-                                                            const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
-                                                            setCodeText(merged);
-                                                            addToHistory(merged);
-                                                            setHasUnsavedChanges(true);
-                                                            if (!activeCodeId) setUnsavedCode(merged);
-                                                            if (giveAiAccessToCode) setAccessLockedCode(merged);
-                                                            setCodeOpen(true);
-                                                        }
-                                                        const isCtrlF = /ctrl\+f:/i.test(streamed);
-                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : extractCodeBlocks(streamed) ? `[${label} → check Code panel]` : stripCodeBlocks(streamed) } : msg));
-                                                    },
-                                                    (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
-                                                    undefined, undefined, controller.signal,
-                                                );
-                                            } catch (err) {
-                                                setError(err instanceof Error ? err.message : 'Action failed');
-                                            } finally {
-                                                setInlineActionBusy(false);
-                                                setInlineActionLabel(null);
-                                                setStreaming(false);
-                                                setLoading(false);
-                                                activeAssistantIdRef.current = null;
-                                                abortRef.current = null;
-                                            }
-                                        }}
+                                        onClick={() => { setProToolsDropdownOpen(v => !v); setActionsDropdownOpen(false); }}
                                     >
-                                        {inlineActionLabel === label ? '⏳' : label}
-                                        {proOnly && userPlan !== 'pro' && (
-                                            <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', marginLeft: '2px', fontWeight: 700 }}>PRO</span>
-                                        )}
+                                        ✦ Pro Tools ▾
+                                        {userPlan !== 'pro' && <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', fontWeight: 700 }}>PRO</span>}
                                     </button>
-                                ))}
+                                    {proToolsDropdownOpen && (
+                                        <div
+                                            style={{ position: 'absolute', top: '100%', left: 0, zIndex: 200, marginTop: '4px', background: 'var(--bg-elevated)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'hidden' }}
+                                            onMouseLeave={() => setProToolsDropdownOpen(false)}
+                                        >
+                                            {([
+                                                { label: '🔬 AI Code Review', prompt: `Perform a comprehensive code review. Return your analysis in this exact format:\n\n## 🔒 Security Issues\nList any security vulnerabilities, injection risks, or unsafe patterns. If none, say "None found."\n\n## ⚡ Performance Problems\nList any performance issues, unnecessary loops, memory leaks. If none, say "None found."\n\n## ❌ Bad Patterns\nList anti-patterns, code smells, poor naming. If none, say "None found."\n\n## ✅ Better Approaches\nSuggest concrete improvements with Ctrl+F format where applicable.\n\nBe specific with line references.` },
+                                                { label: '🐛 Debug Mode', prompt: `Debug this code thoroughly. Return your analysis in this exact format:\n\n## 🔴 Error Identified\nDescribe the most likely bug or error\n\n## 🔍 Possible Causes\n1. First possible root cause\n2. Second possible root cause\n3. Third possible root cause\n\n## 🛠 Suggested Fix\nProvide the exact fix using Ctrl+F find-and-replace format.` },
+                                                { label: '🧪 Generate Tests', prompt: `Generate comprehensive unit tests for this code. Include happy path, edge cases, and error handling. Use the correct framework (Jest/Vitest for TS/JS, pytest for Python, NUnit for C#). Output the full test file, ready to run.` },
+                                                { label: '🏗️ Project Analysis', prompt: `Analyse this entire codebase/file and return:\n\n## 📐 Architecture Overview\nDescribe structure and patterns.\n\n## 🚨 Issues Found\n- Duplicated functions\n- Circular dependencies\n- Missing error handling\n- Performance bottlenecks\n\n## 🔧 Suggested Improvements\nPrioritised list with Ctrl+F format fixes.\n\n## 📊 Code Quality Score\nScore out of 10 with justification.` },
+                                                { label: '🔀 Multi-File Refactor', prompt: `Refactor this code to clean architecture:\n- Extract repeated logic into reusable functions\n- Separate concerns (auth, data, UI)\n- Convert callbacks to async/await\n- Add TypeScript types where missing\n- Remove dead code\n\nOutput the FULL refactored file — no truncation.` },
+                                                { label: '🚀 DevOps Assist', prompt: `Generate DevOps config for this project:\n\n## 🐳 Docker Setup\nDockerfile and docker-compose.yml\n\n## ⚙️ CI/CD Pipeline\nGitHub Actions YAML\n\n## 🚢 Deployment Commands\nStep-by-step shell commands\n\n## 🔑 Environment Variables\nRequired env vars with descriptions` },
+                                                { label: '💬 Ask Project', prompt: `You are a codebase assistant. Analyse the provided code and answer questions about it — where features are, how things connect, what functions do. Be specific with line numbers and function names.\n\nCurrent code to analyse:` },
+                                            ] as const).map(({ label, prompt }) => (
+                                                <button
+                                                    key={label}
+                                                    type="button"
+                                                    disabled={!codeText.trim() || inlineActionBusy}
+                                                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '9px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
+                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                    onClick={async () => {
+                                                        if (!codeText.trim() || inlineActionBusy) return;
+                                                        setProToolsDropdownOpen(false);
+                                                        if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
+                                                        const finalPrompt = label === '💬 Ask Project'
+                                                            ? `${prompt}\n\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\``
+                                                            : `USER REQUEST:\n${prompt}\n\nSOURCE CODE (${selectedDomain}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${buildProjectContext()}`;
+                                                        setInlineActionBusy(true);
+                                                        setInlineActionLabel(label);
+                                                        try {
+                                                            let cid = activeId;
+                                                            if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
+                                                            setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `${label} — running on current code…` }]);
+                                                            const assistantId = globalThis.crypto.randomUUID();
+                                                            activeAssistantIdRef.current = assistantId;
+                                                            setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+                                                            abortRef.current?.abort();
+                                                            const controller = new AbortController();
+                                                            abortRef.current = controller;
+                                                            setStreaming(true); setLoading(true);
+                                                            const res = await streamMessage(finalPrompt, cid, controller.signal);
+                                                            let streamed = '';
+                                                            await readSseStream(res,
+                                                                (delta) => {
+                                                                    streamed += delta;
+                                                                    const extracted = extractCodeBlocks(streamed);
+                                                                    if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                                                                        const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
+                                                                        setCodeText(merged); addToHistory(merged); setHasUnsavedChanges(true);
+                                                                        if (!activeCodeId) setUnsavedCode(merged);
+                                                                        if (giveAiAccessToCode) setAccessLockedCode(merged);
+                                                                        setCodeOpen(true);
+                                                                    }
+                                                                    const isCtrlF = /ctrl\+f:/i.test(streamed);
+                                                                    setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : extractCodeBlocks(streamed) ? `[${label} → check Code panel]` : stripCodeBlocks(streamed) } : msg));
+                                                                },
+                                                                (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
+                                                                undefined, undefined, controller.signal,
+                                                            );
+                                                        } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); }
+                                                        finally { setInlineActionBusy(false); setInlineActionLabel(null); setStreaming(false); setLoading(false); activeAssistantIdRef.current = null; abortRef.current = null; }
+                                                    }}
+                                                >
+                                                    <span style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 500 }}>{inlineActionLabel === label ? '⏳' : label}</span>
+                                                    {userPlan !== 'pro' && <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', fontWeight: 700, flexShrink: 0 }}>PRO</span>}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
 
-                                {/* Preset star button */}
+                                {/* ── ⭐ Preset star button ── */}
                                 <button
                                     type="button"
                                     style={{
-                                        padding: '3px 9px',
-                                        fontSize: '11px',
-                                        borderRadius: '5px',
+                                        padding: '4px 10px', fontSize: '11px', borderRadius: '5px',
                                         border: '1px solid var(--border-default)',
                                         background: promptPresets.length > 0 ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)',
                                         color: promptPresets.length > 0 ? 'var(--accent)' : 'var(--text-secondary)',
-                                        cursor: 'pointer',
-                                        fontFamily: 'DM Sans, sans-serif',
+                                        cursor: 'pointer', fontFamily: 'DM Sans, sans-serif',
                                     }}
-                                    onClick={() => {
-                                        setPresetModalMode('manage');
-                                        setShowPresetModal(true);
-                                    }}
+                                    onClick={() => { setPresetModalMode('manage'); setShowPresetModal(true); }}
                                     title="Manage prompt presets"
                                 >
                                     ⭐ {promptPresets.length > 0 ? promptPresets.length : ''}
                                 </button>
 
-                                {/* Preset quick-launch buttons */}
+                                {/* ── Preset quick-launch buttons ── */}
                                 {promptPresets.slice(0, 3).map(preset => (
                                     <button
                                         key={preset.id}
@@ -4899,120 +4827,74 @@ ${codeContext}` : ""}${projectContext}`
                                         disabled={!codeText.trim() || inlineActionBusy}
                                         title={preset.prompt}
                                         style={{
-                                            padding: '3px 9px',
-                                            fontSize: '11px',
-                                            borderRadius: '5px',
+                                            padding: '4px 10px', fontSize: '11px', borderRadius: '5px',
                                             border: '1px solid rgba(249,115,22,0.3)',
                                             background: inlineActionLabel === `preset-${preset.id}` ? 'var(--accent-glow)' : 'rgba(249,115,22,0.06)',
                                             color: inlineActionLabel === `preset-${preset.id}` ? 'var(--accent)' : 'var(--text-secondary)',
                                             cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer',
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
-                                            fontFamily: 'DM Sans, sans-serif',
-                                            whiteSpace: 'nowrap',
-                                            maxWidth: '100px',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
+                                            fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis',
                                         }}
                                         onClick={async () => {
                                             if (!codeText.trim() || inlineActionBusy) return;
-
                                             setInlineActionBusy(true);
                                             setInlineActionLabel(`preset-${preset.id}`);
-
                                             const projectContext = buildProjectContext();
                                             const fullPrompt = `USER REQUEST:\n${preset.prompt}\n\nSOURCE CODE:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
-
                                             try {
                                                 let cid = activeId;
-                                                if (!cid) {
-                                                    const newId = await startNewChat();
-                                                    if (!newId) throw new Error('Failed to create conversation');
-                                                    cid = newId;
-                                                }
-
-                                                const userMsgId = globalThis.crypto.randomUUID();
-                                                setMessages(m => [...m, { id: userMsgId, role: 'user', content: `📋 ${preset.name}` }]);
-
+                                                if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
+                                                setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `📋 ${preset.name}` }]);
                                                 const assistantId = globalThis.crypto.randomUUID();
                                                 activeAssistantIdRef.current = assistantId;
                                                 setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-
                                                 abortRef.current?.abort();
                                                 const controller = new AbortController();
                                                 abortRef.current = controller;
-                                                setStreaming(true);
-                                                setLoading(true);
-
+                                                setStreaming(true); setLoading(true);
                                                 const res = await streamMessage(fullPrompt, cid, controller.signal);
                                                 let streamed = '';
-
-                                                await readSseStream(
-                                                    res,
+                                                await readSseStream(res,
                                                     (delta) => {
                                                         streamed += delta;
                                                         const extracted = extractCodeBlocks(streamed);
                                                         if (extracted && !/ctrl\+f:/i.test(streamed)) {
-                                                            setCodeText(extracted);
-                                                            addToHistory(extracted);
-                                                            setHasUnsavedChanges(true);
+                                                            setCodeText(extracted); addToHistory(extracted); setHasUnsavedChanges(true);
                                                             if (!activeCodeId) setUnsavedCode(extracted);
                                                             if (giveAiAccessToCode) setAccessLockedCode(extracted);
                                                             setCodeOpen(true);
                                                         }
                                                         const isCtrlF = /ctrl\+f:/i.test(streamed);
                                                         const extracted2 = extractCodeBlocks(streamed);
-                                                        setMessages(m => m.map(msg =>
-                                                            msg.id === assistantId ? {
-                                                                ...msg,
-                                                                content: isCtrlF ? streamed : extracted2 ? `[${preset.name} → open Code panel]` : stripCodeBlocks(streamed)
-                                                            } : msg
-                                                        ));
+                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed : extracted2 ? `[${preset.name} → open Code panel]` : stripCodeBlocks(streamed) } : msg));
                                                     },
-                                                    (doneData) => {
-                                                        const finalCid = doneData?.conversationId || cid;
-                                                        if (finalCid) void refreshPluginRuns(finalCid);
-                                                    },
-                                                    undefined, undefined,
-                                                    controller.signal,
+                                                    (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
+                                                    undefined, undefined, controller.signal,
                                                 );
-                                            } catch (err) {
-                                                setError(err instanceof Error ? err.message : 'Preset failed');
-                                            } finally {
-                                                setInlineActionBusy(false);
-                                                setInlineActionLabel(null);
-                                                setStreaming(false);
-                                                setLoading(false);
-                                                activeAssistantIdRef.current = null;
-                                                abortRef.current = null;
-                                            }
+                                            } catch (err) { setError(err instanceof Error ? err.message : 'Preset failed'); }
+                                            finally { setInlineActionBusy(false); setInlineActionLabel(null); setStreaming(false); setLoading(false); activeAssistantIdRef.current = null; abortRef.current = null; }
                                         }}
                                     >
                                         {inlineActionLabel === `preset-${preset.id}` ? '⏳' : `📋 ${preset.name}`}
                                     </button>
                                 ))}
 
-                                {/* Convert dropdown — Pro only */}
+                                {/* ── Convert dropdown — Pro only ── */}
                                 <div style={{ position: 'relative' }}>
                                     <button
                                         type="button"
                                         disabled={!codeText.trim() || inlineActionBusy}
                                         style={{
-                                            padding: '3px 9px',
-                                            fontSize: '11px',
-                                            borderRadius: '5px',
+                                            padding: '4px 10px', fontSize: '11px', borderRadius: '5px',
                                             border: '1px solid var(--border-default)',
                                             background: convertDropdownOpen ? 'var(--accent-glow)' : 'var(--bg-elevated)',
                                             color: convertDropdownOpen ? 'var(--accent)' : 'var(--text-secondary)',
                                             cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer',
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
-                                            fontFamily: 'DM Sans, sans-serif',
-                                            whiteSpace: 'nowrap',
+                                            fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap',
                                         }}
                                         onClick={() => {
-                                            if (userPlan !== 'pro') {
-                                                setShowUpgradeModal(true);
-                                                return;
-                                            }
+                                            if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
                                             setConvertDropdownOpen(v => !v);
                                         }}
                                     >
@@ -5021,7 +4903,7 @@ ${codeContext}` : ""}${projectContext}`
 
                                     {convertDropdownOpen && (
                                         <div
-                                            style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 100, marginBottom: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'hidden' }}
+                                            style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 200, marginBottom: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'hidden' }}
                                             onMouseLeave={() => setConvertDropdownOpen(false)}
                                         >
                                             {(() => {
@@ -5063,172 +4945,45 @@ ${codeContext}` : ""}${projectContext}`
                                                     onClick={async () => {
                                                         setConvertDropdownOpen(false);
                                                         if (!codeText.trim() || inlineActionBusy) return;
-
                                                         setInlineActionBusy(true);
                                                         setInlineActionLabel('🔄 Convert');
-
                                                         const projectContext = buildProjectContext();
                                                         const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
-
                                                         try {
                                                             let cid = activeId;
-                                                            if (!cid) {
-                                                                const newId = await startNewChat();
-                                                                if (!newId) throw new Error('Failed to create conversation');
-                                                                cid = newId;
-                                                            }
-
-                                                            const userMsgId = globalThis.crypto.randomUUID();
-                                                            setMessages(m => [...m, { id: userMsgId, role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
-
+                                                            if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
+                                                            setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
                                                             const assistantId = globalThis.crypto.randomUUID();
                                                             activeAssistantIdRef.current = assistantId;
                                                             setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-
                                                             abortRef.current?.abort();
                                                             const controller = new AbortController();
                                                             abortRef.current = controller;
-                                                            setStreaming(true);
-                                                            setLoading(true);
-
+                                                            setStreaming(true); setLoading(true);
                                                             const res = await streamMessage(fullPrompt, cid, controller.signal);
                                                             let streamed = '';
-
-                                                            await readSseStream(
-                                                                res,
+                                                            await readSseStream(res,
                                                                 (delta) => {
                                                                     streamed += delta;
                                                                     const extracted = extractCodeBlocks(streamed);
                                                                     if (extracted) {
-                                                                        setCodeText(extracted);
-                                                                        addToHistory(extracted);
-                                                                        setHasUnsavedChanges(true);
-                                                                        setCodeOpen(true);
-                                                                        const domainMap: Record<string, string> = {
-                                                                            'Python': 'python',
-                                                                            'Pine Script': 'pinescript',
-                                                                            'Pine Script v5': 'pinescript',
-                                                                            'cTrader C#': 'ctrader',
-                                                                            'MQL5': 'mql5',
-                                                                            'JavaScript': 'javascript',
-                                                                            'TypeScript': 'typescript',
-                                                                        };
+                                                                        setCodeText(extracted); addToHistory(extracted); setHasUnsavedChanges(true); setCodeOpen(true);
+                                                                        const domainMap: Record<string, string> = { 'Python': 'python', 'Pine Script': 'pinescript', 'Pine Script v5': 'pinescript', 'cTrader C#': 'ctrader', 'MQL5': 'mql5', 'JavaScript': 'javascript', 'TypeScript': 'typescript' };
                                                                         if (domainMap[to]) setSelectedDomain(domainMap[to]);
                                                                     }
-                                                                    setMessages(m => m.map(msg =>
-                                                                        msg.id === assistantId ? { ...msg, content: extracted ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg
-                                                                    ));
+                                                                    setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: extractCodeBlocks(streamed) ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg));
                                                                 },
-                                                                (doneData) => {
-                                                                    const finalCid = doneData?.conversationId || cid;
-                                                                    if (finalCid) void refreshPluginRuns(finalCid);
-                                                                },
-                                                                undefined, undefined,
-                                                                controller.signal,
+                                                                (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
+                                                                undefined, undefined, controller.signal,
                                                             );
-                                                        } catch (err) {
-                                                            setError(err instanceof Error ? err.message : 'Conversion failed');
-                                                        } finally {
-                                                            setInlineActionBusy(false);
-                                                            setInlineActionLabel(null);
-                                                            setStreaming(false);
-                                                            setLoading(false);
-                                                            activeAssistantIdRef.current = null;
-                                                            abortRef.current = null;
-                                                        }
+                                                        } catch (err) { setError(err instanceof Error ? err.message : 'Conversion failed'); }
+                                                        finally { setInlineActionBusy(false); setInlineActionLabel(null); setStreaming(false); setLoading(false); activeAssistantIdRef.current = null; abortRef.current = null; }
                                                     }}
                                                 >
                                                     <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{from} → {to}</span>
                                                     <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
                                                 </button>
                                             ))}
-
-                                            {/* Presets Section */}
-                                            {promptPresets.length > 0 && (
-                                                <>
-                                                    <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '4px 0' }} />
-                                                    <div style={{ padding: '4px 14px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Your Presets</div>
-                                                    {promptPresets.map(preset => (
-                                                        <button
-                                                            key={preset.id}
-                                                            type="button"
-                                                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
-                                                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
-                                                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                                                            onClick={async () => {
-                                                                setConvertDropdownOpen(false);
-                                                                if (!codeText.trim() || inlineActionBusy) return;
-
-                                                                setInlineActionBusy(true);
-                                                                setInlineActionLabel('📋 Preset');
-
-                                                                const projectContext = buildProjectContext();
-                                                                const fullPrompt = `USER REQUEST:\n${preset.prompt}\n\nSOURCE CODE:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
-
-                                                                try {
-                                                                    let cid = activeId;
-                                                                    if (!cid) {
-                                                                        const newId = await startNewChat();
-                                                                        if (!newId) throw new Error('Failed to create conversation');
-                                                                        cid = newId;
-                                                                    }
-
-                                                                    const userMsgId = globalThis.crypto.randomUUID();
-                                                                    setMessages(m => [...m, { id: userMsgId, role: 'user', content: `📋 ${preset.name}` }]);
-
-                                                                    const assistantId = globalThis.crypto.randomUUID();
-                                                                    activeAssistantIdRef.current = assistantId;
-                                                                    setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-
-                                                                    abortRef.current?.abort();
-                                                                    const controller = new AbortController();
-                                                                    abortRef.current = controller;
-                                                                    setStreaming(true);
-                                                                    setLoading(true);
-
-                                                                    const res = await streamMessage(fullPrompt, cid, controller.signal);
-                                                                    let streamed = '';
-
-                                                                    await readSseStream(
-                                                                        res,
-                                                                        (delta) => {
-                                                                            streamed += delta;
-                                                                            const extracted = extractCodeBlocks(streamed);
-                                                                            if (extracted) {
-                                                                                setCodeText(extracted);
-                                                                                addToHistory(extracted);
-                                                                                setHasUnsavedChanges(true);
-                                                                                setCodeOpen(true);
-                                                                            }
-                                                                            setMessages(m => m.map(msg =>
-                                                                                msg.id === assistantId ? { ...msg, content: extracted ? `[${preset.name} → open Code panel]` : stripCodeBlocks(streamed) } : msg
-                                                                            ));
-                                                                        },
-                                                                        (doneData) => {
-                                                                            const finalCid = doneData?.conversationId || cid;
-                                                                            if (finalCid) void refreshPluginRuns(finalCid);
-                                                                        },
-                                                                        undefined, undefined,
-                                                                        controller.signal,
-                                                                    );
-                                                                } catch (err) {
-                                                                    setError(err instanceof Error ? err.message : 'Preset failed');
-                                                                } finally {
-                                                                    setInlineActionBusy(false);
-                                                                    setInlineActionLabel(null);
-                                                                    setStreaming(false);
-                                                                    setLoading(false);
-                                                                    activeAssistantIdRef.current = null;
-                                                                    abortRef.current = null;
-                                                                }
-                                                            }}
-                                                        >
-                                                            <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>📋 {preset.name}</span>
-                                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>preset</span>
-                                                        </button>
-                                                    ))}
-                                                </>
-                                            )}
                                         </div>
                                     )}
                                 </div>
