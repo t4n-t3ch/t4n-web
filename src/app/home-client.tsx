@@ -188,9 +188,6 @@ export default function HomeClient() {
     const [appliedBlockId, setAppliedBlockId] = useState<string | null>(null);
     const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
     const [convertDropdownOpen, setConvertDropdownOpen] = useState(false);
-    const [convertDropdownPos, setConvertDropdownPos] = useState({ top: 0, left: 0 });
-    const [actionsDropdownPos, setActionsDropdownPos] = useState({ top: 0, left: 0 });
-    const [proToolsDropdownPos, setProToolsDropdownPos] = useState({ top: 0, left: 0 });
     const [actionsDropdownOpen, setActionsDropdownOpen] = useState(false);
     const [proToolsDropdownOpen, setProToolsDropdownOpen] = useState(false);
     const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -2006,8 +2003,18 @@ ${codeContext}` : ""}${projectContext}`
     }
 
     if (authLoading) return (
-        <div className="flex h-screen items-center justify-center" style={{ background: '#0f0f11', color: '#9ca3af' }}>
-            Loading…
+        <div className="flex h-screen items-center justify-center" style={{ background: '#0f0f11' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: '#f97316', letterSpacing: '-0.5px' }}>T4N</div>
+                <div style={{
+                    width: 32, height: 32, borderRadius: '50%',
+                    border: '3px solid #2a2a35',
+                    borderTop: '3px solid #f97316',
+                    animation: 'spin 0.8s linear infinite',
+                }} />
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                <div style={{ fontSize: 13, color: '#6b7280' }}>Loading your workspace…</div>
+            </div>
         </div>
     );
 
@@ -2097,6 +2104,44 @@ ${codeContext}` : ""}${projectContext}`
                         <>Have an account? <button onClick={() => { setAuthMode("login"); setAuthError(null); }} style={{ color: '#f97316', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>Sign in</button></>
                     )}
                 </div>
+
+                {/* ── Divider ── */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '20px 0 16px' }}>
+                    <div style={{ flex: 1, height: 1, background: '#2a2a35' }} />
+                    <span style={{ fontSize: 11, color: '#4b5563', whiteSpace: 'nowrap' }}>or continue with</span>
+                    <div style={{ flex: 1, height: 1, background: '#2a2a35' }} />
+                </div>
+
+                {/* ── Google OAuth button ── */}
+                <button
+                    type="button"
+                    onClick={async () => {
+                        setAuthError(null);
+                        const { error } = await supabase.auth.signInWithOAuth({
+                            provider: 'google',
+                            options: {
+                                redirectTo: window.location.origin,
+                            },
+                        });
+                        if (error) setAuthError(error.message);
+                    }}
+                    style={{
+                        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                        background: '#fff', border: '1px solid #2a2a35', borderRadius: 6,
+                        padding: '10px 0', cursor: 'pointer', fontSize: 14, fontWeight: 500, color: '#111',
+                        transition: 'background 0.15s',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '#fff')}
+                >
+                    <svg width="18" height="18" viewBox="0 0 48 48">
+                        <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"/>
+                        <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 16.1 19 13 24 13c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.5 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
+                        <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.3 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.5 16.2 44 24 44z"/>
+                        <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.2-4.3 5.6l6.2 5.2C42.1 35.4 44 30 44 24c0-1.2-.1-2.4-.4-3.5z"/>
+                    </svg>
+                    Continue with Google
+                </button>
             </div>
         </div>
     );
@@ -4643,13 +4688,13 @@ ${codeContext}` : ""}${projectContext}`
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
                                             fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
                                         }}
-                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setActionsDropdownPos({ top: r.bottom + 4, left: r.left }); setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}
+                                        onClick={() => { setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}
                                     >
                                         {inlineActionBusy && ['🔍 Explain','🔧 Fix Errors','✨ Improve','📋 Add Comments','⚡ Optimise'].includes(inlineActionLabel ?? '') ? '⏳' : '⚡'} Actions ▾
                                     </button>
                                     {actionsDropdownOpen && (
                                         <div
-                                            style={{ position: 'fixed', top: actionsDropdownPos.top, left: actionsDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '190px', overflow: 'auto', maxHeight: '60vh' }}
+                                            style={{ position: 'absolute', top: '100%', left: 0, zIndex: 200, marginTop: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '190px', overflow: 'hidden' }}
                                             onMouseLeave={() => setActionsDropdownOpen(false)}
                                         >
                                             {([
@@ -4729,14 +4774,14 @@ ${codeContext}` : ""}${projectContext}`
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
                                             fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
                                         }}
-                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setProToolsDropdownPos({ top: r.bottom + 4, left: r.left }); setProToolsDropdownOpen(v => !v); setActionsDropdownOpen(false); }}
+                                        onClick={() => { setProToolsDropdownOpen(v => !v); setActionsDropdownOpen(false); }}
                                     >
                                         ✦ Pro Tools ▾
                                         {userPlan !== 'pro' && <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', fontWeight: 700 }}>PRO</span>}
                                     </button>
                                     {proToolsDropdownOpen && (
                                         <div
-                                            style={{ position: 'fixed', top: proToolsDropdownPos.top, left: proToolsDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
+                                            style={{ position: 'absolute', top: '100%', left: 0, zIndex: 200, marginTop: '4px', background: 'var(--bg-elevated)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'hidden' }}
                                             onMouseLeave={() => setProToolsDropdownOpen(false)}
                                         >
                                             {([
@@ -4896,10 +4941,8 @@ ${codeContext}` : ""}${projectContext}`
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
                                             fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap',
                                         }}
-                                        onClick={(e) => {
+                                        onClick={() => {
                                             if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
-                                            const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                            setConvertDropdownPos({ top: r.bottom + 4, left: r.left });
                                             setConvertDropdownOpen(v => !v);
                                         }}
                                     >
@@ -4908,7 +4951,7 @@ ${codeContext}` : ""}${projectContext}`
 
                                     {convertDropdownOpen && (
                                         <div
-                                            style={{ position: 'fixed', top: convertDropdownPos.top, left: convertDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
+                                            style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 200, marginBottom: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'hidden' }}
                                             onMouseLeave={() => setConvertDropdownOpen(false)}
                                         >
                                             {(() => {
