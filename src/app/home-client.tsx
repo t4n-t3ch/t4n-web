@@ -264,6 +264,10 @@ export default function HomeClient() {
         | null;
     const [explorerOverlay, setExplorerOverlay] = useState<ExplorerOverlay>(null);
     const [newFileName, setNewFileName] = useState('');
+    const [inlineNewFile, setInlineNewFile] = useState<{ projectId: string } | null>(null);
+    const [inlineNewFileName, setInlineNewFileName] = useState('');
+    const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
+    const [renamingFileValue, setRenamingFileValue] = useState('');
 
     useEffect(() => {
         // Restore layout
@@ -3339,132 +3343,188 @@ ${codeContext}` : ""}${projectContext}`
 
                                     return (
                                         <div key={proj.id}>
-                                            {/* Project row */}
+                                            {/* ── Project row (VSCode style) ── */}
                                             <div
-                                                style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 10px', cursor: 'pointer', userSelect: 'none', fontSize: '12px', color: 'var(--text-secondary)', background: activeProjectFilter === proj.id ? 'var(--accent-glow)' : 'transparent' }}
+                                                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px 3px 6px', cursor: 'pointer', userSelect: 'none', fontSize: '12px', color: 'var(--text-secondary)', background: activeProjectFilter === proj.id ? 'var(--accent-glow)' : 'transparent' }}
+                                                onMouseEnter={e => { if (activeProjectFilter !== proj.id) e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                                                onMouseLeave={e => { e.currentTarget.style.background = activeProjectFilter === proj.id ? 'var(--accent-glow)' : 'transparent'; }}
                                                 onClick={() => {
                                                     setExpandedProjects(prev => ({ ...prev, [proj.id]: !isExpanded }));
                                                     if (!projectFiles[proj.id]) void loadProjectDetail(proj.id);
                                                 }}
                                             >
-                                                <span style={{ fontSize: '9px', color: 'var(--text-muted)', width: '10px', display: 'inline-block' }}>
-                                                    {isExpanded ? '▼' : '▶'}
-                                                </span>
-                                                <span style={{ fontSize: '13px' }}>{proj.emoji ?? '📁'}</span>
-                                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>
-                                                    {proj.name}
-                                                </span>
-                                                {/* Always-visible + Add button */}
-                                                <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                                                    <button
-                                                        type="button"
-                                                        title="Add code file"
-                                                        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 5px', lineHeight: 1.4 }}
-                                                        onClick={() => { setNewFileName(''); setExplorerOverlay({ type: 'add-file', projectId: proj.id }); }}
-                                                    >📄+</button>
-                                                    <button
-                                                        type="button"
-                                                        title="Link a chat session"
-                                                        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 5px', lineHeight: 1.4 }}
-                                                        onClick={() => setExplorerOverlay({ type: 'link-chat', projectId: proj.id })}
-                                                    >💬+</button>
+                                                <span style={{ fontSize: '8px', color: 'var(--text-muted)', width: '8px', flexShrink: 0 }}>{isExpanded ? '▼' : '▶'}</span>
+                                                <span style={{ fontSize: '12px', marginRight: '2px' }}>{proj.emoji ?? '📁'}</span>
+                                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, fontSize: '12px' }}>{proj.name}</span>
+                                                {/* Hover action buttons */}
+                                                <div style={{ display: 'flex', gap: '1px', flexShrink: 0, opacity: 0 }} className="proj-actions"
+                                                    onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                                                    onMouseLeave={e => e.currentTarget.style.opacity = '0'}
+                                                    onClick={e => e.stopPropagation()}>
+                                                    <button type="button" title="New file"
+                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--text-muted)', padding: '1px 3px', borderRadius: '3px', lineHeight: 1 }}
+                                                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
+                                                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+                                                        onClick={() => {
+                                                            setExpandedProjects(prev => ({ ...prev, [proj.id]: true }));
+                                                            if (!projectFiles[proj.id]) void loadProjectDetail(proj.id);
+                                                            setInlineNewFile({ projectId: proj.id });
+                                                            setInlineNewFileName('');
+                                                        }}>＋</button>
+                                                    <button type="button" title="Link chat"
+                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted)', padding: '1px 3px', borderRadius: '3px', lineHeight: 1 }}
+                                                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
+                                                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+                                                        onClick={() => setExplorerOverlay({ type: 'link-chat', projectId: proj.id })}>💬</button>
                                                 </div>
                                             </div>
 
-                                            {/* Expanded content */}
+                                            {/* ── Expanded content ── */}
                                             {isExpanded && (
                                                 <div>
-                                                    {/* ── Code Files sub-section ── */}
-                                                    <div style={{ padding: '4px 10px 2px 22px', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                                                        📄 Code Files
-                                                    </div>
-                                                    {files.length === 0 ? (
-                                                        <div style={{ padding: '2px 10px 4px 24px', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                                                            No files — click 📄+ to add
+                                                    {/* Inline new file input */}
+                                                    {inlineNewFile?.projectId === proj.id && (
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px 2px 24px' }}>
+                                                            <span style={{ fontSize: '11px' }}>📄</span>
+                                                            <input
+                                                                autoFocus
+                                                                placeholder="filename.pine"
+                                                                value={inlineNewFileName}
+                                                                onChange={e => setInlineNewFileName(e.target.value)}
+                                                                onKeyDown={async e => {
+                                                                    if (e.key === 'Enter' && inlineNewFileName.trim()) {
+                                                                        const name = inlineNewFileName.trim();
+                                                                        setInlineNewFile(null);
+                                                                        setInlineNewFileName('');
+                                                                        await uploadProjectFile(proj.id, new File([''], name, { type: 'text/plain' }));
+                                                                        void loadProjectDetail(proj.id);
+                                                                        setExpandedProjects(prev => ({ ...prev, [proj.id]: true }));
+                                                                    }
+                                                                    if (e.key === 'Escape') { setInlineNewFile(null); setInlineNewFileName(''); }
+                                                                }}
+                                                                onBlur={() => { setInlineNewFile(null); setInlineNewFileName(''); }}
+                                                                style={{ flex: 1, background: 'var(--bg-primary)', border: '1px solid var(--accent)', borderRadius: '3px', padding: '2px 6px', color: 'var(--text-primary)', fontSize: '11px', outline: 'none', fontFamily: 'DM Sans, sans-serif' }}
+                                                            />
                                                         </div>
-                                                    ) : (
-                                                        files.map(file => {
-                                                            const isActiveFile = activeFileId === file.id;
-                                                            const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-                                                            const icon = ext === 'pine' || ext === 'pinescript' ? '🌲'
-                                                                : ext === 'py' ? '🐍'
-                                                                    : ext === 'ts' || ext === 'tsx' ? '📘'
-                                                                        : ext === 'js' || ext === 'jsx' ? '📙'
-                                                                            : ext === 'json' ? '📋'
-                                                                                : ext === 'md' ? '📝'
-                                                                                    : '📄';
-                                                            return (
-                                                                <div
-                                                                    key={file.id}
-                                                                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px 3px 24px', cursor: 'pointer', fontSize: '11px', color: isActiveFile ? 'var(--accent)' : 'var(--text-muted)', background: isActiveFile ? 'var(--accent-glow)' : 'transparent', borderLeft: isActiveFile ? '2px solid var(--accent)' : '2px solid transparent' }}
-                                                                    onClick={() => {
-                                                                        setActiveFileId(file.id);
-                                                                        setCodeText(file.content);
-                                                                        setUnsavedCode(file.content);
-                                                                        setHasUnsavedChanges(false);
-                                                                        setActiveCodeId(null);
-                                                                        setCodeOpen(true);
-                                                                        addToHistory(file.content);
-                                                                    }}
-                                                                >
-                                                                    <span>{icon}</span>
-                                                                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                                        {file.name}
-                                                                    </span>
-                                                                    <button
-                                                                        type="button"
-                                                                        style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '3px', cursor: 'pointer', fontSize: '9px', color: '#f87171', padding: '2px 5px', flexShrink: 0, fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
-                                                                        title="Remove file"
-                                                                        onClick={async (e) => {
-                                                                            e.stopPropagation();
-                                                                            await removeProjectFile(proj.id, file.id);
-                                                                            if (activeFileId === file.id) setActiveFileId(null);
-                                                                        }}
-                                                                    >remove</button>
-                                                                </div>
-                                                            );
-                                                        })
                                                     )}
 
-                                                    {/* ── Chat Sessions sub-section ── */}
-                                                    <div style={{ padding: '6px 10px 2px 22px', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                                                        💬 Chat Sessions
-                                                    </div>
-                                                    {linkedConvIds.length === 0 ? (
-                                                        <div style={{ padding: '2px 10px 6px 24px', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                                                            No chats — click 💬+ to link
-                                                        </div>
-                                                    ) : (
-                                                        linkedConvIds.map(cid => {
-                                                            const conv = conversations.find(c => c.id === cid);
-                                                            const label = titles[cid] ?? conv?.title ?? cid.slice(0, 8);
-                                                            const isActive = activeId === cid;
-                                                            return (
-                                                                <div
-                                                                    key={cid}
-                                                                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px 3px 24px', cursor: 'pointer', fontSize: '11px', color: isActive ? 'var(--accent)' : 'var(--text-muted)', background: isActive ? 'var(--accent-glow)' : 'transparent', borderLeft: isActive ? '2px solid var(--accent)' : '2px solid transparent' }}
-                                                                    onClick={() => {
-                                                                        // Just highlight — don't open
-                                                                        router.push(`/?c=${encodeURIComponent(cid)}`);
-                                                                    }}
-                                                                >
-                                                                    <span>💬</span>
-                                                                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                                        {label}
-                                                                    </span>
-                                                                    <button
-                                                                        type="button"
-                                                                        style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '3px', cursor: 'pointer', fontSize: '9px', color: '#f87171', padding: '2px 5px', flexShrink: 0, fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
-                                                                        title="Unlink chat"
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            assignToProject(cid, null);
+                                                    {/* Files */}
+                                                    {files.map(file => {
+                                                        const isActiveFile = activeFileId === file.id;
+                                                        const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+                                                        const icon = ext === 'pine' || ext === 'pinescript' ? '🌲'
+                                                            : ext === 'py' ? '🐍' : ext === 'ts' || ext === 'tsx' ? '📘'
+                                                            : ext === 'js' || ext === 'jsx' ? '📙' : ext === 'json' ? '📋'
+                                                            : ext === 'md' ? '📝' : ext === 'cs' ? '💜' : ext === 'mq5' || ext === 'mq4' ? '⚙️' : '📄';
+                                                        return (
+                                                            <div
+                                                                key={file.id}
+                                                                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px 2px 22px', cursor: 'pointer', fontSize: '11px', color: isActiveFile ? 'var(--accent)' : 'var(--text-muted)', background: isActiveFile ? 'var(--accent-glow)' : 'transparent', borderLeft: isActiveFile ? '2px solid var(--accent)' : '2px solid transparent', position: 'relative' }}
+                                                                onMouseEnter={e => {
+                                                                    if (!isActiveFile) e.currentTarget.style.background = 'var(--bg-hover)';
+                                                                    const btn = e.currentTarget.querySelector('.file-actions') as HTMLElement;
+                                                                    if (btn) btn.style.opacity = '1';
+                                                                }}
+                                                                onMouseLeave={e => {
+                                                                    if (!isActiveFile) e.currentTarget.style.background = 'transparent';
+                                                                    const btn = e.currentTarget.querySelector('.file-actions') as HTMLElement;
+                                                                    if (btn) btn.style.opacity = '0';
+                                                                }}
+                                                                onClick={() => {
+                                                                    if (renamingFileId === file.id) return;
+                                                                    setActiveFileId(file.id);
+                                                                    setCodeText(file.content);
+                                                                    setUnsavedCode(file.content);
+                                                                    setHasUnsavedChanges(false);
+                                                                    setActiveCodeId(null);
+                                                                    setCodeOpen(true);
+                                                                    addToHistory(file.content);
+                                                                }}
+                                                            >
+                                                                <span style={{ flexShrink: 0 }}>{icon}</span>
+                                                                {renamingFileId === file.id ? (
+                                                                    <input
+                                                                        autoFocus
+                                                                        value={renamingFileValue}
+                                                                        onChange={e => setRenamingFileValue(e.target.value)}
+                                                                        onKeyDown={async e => {
+                                                                            if (e.key === 'Enter' && renamingFileValue.trim()) {
+                                                                                const newName = renamingFileValue.trim();
+                                                                                setRenamingFileId(null);
+                                                                                // optimistic update
+                                                                                setProjectFiles(prev => ({
+                                                                                    ...prev,
+                                                                                    [proj.id]: (prev[proj.id] ?? []).map(f => f.id === file.id ? { ...f, name: newName } : f)
+                                                                                }));
+                                                                                try {
+                                                                                    const { data: { session: s } } = await supabase.auth.getSession();
+                                                                                    const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                                                                    const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                                                                    await fetch(`${API_BASE}/api/projects/${proj.id}/files/${file.id}`, {
+                                                                                        method: 'PATCH',
+                                                                                        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s?.access_token ?? ''}` },
+                                                                                        body: JSON.stringify({ name: newName }),
+                                                                                    });
+                                                                                } catch (err) { console.error('Rename failed', err); }
+                                                                            }
+                                                                            if (e.key === 'Escape') setRenamingFileId(null);
                                                                         }}
-                                                                    >unlink</button>
+                                                                        onBlur={() => setRenamingFileId(null)}
+                                                                        onClick={e => e.stopPropagation()}
+                                                                        style={{ flex: 1, background: 'var(--bg-primary)', border: '1px solid var(--accent)', borderRadius: '3px', padding: '1px 5px', color: 'var(--text-primary)', fontSize: '11px', outline: 'none', fontFamily: 'DM Sans, sans-serif' }}
+                                                                    />
+                                                                ) : (
+                                                                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                                                                )}
+                                                                {/* File action buttons — shown on hover */}
+                                                                <div className="file-actions" style={{ display: 'flex', gap: '2px', opacity: 0, transition: 'opacity 0.1s', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                                                                    <button type="button" title="Rename"
+                                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 3px', lineHeight: 1, borderRadius: '2px' }}
+                                                                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
+                                                                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+                                                                        onClick={() => { setRenamingFileId(file.id); setRenamingFileValue(file.name); }}>✏️</button>
+                                                                    <button type="button" title="Delete"
+                                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 3px', lineHeight: 1, borderRadius: '2px' }}
+                                                                        onMouseEnter={e => (e.currentTarget.style.color = '#f87171')}
+                                                                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+                                                                        onClick={async () => { await removeProjectFile(proj.id, file.id); if (activeFileId === file.id) setActiveFileId(null); }}>🗑</button>
                                                                 </div>
-                                                            );
-                                                        })
-                                                    )}
+                                                            </div>
+                                                        );
+                                                    })}
+
+                                                    {/* Chat sessions */}
+                                                    {linkedConvIds.length > 0 && linkedConvIds.map(cid => {
+                                                        const conv = conversations.find(c => c.id === cid);
+                                                        const label = titles[cid] ?? conv?.title ?? cid.slice(0, 8);
+                                                        const isActive = activeId === cid;
+                                                        return (
+                                                            <div key={cid}
+                                                                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px 2px 22px', cursor: 'pointer', fontSize: '11px', color: isActive ? 'var(--accent)' : 'var(--text-muted)', background: isActive ? 'var(--accent-glow)' : 'transparent', borderLeft: isActive ? '2px solid var(--accent)' : '2px solid transparent', position: 'relative' }}
+                                                                onMouseEnter={e => {
+                                                                    if (!isActive) e.currentTarget.style.background = 'var(--bg-hover)';
+                                                                    const btn = e.currentTarget.querySelector('.chat-actions') as HTMLElement;
+                                                                    if (btn) btn.style.opacity = '1';
+                                                                }}
+                                                                onMouseLeave={e => {
+                                                                    if (!isActive) e.currentTarget.style.background = 'transparent';
+                                                                    const btn = e.currentTarget.querySelector('.chat-actions') as HTMLElement;
+                                                                    if (btn) btn.style.opacity = '0';
+                                                                }}
+                                                                onClick={() => router.push(`/?c=${encodeURIComponent(cid)}`)}
+                                                            >
+                                                                <span style={{ flexShrink: 0 }}>💬</span>
+                                                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                                                                <div className="chat-actions" style={{ opacity: 0, transition: 'opacity 0.1s', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                                                                    <button type="button" title="Unlink"
+                                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 3px', lineHeight: 1, borderRadius: '2px' }}
+                                                                        onMouseEnter={e => (e.currentTarget.style.color = '#f87171')}
+                                                                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+                                                                        onClick={() => assignToProject(cid, null)}>✕</button>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
                                                 </div>
                                             )}
                                         </div>
@@ -4012,7 +4072,7 @@ ${codeContext}` : ""}${projectContext}`
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                         {['🔍 Explain what this indicator does', '🔧 Fix the errors in my Pine Script', '🔄 Convert this strategy to Python', '🧪 Add alerts to my strategy'].map(s => (
                                             <button key={s} type="button"
-                                                onClick={() => { const el = document.querySelector('textarea[placeholder="Message T4N…"]') as HTMLTextAreaElement; if (el) { el.value = s; el.focus(); el.dispatchEvent(new Event('input', { bubbles: true })); } }}
+                                                onClick={() => { if (giveAiAccessToCode && codeText.trim()) { setInput(s); setTimeout(() => { void handleSend(); }, 0); } else { const el = document.querySelector('textarea[placeholder="Message T4N…"]') as HTMLTextAreaElement; if (el) { el.value = s; el.focus(); el.dispatchEvent(new Event('input', { bubbles: true })); } } }}
                                                 style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', textAlign: 'left', fontFamily: 'DM Sans, sans-serif', transition: 'border-color 0.15s' }}
                                                 onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
                                                 onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-default)')}
