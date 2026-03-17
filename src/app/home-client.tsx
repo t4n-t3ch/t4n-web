@@ -220,9 +220,13 @@ export default function HomeClient() {
     const [copiedBlockId, setCopiedBlockId] = useState<string | null>(null);
     const [appliedBlockId, setAppliedBlockId] = useState<string | null>(null);
     const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+    const [exportDropdownPos, setExportDropdownPos] = useState({ top: 0, left: 0 });
     const [convertDropdownOpen, setConvertDropdownOpen] = useState(false);
+    const [convertDropdownPos, setConvertDropdownPos] = useState({ top: 0, left: 0 });
     const [actionsDropdownOpen, setActionsDropdownOpen] = useState(false);
+    const [actionsDropdownPos, setActionsDropdownPos] = useState({ top: 0, left: 0 });
     const [proToolsDropdownOpen, setProToolsDropdownOpen] = useState(false);
+    const [proToolsDropdownPos, setProToolsDropdownPos] = useState({ top: 0, left: 0 });
     const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
     const [pluginRuns, setPluginRuns] = useState<PluginRun[]>([]);
     // last tool event emitted from /api/chat/stream (server sends `event: tool`)
@@ -4364,14 +4368,14 @@ ${codeContext}` : ""}${projectContext}`
                                                 type="button"
                                                 className="btn-secondary"
                                                 style={{ padding: '4px 10px', fontSize: '12px' }}
-                                                onClick={() => setExportDropdownOpen(v => !v)}
+                                                onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setExportDropdownPos({ top: r.bottom + 4, left: r.right - 200 }); setExportDropdownOpen(v => !v); }}
                                                 title="Export code"
                                             >
                                                 ⬇ Export
                                             </button>
                                             {exportDropdownOpen && (
                                                 <div
-                                                    style={{ position: 'absolute', top: '100%', right: 0, zIndex: 100, marginTop: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '200px', overflow: 'hidden' }}
+                                                    style={{ position: 'fixed', top: exportDropdownPos.top, left: exportDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '200px', overflow: 'auto', maxHeight: '60vh' }}
                                                     onMouseLeave={() => setExportDropdownOpen(false)}
                                                 >
                                                     {[
@@ -4489,11 +4493,11 @@ ${codeContext}` : ""}${projectContext}`
                                                 // Detect from current code
                                                 const c = codeText;
                                                 const detected =
-                                                    /(^|\n)\s*\/\/@version=\d+/i.test(c) || /(^|\n)\s*(indicator|strategy)\s*\(/i.test(c) ? 'pinescript'
-                                                    : /import\s+bpy\b|bpy\.ops\.|bpy\.data\./i.test(c) ? 'blender'
+                                                    /#property\s+(copyright|strict|indicator|version)|OnTick\(\)|OnInit\(\)|OnStart\(\)|\/\/ mql5/i.test(c) ? 'mql5'
                                                     : /using\s+cAlgo|cAlgo\.API/i.test(c) ? 'ctrader'
                                                     : /using\s+UnityEngine|MonoBehaviour/i.test(c) ? 'unity'
-                                                    : /#property\s+copyright|OnTick\(\)|OnInit\(\)/i.test(c) ? 'mql5'
+                                                    : /import\s+bpy\b|bpy\.ops\.|bpy\.data\./i.test(c) ? 'blender'
+                                                    : /(^|\n)\s*\/\/@version=\d+/i.test(c) || /(^|\n)\s*(indicator|strategy)\s*\(/i.test(c) ? 'pinescript'
                                                     : /import\s+React|from\s+'react'|\.tsx?\b/.test(c) ? 'react'
                                                     : /def\s+\w+\(|import\s+\w+|print\s*\(/.test(c) ? 'python'
                                                     : 'generic';
@@ -4713,13 +4717,13 @@ ${codeContext}` : ""}${projectContext}`
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
                                             fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
                                         }}
-                                        onClick={() => { setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}
+                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setActionsDropdownPos({ top: r.bottom + 4, left: r.left }); setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}
                                     >
                                         {inlineActionBusy && ['🔍 Explain','🔧 Fix Errors','✨ Improve','📋 Add Comments','⚡ Optimise'].includes(inlineActionLabel ?? '') ? '⏳' : '⚡'} Actions ▾
                                     </button>
                                     {actionsDropdownOpen && (
                                         <div
-                                            style={{ position: 'absolute', top: '100%', left: 0, zIndex: 200, marginTop: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '190px', overflow: 'hidden' }}
+                                            style={{ position: 'fixed', top: actionsDropdownPos.top, left: actionsDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '190px', overflow: 'auto', maxHeight: '60vh' }}
                                             onMouseLeave={() => setActionsDropdownOpen(false)}
                                         >
                                             {([
@@ -4799,14 +4803,14 @@ ${codeContext}` : ""}${projectContext}`
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
                                             fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
                                         }}
-                                        onClick={() => { setProToolsDropdownOpen(v => !v); setActionsDropdownOpen(false); }}
+                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setProToolsDropdownPos({ top: r.bottom + 4, left: r.left }); setProToolsDropdownOpen(v => !v); setActionsDropdownOpen(false); }}
                                     >
                                         ✦ Pro Tools ▾
                                         {userPlan !== 'pro' && <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', fontWeight: 700 }}>PRO</span>}
                                     </button>
                                     {proToolsDropdownOpen && (
                                         <div
-                                            style={{ position: 'absolute', top: '100%', left: 0, zIndex: 200, marginTop: '4px', background: 'var(--bg-elevated)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'hidden' }}
+                                            style={{ position: 'fixed', top: proToolsDropdownPos.top, left: proToolsDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
                                             onMouseLeave={() => setProToolsDropdownOpen(false)}
                                         >
                                             {([
@@ -4966,8 +4970,10 @@ ${codeContext}` : ""}${projectContext}`
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
                                             fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap',
                                         }}
-                                        onClick={() => {
+                                        onClick={(e) => {
                                             if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
+                                            const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                                            setConvertDropdownPos({ top: r.bottom + 4, left: r.left });
                                             setConvertDropdownOpen(v => !v);
                                         }}
                                     >
@@ -4976,7 +4982,7 @@ ${codeContext}` : ""}${projectContext}`
 
                                     {convertDropdownOpen && (
                                         <div
-                                            style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 200, marginBottom: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'hidden' }}
+                                            style={{ position: 'fixed', top: convertDropdownPos.top, left: convertDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
                                             onMouseLeave={() => setConvertDropdownOpen(false)}
                                         >
                                             {(() => {
