@@ -106,7 +106,40 @@ function useIsMobile() {
     return isMobile;
 }
 
+type ToastType = 'success' | 'error' | 'info';
+interface Toast { id: number; message: string; type: ToastType; }
+
+function useToast() {
+    const [toasts, setToasts] = useState<Toast[]>([]);
+    let nextId = 0;
+    const showToast = (message: string, type: ToastType = 'success') => {
+        const id = ++nextId;
+        setToasts(t => [...t, { id, message, type }]);
+        setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3000);
+    };
+    const ToastContainer = () => (
+        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 99999, display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'none' }}>
+            {toasts.map(toast => (
+                <div key={toast.id} style={{
+                    padding: '10px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+                    fontFamily: 'DM Sans, sans-serif', maxWidth: 320, pointerEvents: 'auto',
+                    boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+                    background: toast.type === 'success' ? 'rgba(16,185,129,0.15)' : toast.type === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(249,115,22,0.15)',
+                    border: `1px solid ${toast.type === 'success' ? 'rgba(16,185,129,0.4)' : toast.type === 'error' ? 'rgba(239,68,68,0.4)' : 'rgba(249,115,22,0.4)'}`,
+                    color: toast.type === 'success' ? '#34d399' : toast.type === 'error' ? '#f87171' : '#fb923c',
+                    animation: 'toastIn 0.2s ease',
+                }}>
+                    {toast.type === 'success' ? '✓ ' : toast.type === 'error' ? '⚠ ' : 'ℹ '}{toast.message}
+                </div>
+            ))}
+            <style>{`@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+        </div>
+    );
+    return { showToast, ToastContainer };
+}
+
 export default function HomeClient() {
+    const { showToast, ToastContainer } = useToast();
     const [session, setSession] = useState<Session | null>(null);
     const [authLoading, setAuthLoading] = useState(true);
     const [authEmail, setAuthEmail] = useState("");
@@ -2481,7 +2514,7 @@ ${codeContext}` : ""}${projectContext}`
                                 {activeCodeId ? 'Update' : 'Save'}
                             </button>
                             <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
-                                onClick={async () => { try { await navigator.clipboard.writeText(codeText || ''); } catch { } }}
+                                onClick={async () => { try { await navigator.clipboard.writeText(codeText || ''); showToast('Code copied!'); } catch { showToast('Copy failed', 'error'); } }}
                                 disabled={!codeText.trim()}>Copy</button>
                             <select value={selectedDomain} onChange={e => setSelectedDomain(e.target.value)}
                                 style={{ fontSize: '12px', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
@@ -2604,8 +2637,20 @@ ${codeContext}` : ""}${projectContext}`
                                 </div>
                             )}
                             {messages.length === 0 && !loading && (
-                                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-                                    {activeId ? 'No messages yet' : 'Start a new chat below'}
+                                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <div style={{ textAlign: 'center', maxWidth: 300, padding: '0 20px' }}>
+                                        <div style={{ fontSize: 28, marginBottom: 10 }}>⚡</div>
+                                        <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 4 }}>Welcome to T4N</div>
+                                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 20 }}>AI coding assistant for traders.</div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                            {['🔍 Explain this indicator', '🔧 Fix my Pine Script errors', '🔄 Convert to Python', '🧪 Add alerts to my strategy'].map(s => (
+                                                <button key={s} type="button"
+                                                    onClick={() => { const el = document.querySelector('input[placeholder="Message T4N…"]') as HTMLInputElement; if (el) { el.value = s; el.focus(); el.dispatchEvent(new Event('input', { bubbles: true })); } }}
+                                                    style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer', textAlign: 'left', fontFamily: 'DM Sans, sans-serif' }}
+                                                >{s}</button>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                             {messages.map(m => {
@@ -2706,6 +2751,7 @@ ${codeContext}` : ""}${projectContext}`
 
     return (
         <div className="flex h-screen overflow-hidden">
+            <ToastContainer />
             {/* Projects Page Overlay */}
             {showProjectsPage && (
                 <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'var(--bg-primary)' }}>
@@ -3954,8 +4000,22 @@ ${codeContext}` : ""}${projectContext}`
                         )}
 
                         {messages.length === 0 && (
-                            <div className="flex items-center justify-center h-full" style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
-                                {activeId ? "No messages yet" : "Start a new chat below"}
+                            <div className="flex items-center justify-center h-full">
+                                <div style={{ textAlign: 'center', maxWidth: 340, padding: '0 24px' }}>
+                                    <div style={{ fontSize: 32, marginBottom: 12 }}>⚡</div>
+                                    <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--text-primary)', marginBottom: 6 }}>Welcome to T4N</div>
+                                    <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24 }}>AI coding assistant for traders. Ask anything or try a suggestion.</div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                        {['🔍 Explain what this indicator does', '🔧 Fix the errors in my Pine Script', '🔄 Convert this strategy to Python', '🧪 Add alerts to my strategy'].map(s => (
+                                            <button key={s} type="button"
+                                                onClick={() => { const el = document.querySelector('textarea[placeholder="Message T4N…"]') as HTMLTextAreaElement; if (el) { el.value = s; el.focus(); el.dispatchEvent(new Event('input', { bubbles: true })); } }}
+                                                style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', textAlign: 'left', fontFamily: 'DM Sans, sans-serif', transition: 'border-color 0.15s' }}
+                                                onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                                                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-default)')}
+                                            >{s}</button>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         )}
 
@@ -4285,8 +4345,9 @@ ${codeContext}` : ""}${projectContext}`
                                         onClick={async () => {
                                             try {
                                                 await navigator.clipboard.writeText(codeText || "");
+                                                showToast('Code copied!');
                                             } catch {
-                                                // ignore
+                                                showToast('Copy failed', 'error');
                                             }
                                         }}
                                         disabled={!codeText.trim()}
