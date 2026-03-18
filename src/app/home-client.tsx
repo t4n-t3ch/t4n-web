@@ -73,14 +73,6 @@ type ProjectFile = {
     created_at: string;
 };
 
-type ProjectFolder = {
-    id: string;
-    project_id: string;
-    name: string;
-    description: string | null;
-    created_at: string;
-};
-
 type Conversation = {
     id: string;
     title?: string | null;
@@ -276,18 +268,6 @@ export default function HomeClient() {
     const [inlineNewFileName, setInlineNewFileName] = useState('');
     const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
     const [renamingFileValue, setRenamingFileValue] = useState('');
-    // ── Folder/branch system ──
-    const [projectFolders, setProjectFolders] = useState<Record<string, ProjectFolder[]>>({});
-    const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
-    const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
-    const [folderFiles, setFolderFiles] = useState<Record<string, ProjectFile[]>>({});
-    const [folderChats, setFolderChats] = useState<Record<string, string[]>>({});
-    const [inlineNewFolder, setInlineNewFolder] = useState<{ projectId: string } | null>(null);
-    const [inlineNewFolderName, setInlineNewFolderName] = useState('');
-    const [inlineNewFolderFile, setInlineNewFolderFile] = useState<{ folderId: string; projectId: string } | null>(null);
-    const [inlineNewFolderFileName, setInlineNewFolderFileName] = useState('');
-    const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
-    const [renamingFolderValue, setRenamingFolderValue] = useState('');
 
     useEffect(() => {
         // Restore layout
@@ -443,7 +423,7 @@ export default function HomeClient() {
     }, [promptPresets]);
 
     // Domain / language selection
-    const [selectedDomain, setSelectedDomain] = useState<string>('pinescript');
+    const [selectedDomain, setSelectedDomain] = useState<string>('auto');
 
     // Inline AI code actions
     const [inlineActionBusy, setInlineActionBusy] = useState(false);
@@ -636,6 +616,17 @@ export default function HomeClient() {
         );
     }
 
+    function detectLanguage(code: string): string {
+        if (/#property\s+(copyright|strict|indicator|version)|OnTick\(\)|OnInit\(\)|OnStart\(\)/i.test(code)) return 'mql5';
+        if (/using\s+cAlgo|cAlgo\.API/i.test(code)) return 'ctrader';
+        if (/using\s+UnityEngine|MonoBehaviour/i.test(code)) return 'unity';
+        if (/import\s+bpy\b|bpy\.ops\.|bpy\.data\./i.test(code)) return 'blender';
+        if (/(^|\n)\s*\/\/@version=\d+/i.test(code) || /(^|\n)\s*(indicator|strategy)\s*\(/i.test(code)) return 'pinescript';
+        if (/import\s+React|from\s+'react'|\.tsx?\b/.test(code)) return 'react';
+        if (/def\s+\w+\(|import\s+\w+|print\s*\(/.test(code)) return 'python';
+        return 'generic';
+    }
+
     function looksLikeEditRequest(text: string) {
         return /(\bchange\b|\bmodify\b|\bupdate\b|\bedit\b|\breplace\b|\bset\b|\bturn\b|\bmake\b|\bcolour\b|\bcolor\b|\bblue\b|\bred\b|\bgreen\b)/i.test(
             text,
@@ -752,7 +743,7 @@ export default function HomeClient() {
     }
 
     function runDiagnostics(code: string) {
-        const results = lintCode(code, selectedDomain);
+        const results = lintCode(code, selectedDomain === 'auto' ? detectLanguage(code) : selectedDomain);
         setDiagnostics(results);
         if (results.length > 0 && results.some(d => d.severity === 'error' || d.severity === 'warning')) {
             setDiagnosticsOpen(true);
@@ -2428,77 +2419,6 @@ ${codeContext}` : ""}${projectContext}`
         return lines.map(l => l.trimEnd()).join('\n');
     }
 
-    // ── Folder/branch helpers ────────────────────────────────────────────────
-    function createFolder(projectId: string, name: string) {
-        const folder: ProjectFolder = {
-            id: `folder-${globalThis.crypto.randomUUID()}`,
-            project_id: projectId,
-            name: name.trim(),
-            description: null,
-            created_at: new Date().toISOString(),
-        };
-        setProjectFolders(prev => ({ ...prev, [projectId]: [...(prev[projectId] ?? []), folder] }));
-        setExpandedFolders(prev => ({ ...prev, [folder.id]: true }));
-        return folder;
-    }
-
-    function deleteFolder(projectId: string, folderId: string) {
-        setProjectFolders(prev => ({ ...prev, [projectId]: (prev[projectId] ?? []).filter(f => f.id !== folderId) }));
-        setFolderFiles(prev => { const n = { ...prev }; delete n[folderId]; return n; });
-        setFolderChats(prev => { const n = { ...prev }; delete n[folderId]; return n; });
-        if (activeFolderId === folderId) setActiveFolderId(null);
-    }
-
-    function addFileToFolder(projectId: string, folderId: string, fileName: string) {
-        const file: ProjectFile = {
-            id: `ff-${globalThis.crypto.randomUUID()}`,
-            project_id: projectId,
-            name: fileName,
-            content: '',
-            file_type: fileName.split('.').pop() ?? 'text',
-            size_bytes: 0,
-            created_at: new Date().toISOString(),
-        };
-        setFolderFiles(prev => ({ ...prev, [folderId]: [...(prev[folderId] ?? []), file] }));
-        setActiveFileId(file.id);
-        setActiveFolderId(folderId);
-        setCodeText('');
-        setUnsavedCode('');
-        setHasUnsavedChanges(false);
-        setActiveCodeId(null);
-        setCodeOpen(true);
-    }
-
-    function createChatInFolder(projectId: string, folderId: string) {
-        void (async () => {
-            const newId = await startNewChat();
-            if (!newId) return;
-            assignToProject(newId, projectId);
-            setFolderChats(prev => ({ ...prev, [folderId]: [...(prev[folderId] ?? []), newId] }));
-            setActiveFolderId(folderId);
-        })();
-    }
-
-    function buildFolderContext(folderId: string | null): string {
-        if (!folderId) return '';
-        const folder = Object.values(projectFolders).flat().find(f => f.id === folderId);
-        if (!folder) return '';
-        const proj = projects.find(p => p.id === folder.project_id);
-        const files = folderFiles[folderId] ?? [];
-        const parts: string[] = [];
-        parts.push(`BRANCH: ${folder.name}`);
-        if (proj) parts.push(`PARENT PROJECT: ${proj.name}`);
-        if (files.length > 0) {
-            parts.push(`FILES IN THIS BRANCH: ${files.map(f => f.name).join(', ')}`);
-            for (const f of files) {
-                if (f.content && f.content.length < 8000) {
-                    parts.push(`FILE: ${f.name}\n\`\`\`\n${f.content}\n\`\`\``);
-                }
-            }
-        }
-        return `\n\n[BRANCH CONTEXT — focus on this aspect]\n${parts.join('\n')}\n[END BRANCH CONTEXT]`;
-    }
-
     function buildProjectContext(): string {
         const activeConvProjectId = activeId ? convProjects[activeId] : null;
         const proj = projects.find(p => p.id === activeConvProjectId);
@@ -2508,14 +2428,14 @@ ${codeContext}` : ""}${projectContext}`
         parts.push(`PROJECT: ${proj.name}`);
         if (proj.description) parts.push(`DESCRIPTION: ${proj.description}`);
         if (proj.ai_instructions?.trim()) parts.push(`PROJECT INSTRUCTIONS (follow these always):\n${proj.ai_instructions.trim()}`);
-        parts.push(`LANGUAGE/DOMAIN: ${selectedDomain}`);
+        parts.push(`LANGUAGE/DOMAIN: ${selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain}`);
 
         const files = projectFiles[proj.id] ?? [];
         if (files.length > 0) {
             parts.push(`PROJECT FILES: ${files.map(f => f.name).join(', ')}`);
         }
 
-        return `\n\n[PROJECT CONTEXT]\n${parts.join('\n')}\n[END PROJECT CONTEXT]${buildFolderContext(activeFolderId)}`;
+        return `\n\n[PROJECT CONTEXT]\n${parts.join('\n')}\n[END PROJECT CONTEXT]`;
     }
 
     if (isMobile) {
@@ -2615,14 +2535,7 @@ ${codeContext}` : ""}${projectContext}`
                             <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
                                 onClick={async () => { try { await navigator.clipboard.writeText(codeText || ''); showToast('Code copied!'); } catch { showToast('Copy failed', 'error'); } }}
                                 disabled={!codeText.trim()}>Copy</button>
-                            <select value={selectedDomain} onChange={e => {
-                                    const val = e.target.value;
-                                    if (val === 'auto') {
-                                        const c = codeText;
-                                        const detected = /#property\s+(copyright|strict|indicator|version)|OnTick\(\)|OnInit\(\)|OnStart\(\)|\/\/ mql5/i.test(c) ? 'mql5' : /using\s+cAlgo|cAlgo\.API/i.test(c) ? 'ctrader' : /using\s+UnityEngine|MonoBehaviour/i.test(c) ? 'unity' : /import\s+bpy\b|bpy\.ops\.|bpy\.data\./i.test(c) ? 'blender' : /(^|\n)\s*\/\/@version=\d+/i.test(c) || /(^|\n)\s*(indicator|strategy)\s*\(/i.test(c) ? 'pinescript' : /import\s+React|from\s+'react'|\.tsx?\b/.test(c) ? 'react' : /def\s+\w+\(|import\s+\w+|print\s*\(/.test(c) ? 'python' : 'generic';
-                                        setSelectedDomain(detected);
-                                    } else { setSelectedDomain(val); }
-                                }}
+                            <select value={selectedDomain} onChange={e => { const v = e.target.value; if (v === 'auto') setSelectedDomain(detectLanguage(codeText)); else setSelectedDomain(v); }}
                                 style={{ fontSize: '12px', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
                                 <option value="auto">🔍 Auto-detect</option>
                                 <option value="pinescript">🌲 Pine Script</option>
@@ -2668,11 +2581,7 @@ ${codeContext}` : ""}${projectContext}`
                                 runDiagnostics(v);
                                 if (activeCodeId) { setHasUnsavedChanges(true); }
                                 else if (v.trim()) { setUnsavedCode(v); setHasUnsavedChanges(true); setActiveCodeId(null); }
-                                // Auto-detect language on substantial paste
-                                if (v.length > 80) {
-                                    const det = /#property\s+(copyright|strict|indicator|version)|OnTick\(\)|OnInit\(\)|OnStart\(\)/i.test(v) ? 'mql5' : /using\s+cAlgo|cAlgo\.API/i.test(v) ? 'ctrader' : /using\s+UnityEngine|MonoBehaviour/i.test(v) ? 'unity' : /import\s+bpy\b|bpy\.ops\.|bpy\.data\./i.test(v) ? 'blender' : /(^|\n)\s*\/\/@version=\d+/i.test(v) || /(^|\n)\s*(indicator|strategy)\s*\(/i.test(v) ? 'pinescript' : /import\s+React|from\s+'react'/.test(v) ? 'react' : /def\s+\w+\(|print\s*\(/.test(v) ? 'python' : null;
-                                    if (det) setSelectedDomain(det);
-                                }
+                                if (v.length > 80 && selectedDomain === 'auto') setSelectedDomain(detectLanguage(v));
                             }}
                             onKeyDown={e => {
                                 if (e.key === 'Tab') {
@@ -2688,62 +2597,17 @@ ${codeContext}` : ""}${projectContext}`
                             }}
                         />
 
-                        {/* Diagnostics panel */}
-                        {codeText.trim() && (
-                            <div style={{ background: 'var(--bg-elevated)', borderTop: '1px solid var(--border-subtle)', flexShrink: 0 }}>
-                                {/* Summary bar — tap to expand */}
-                                <div style={{ padding: '7px 12px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                                    onClick={() => { runDiagnostics(codeText); setDiagnosticsOpen(v => !v); }}>
-                                    <span style={{ flex: 1, display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                        {diagnostics.filter(d => d.severity === 'error').length > 0 && (
-                                            <span style={{ fontSize: '11px', color: '#f87171', fontWeight: 600 }}>🔴 {diagnostics.filter(d => d.severity === 'error').length} error{diagnostics.filter(d => d.severity === 'error').length !== 1 ? 's' : ''}</span>
-                                        )}
-                                        {diagnostics.filter(d => d.severity === 'warning').length > 0 && (
-                                            <span style={{ fontSize: '11px', color: '#fbbf24', fontWeight: 600 }}>🟡 {diagnostics.filter(d => d.severity === 'warning').length} warning{diagnostics.filter(d => d.severity === 'warning').length !== 1 ? 's' : ''}</span>
-                                        )}
-                                        {diagnostics.length === 0 && <span style={{ fontSize: '11px', color: '#4ade80' }}>✓ No issues</span>}
-                                    </span>
-                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{diagnosticsOpen ? '▲' : '▼'}</span>
-                                </div>
-                                {/* Expanded list */}
-                                {diagnosticsOpen && diagnostics.length > 0 && (
-                                    <div style={{ maxHeight: '40vh', overflowY: 'auto', borderTop: '1px solid var(--border-subtle)' }}>
-                                        {diagnostics.map((d, i) => (
-                                            <div key={i} style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', alignItems: 'flex-start' }}
-                                                onClick={() => {
-                                                    const ta = codeTextareaRef.current;
-                                                    if (!ta) return;
-                                                    const lines = codeText.split('\n');
-                                                    const charsBefore = lines.slice(0, d.line - 1).join('\n').length + (d.line > 1 ? 1 : 0);
-                                                    ta.focus();
-                                                    ta.setSelectionRange(charsBefore, charsBefore + lines[d.line - 1].length);
-                                                    ta.scrollTop = Math.max(0, (d.line - 3) * 20);
-                                                }}>
-                                                <span style={{ fontSize: '12px', flexShrink: 0 }}>{d.severity === 'error' ? '🔴' : d.severity === 'warning' ? '🟡' : 'ℹ️'}</span>
-                                                <div style={{ flex: 1, minWidth: 0 }}>
-                                                    <div style={{ fontSize: '12px', color: d.severity === 'error' ? '#f87171' : d.severity === 'warning' ? '#fbbf24' : '#60a5fa', lineHeight: 1.4 }}>{d.message}</div>
-                                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>Line {d.line} · {d.code}</div>
-                                                    {d.quickFix && (
-                                                        <button type="button"
-                                                            style={{ marginTop: '4px', fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.08)', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
-                                                            onClick={e => {
-                                                                e.stopPropagation();
-                                                                const lines = codeText.split('\n');
-                                                                lines[d.line - 1] = d.quickFix!.replacement;
-                                                                const fixed = lines.join('\n');
-                                                                setCodeText(fixed);
-                                                                addToHistory(fixed);
-                                                                setHasUnsavedChanges(true);
-                                                                setTimeout(() => runDiagnostics(fixed), 50);
-                                                            }}>
-                                                            ⚡ {d.quickFix.label}
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                        {/* Diagnostics summary bar */}
+                        {codeText.trim() && diagnostics.length > 0 && (
+                            <div style={{ padding: '6px 10px', background: 'var(--bg-elevated)', borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', flexShrink: 0 }}
+                                onClick={() => { runDiagnostics(codeText); setDiagnosticsOpen(v => !v); }}>
+                                {diagnostics.filter(d => d.severity === 'error').length > 0 && (
+                                    <span style={{ fontSize: '11px', color: '#f87171' }}>🔴 {diagnostics.filter(d => d.severity === 'error').length} error{diagnostics.filter(d => d.severity === 'error').length !== 1 ? 's' : ''}</span>
                                 )}
+                                {diagnostics.filter(d => d.severity === 'warning').length > 0 && (
+                                    <span style={{ fontSize: '11px', color: '#fbbf24' }}>🟡 {diagnostics.filter(d => d.severity === 'warning').length} warning{diagnostics.filter(d => d.severity === 'warning').length !== 1 ? 's' : ''}</span>
+                                )}
+                                {diagnostics.length === 0 && <span style={{ fontSize: '11px', color: '#4ade80' }}>✓ No issues</span>}
                             </div>
                         )}
                     </div>
@@ -3492,214 +3356,132 @@ ${codeContext}` : ""}${projectContext}`
 
                                     return (
                                         <div key={proj.id}>
-                                            {/* ── Project row ── */}
+                                            {/* Project row */}
                                             <div
-                                                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px 3px 4px', cursor: 'pointer', userSelect: 'none', position: 'relative', background: activeProjectFilter === proj.id ? 'var(--accent-glow)' : 'transparent' }}
-                                                onClick={() => { setExpandedProjects(prev => ({ ...prev, [proj.id]: !isExpanded })); if (!projectFiles[proj.id]) void loadProjectDetail(proj.id); }}
-                                                onMouseEnter={e => { if (activeProjectFilter !== proj.id) e.currentTarget.style.background = 'var(--bg-hover)'; const a = e.currentTarget.querySelector<HTMLElement>('.proj-actions'); if (a) a.style.opacity = '1'; }}
-                                                onMouseLeave={e => { e.currentTarget.style.background = activeProjectFilter === proj.id ? 'var(--accent-glow)' : 'transparent'; const a = e.currentTarget.querySelector<HTMLElement>('.proj-actions'); if (a) a.style.opacity = '0'; }}
+                                                style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 10px', cursor: 'pointer', userSelect: 'none', fontSize: '12px', color: 'var(--text-secondary)', background: activeProjectFilter === proj.id ? 'var(--accent-glow)' : 'transparent' }}
+                                                onClick={() => {
+                                                    setExpandedProjects(prev => ({ ...prev, [proj.id]: !isExpanded }));
+                                                    if (!projectFiles[proj.id]) void loadProjectDetail(proj.id);
+                                                }}
                                             >
-                                                <span style={{ fontSize: '8px', color: 'var(--text-muted)', width: '8px', flexShrink: 0 }}>{isExpanded ? '▼' : '▶'}</span>
-                                                <span style={{ fontSize: '12px' }}>{proj.emoji ?? '📁'}</span>
-                                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 700, fontSize: '11px', color: 'var(--text-secondary)', marginLeft: '2px' }}>{proj.name}</span>
-                                                <div className="proj-actions" style={{ display: 'flex', gap: '1px', flexShrink: 0, opacity: 0, transition: 'opacity 0.1s' }} onClick={e => e.stopPropagation()}>
-                                                    <button type="button" title="New branch/folder" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted)', padding: '1px 3px', lineHeight: 1 }}
-                                                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-                                                        onClick={() => { setExpandedProjects(prev => ({ ...prev, [proj.id]: true })); setInlineNewFolder({ projectId: proj.id }); setInlineNewFolderName(''); }}>📁+</button>
-                                                    <button type="button" title="New file at root" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted)', padding: '1px 3px', lineHeight: 1 }}
-                                                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-                                                        onClick={() => { setExpandedProjects(prev => ({ ...prev, [proj.id]: true })); if (!projectFiles[proj.id]) void loadProjectDetail(proj.id); setInlineNewFile({ projectId: proj.id }); setInlineNewFileName(''); }}>📄+</button>
-                                                    <button type="button" title="New chat at root" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted)', padding: '1px 3px', lineHeight: 1 }}
-                                                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-                                                        onClick={() => { void (async () => { const id = await startNewChat(); if (id) { assignToProject(id, proj.id); setActiveFolderId(null); } })(); }}>💬+</button>
+                                                <span style={{ fontSize: '9px', color: 'var(--text-muted)', width: '10px', display: 'inline-block' }}>
+                                                    {isExpanded ? '▼' : '▶'}
+                                                </span>
+                                                <span style={{ fontSize: '13px' }}>{proj.emoji ?? '📁'}</span>
+                                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>
+                                                    {proj.name}
+                                                </span>
+                                                {/* Always-visible + Add button */}
+                                                <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                                                    <button
+                                                        type="button"
+                                                        title="Add code file"
+                                                        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 5px', lineHeight: 1.4 }}
+                                                        onClick={() => { setNewFileName(''); setExplorerOverlay({ type: 'add-file', projectId: proj.id }); }}
+                                                    >📄+</button>
+                                                    <button
+                                                        type="button"
+                                                        title="Link a chat session"
+                                                        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 5px', lineHeight: 1.4 }}
+                                                        onClick={() => setExplorerOverlay({ type: 'link-chat', projectId: proj.id })}
+                                                    >💬+</button>
                                                 </div>
                                             </div>
 
-                                            {/* ── Expanded project contents ── */}
+                                            {/* Expanded content */}
                                             {isExpanded && (
                                                 <div>
-                                                    {/* inline new folder input */}
-                                                    {inlineNewFolder?.projectId === proj.id && (
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px 2px 16px' }}>
-                                                            <span style={{ fontSize: '11px' }}>📁</span>
-                                                            <input autoFocus placeholder="branch name…" value={inlineNewFolderName}
-                                                                onChange={e => setInlineNewFolderName(e.target.value)}
-                                                                onKeyDown={e => { if (e.key === 'Enter' && inlineNewFolderName.trim()) { createFolder(proj.id, inlineNewFolderName); setInlineNewFolder(null); setInlineNewFolderName(''); } if (e.key === 'Escape') { setInlineNewFolder(null); setInlineNewFolderName(''); } }}
-                                                                onBlur={() => { setInlineNewFolder(null); setInlineNewFolderName(''); }}
-                                                                style={{ flex: 1, background: 'var(--bg-primary)', border: '1px solid var(--accent)', borderRadius: '3px', padding: '2px 6px', color: 'var(--text-primary)', fontSize: '11px', outline: 'none', fontFamily: 'DM Sans, sans-serif' }}
-                                                            />
+                                                    {/* ── Code Files sub-section ── */}
+                                                    <div style={{ padding: '4px 10px 2px 22px', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                                        📄 Code Files
+                                                    </div>
+                                                    {files.length === 0 ? (
+                                                        <div style={{ padding: '2px 10px 4px 24px', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                                            No files — click 📄+ to add
                                                         </div>
-                                                    )}
-
-                                                    {/* ── Branches / Folders ── */}
-                                                    {(projectFolders[proj.id] ?? []).map(folder => {
-                                                        const isFolderExpanded = expandedFolders[folder.id] ?? false;
-                                                        const fFiles = folderFiles[folder.id] ?? [];
-                                                        const fChatIds = folderChats[folder.id] ?? [];
-                                                        const isActiveFolder = activeFolderId === folder.id;
-                                                        return (
-                                                            <div key={folder.id}>
-                                                                {/* folder row */}
+                                                    ) : (
+                                                        files.map(file => {
+                                                            const isActiveFile = activeFileId === file.id;
+                                                            const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+                                                            const icon = ext === 'pine' || ext === 'pinescript' ? '🌲'
+                                                                : ext === 'py' ? '🐍'
+                                                                    : ext === 'ts' || ext === 'tsx' ? '📘'
+                                                                        : ext === 'js' || ext === 'jsx' ? '📙'
+                                                                            : ext === 'json' ? '📋'
+                                                                                : ext === 'md' ? '📝'
+                                                                                    : '📄';
+                                                            return (
                                                                 <div
-                                                                    style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px 2px 14px', cursor: 'pointer', userSelect: 'none', position: 'relative', background: isActiveFolder ? 'rgba(249,115,22,0.07)' : 'transparent', borderLeft: isActiveFolder ? '2px solid var(--accent)' : '2px solid transparent' }}
-                                                                    onClick={() => { setExpandedFolders(prev => ({ ...prev, [folder.id]: !isFolderExpanded })); setActiveFolderId(folder.id); }}
-                                                                    onMouseEnter={e => { if (!isActiveFolder) e.currentTarget.style.background = 'var(--bg-hover)'; const a = e.currentTarget.querySelector<HTMLElement>('.folder-actions'); if (a) a.style.opacity = '1'; }}
-                                                                    onMouseLeave={e => { if (!isActiveFolder) e.currentTarget.style.background = 'transparent'; const a = e.currentTarget.querySelector<HTMLElement>('.folder-actions'); if (a) a.style.opacity = '0'; }}
+                                                                    key={file.id}
+                                                                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px 3px 24px', cursor: 'pointer', fontSize: '11px', color: isActiveFile ? 'var(--accent)' : 'var(--text-muted)', background: isActiveFile ? 'var(--accent-glow)' : 'transparent', borderLeft: isActiveFile ? '2px solid var(--accent)' : '2px solid transparent' }}
+                                                                    onClick={() => {
+                                                                        setActiveFileId(file.id);
+                                                                        setCodeText(file.content);
+                                                                        setUnsavedCode(file.content);
+                                                                        setHasUnsavedChanges(false);
+                                                                        setActiveCodeId(null);
+                                                                        setCodeOpen(true);
+                                                                        addToHistory(file.content);
+                                                                    }}
                                                                 >
-                                                                    <span style={{ fontSize: '7px', color: 'var(--text-muted)', width: '7px', flexShrink: 0 }}>{isFolderExpanded ? '▼' : '▶'}</span>
-                                                                    <span style={{ fontSize: '11px' }}>{isFolderExpanded ? '📂' : '📁'}</span>
-                                                                    {renamingFolderId === folder.id ? (
-                                                                        <input autoFocus value={renamingFolderValue} onChange={e => setRenamingFolderValue(e.target.value)}
-                                                                            onKeyDown={e => { if (e.key === 'Enter' && renamingFolderValue.trim()) { setProjectFolders(prev => ({ ...prev, [proj.id]: (prev[proj.id] ?? []).map(f => f.id === folder.id ? { ...f, name: renamingFolderValue.trim() } : f) })); setRenamingFolderId(null); } if (e.key === 'Escape') setRenamingFolderId(null); }}
-                                                                            onBlur={() => setRenamingFolderId(null)} onClick={e => e.stopPropagation()}
-                                                                            style={{ flex: 1, background: 'var(--bg-primary)', border: '1px solid var(--accent)', borderRadius: '3px', padding: '1px 5px', color: 'var(--text-primary)', fontSize: '11px', outline: 'none', fontFamily: 'DM Sans, sans-serif' }}
-                                                                        />
-                                                                    ) : (
-                                                                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, fontSize: '11px', color: isActiveFolder ? 'var(--accent)' : 'var(--text-secondary)' }}>{folder.name}</span>
-                                                                    )}
-                                                                    {isActiveFolder && <span style={{ fontSize: '7px', color: 'var(--accent)', flexShrink: 0 }}>●</span>}
-                                                                    <div className="folder-actions" style={{ display: 'flex', gap: '1px', flexShrink: 0, opacity: 0, transition: 'opacity 0.1s' }} onClick={e => e.stopPropagation()}>
-                                                                        <button type="button" title="New file in branch" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 2px', lineHeight: 1 }}
-                                                                            onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-                                                                            onClick={() => { setExpandedFolders(prev => ({ ...prev, [folder.id]: true })); setInlineNewFolderFile({ folderId: folder.id, projectId: proj.id }); setInlineNewFolderFileName(''); }}>📄+</button>
-                                                                        <button type="button" title="New chat in branch" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 2px', lineHeight: 1 }}
-                                                                            onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-                                                                            onClick={() => createChatInFolder(proj.id, folder.id)}>💬+</button>
-                                                                        <button type="button" title="Rename branch" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 2px', lineHeight: 1 }}
-                                                                            onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-                                                                            onClick={() => { setRenamingFolderId(folder.id); setRenamingFolderValue(folder.name); }}>✏️</button>
-                                                                        <button type="button" title="Delete branch" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 2px', lineHeight: 1 }}
-                                                                            onMouseEnter={e => (e.currentTarget.style.color = '#f87171')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-                                                                            onClick={() => { if (confirm(`Delete branch "${folder.name}"? Files inside will be lost.`)) deleteFolder(proj.id, folder.id); }}>🗑</button>
-                                                                    </div>
+                                                                    <span>{icon}</span>
+                                                                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                        {file.name}
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '3px', cursor: 'pointer', fontSize: '9px', color: '#f87171', padding: '2px 5px', flexShrink: 0, fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
+                                                                        title="Remove file"
+                                                                        onClick={async (e) => {
+                                                                            e.stopPropagation();
+                                                                            await removeProjectFile(proj.id, file.id);
+                                                                            if (activeFileId === file.id) setActiveFileId(null);
+                                                                        }}
+                                                                    >remove</button>
                                                                 </div>
-
-                                                                {/* branch contents */}
-                                                                {isFolderExpanded && (
-                                                                    <div>
-                                                                        {/* inline new file in branch */}
-                                                                        {inlineNewFolderFile?.folderId === folder.id && (
-                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px 2px 30px' }}>
-                                                                                <span style={{ fontSize: '10px' }}>📄</span>
-                                                                                <input autoFocus placeholder="filename.pine" value={inlineNewFolderFileName}
-                                                                                    onChange={e => setInlineNewFolderFileName(e.target.value)}
-                                                                                    onKeyDown={e => { if (e.key === 'Enter' && inlineNewFolderFileName.trim()) { addFileToFolder(proj.id, folder.id, inlineNewFolderFileName.trim()); setInlineNewFolderFile(null); setInlineNewFolderFileName(''); } if (e.key === 'Escape') { setInlineNewFolderFile(null); setInlineNewFolderFileName(''); } }}
-                                                                                    onBlur={() => { setInlineNewFolderFile(null); setInlineNewFolderFileName(''); }}
-                                                                                    style={{ flex: 1, background: 'var(--bg-primary)', border: '1px solid var(--accent)', borderRadius: '3px', padding: '2px 5px', color: 'var(--text-primary)', fontSize: '10px', outline: 'none', fontFamily: 'DM Sans, sans-serif' }}
-                                                                                />
-                                                                            </div>
-                                                                        )}
-
-                                                                        {/* files in branch */}
-                                                                        {fFiles.map(file => {
-                                                                            const isAF = activeFileId === file.id;
-                                                                            const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-                                                                            const icon = ext === 'pine' ? '🌲' : ext === 'py' ? '🐍' : ext === 'ts' || ext === 'tsx' ? '📘' : ext === 'js' || ext === 'jsx' ? '📙' : ext === 'cs' ? '💜' : ext === 'mq5' ? '⚙️' : ext === 'json' ? '📋' : ext === 'md' ? '📝' : '📄';
-                                                                            return (
-                                                                                <div key={file.id}
-                                                                                    style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px 2px 30px', cursor: 'pointer', fontSize: '10px', color: isAF ? 'var(--accent)' : 'var(--text-muted)', background: isAF ? 'var(--accent-glow)' : 'transparent', borderLeft: isAF ? '2px solid var(--accent)' : '2px solid transparent', position: 'relative' }}
-                                                                                    onMouseEnter={e => { if (!isAF) e.currentTarget.style.background = 'var(--bg-hover)'; const a = e.currentTarget.querySelector<HTMLElement>('.ff-act'); if (a) a.style.opacity = '1'; }}
-                                                                                    onMouseLeave={e => { if (!isAF) e.currentTarget.style.background = 'transparent'; const a = e.currentTarget.querySelector<HTMLElement>('.ff-act'); if (a) a.style.opacity = '0'; }}
-                                                                                    onClick={() => { setActiveFileId(file.id); setActiveFolderId(folder.id); setCodeText(file.content); setUnsavedCode(file.content); setHasUnsavedChanges(false); setActiveCodeId(null); setCodeOpen(true); addToHistory(file.content); }}
-                                                                                >
-                                                                                    <span style={{ flexShrink: 0 }}>{icon}</span>
-                                                                                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
-                                                                                    <div className="ff-act" style={{ display: 'flex', gap: '1px', opacity: 0, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                                                                                        <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '9px', color: 'var(--text-muted)', padding: '1px 2px' }}
-                                                                                            onMouseEnter={e => (e.currentTarget.style.color = '#f87171')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-                                                                                            onClick={() => { setFolderFiles(prev => ({ ...prev, [folder.id]: (prev[folder.id] ?? []).filter(f => f.id !== file.id) })); if (activeFileId === file.id) { setActiveFileId(null); setCodeText(''); } }}>🗑</button>
-                                                                                    </div>
-                                                                                </div>
-                                                                            );
-                                                                        })}
-
-                                                                        {/* chats in branch */}
-                                                                        {fChatIds.map(cid => {
-                                                                            const label = titles[cid] ?? conversations.find(cv => cv.id === cid)?.title ?? cid.slice(0, 8);
-                                                                            const isAC = activeId === cid;
-                                                                            return (
-                                                                                <div key={cid}
-                                                                                    style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px 2px 30px', cursor: 'pointer', fontSize: '10px', color: isAC ? 'var(--accent)' : 'var(--text-muted)', background: isAC ? 'var(--accent-glow)' : 'transparent', borderLeft: isAC ? '2px solid var(--accent)' : '2px solid transparent', position: 'relative' }}
-                                                                                    onMouseEnter={e => { if (!isAC) e.currentTarget.style.background = 'var(--bg-hover)'; const a = e.currentTarget.querySelector<HTMLElement>('.fc-act'); if (a) a.style.opacity = '1'; }}
-                                                                                    onMouseLeave={e => { if (!isAC) e.currentTarget.style.background = 'transparent'; const a = e.currentTarget.querySelector<HTMLElement>('.fc-act'); if (a) a.style.opacity = '0'; }}
-                                                                                    onClick={() => { setActiveFolderId(folder.id); router.push(`/?c=${encodeURIComponent(cid)}`); void openConversation(cid); }}
-                                                                                >
-                                                                                    <span style={{ flexShrink: 0 }}>💬</span>
-                                                                                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-                                                                                    <div className="fc-act" style={{ display: 'flex', gap: '1px', opacity: 0, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                                                                                        <button type="button" title="Remove from branch" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '9px', color: 'var(--text-muted)', padding: '1px 2px' }}
-                                                                                            onMouseEnter={e => (e.currentTarget.style.color = '#f87171')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-                                                                                            onClick={() => setFolderChats(prev => ({ ...prev, [folder.id]: (prev[folder.id] ?? []).filter(id => id !== cid) }))}>✕</button>
-                                                                                    </div>
-                                                                                </div>
-                                                                            );
-                                                                        })}
-
-                                                                        {fFiles.length === 0 && fChatIds.length === 0 && inlineNewFolderFile?.folderId !== folder.id && (
-                                                                            <div style={{ padding: '2px 8px 4px 30px', fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', opacity: 0.5 }}>empty — hover folder for options</div>
-                                                                        )}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })}
-
-                                                    {/* ── Root-level files ── */}
-                                                    {inlineNewFile?.projectId === proj.id && (
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px 2px 16px' }}>
-                                                            <span style={{ fontSize: '11px' }}>📄</span>
-                                                            <input autoFocus placeholder="filename.pine" value={inlineNewFileName}
-                                                                onChange={e => setInlineNewFileName(e.target.value)}
-                                                                onKeyDown={async e => { if (e.key === 'Enter' && inlineNewFileName.trim()) { const n = inlineNewFileName.trim(); setInlineNewFile(null); setInlineNewFileName(''); await uploadProjectFile(proj.id, new File([''], n, { type: 'text/plain' })); void loadProjectDetail(proj.id); } if (e.key === 'Escape') { setInlineNewFile(null); setInlineNewFileName(''); } }}
-                                                                onBlur={() => { setInlineNewFile(null); setInlineNewFileName(''); }}
-                                                                style={{ flex: 1, background: 'var(--bg-primary)', border: '1px solid var(--accent)', borderRadius: '3px', padding: '2px 6px', color: 'var(--text-primary)', fontSize: '11px', outline: 'none', fontFamily: 'DM Sans, sans-serif' }}
-                                                            />
-                                                        </div>
+                                                            );
+                                                        })
                                                     )}
 
-                                                    {files.map(file => {
-                                                        const isAF = activeFileId === file.id;
-                                                        const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-                                                        const icon = ext === 'pine' ? '🌲' : ext === 'py' ? '🐍' : ext === 'ts' || ext === 'tsx' ? '📘' : ext === 'js' || ext === 'jsx' ? '📙' : ext === 'cs' ? '💜' : ext === 'mq5' ? '⚙️' : ext === 'json' ? '📋' : ext === 'md' ? '📝' : '📄';
-                                                        return (
-                                                            <div key={file.id}
-                                                                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px 2px 16px', cursor: 'pointer', fontSize: '11px', color: isAF ? 'var(--accent)' : 'var(--text-muted)', background: isAF ? 'var(--accent-glow)' : 'transparent', borderLeft: isAF ? '2px solid var(--accent)' : '2px solid transparent', position: 'relative' }}
-                                                                onMouseEnter={e => { if (!isAF) e.currentTarget.style.background = 'var(--bg-hover)'; const a = e.currentTarget.querySelector<HTMLElement>('.rf-act'); if (a) a.style.opacity = '1'; }}
-                                                                onMouseLeave={e => { if (!isAF) e.currentTarget.style.background = 'transparent'; const a = e.currentTarget.querySelector<HTMLElement>('.rf-act'); if (a) a.style.opacity = '0'; }}
-                                                                onClick={() => { setActiveFileId(file.id); setActiveFolderId(null); setCodeText(file.content); setUnsavedCode(file.content); setHasUnsavedChanges(false); setActiveCodeId(null); setCodeOpen(true); addToHistory(file.content); }}
-                                                            >
-                                                                <span style={{ flexShrink: 0 }}>{icon}</span>
-                                                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
-                                                                <div className="rf-act" style={{ display: 'flex', gap: '1px', opacity: 0, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                                                                    <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '9px', color: 'var(--text-muted)', padding: '1px 2px' }}
-                                                                        onMouseEnter={e => (e.currentTarget.style.color = '#f87171')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-                                                                        onClick={async () => { await removeProjectFile(proj.id, file.id); if (activeFileId === file.id) setActiveFileId(null); }}>🗑</button>
+                                                    {/* ── Chat Sessions sub-section ── */}
+                                                    <div style={{ padding: '6px 10px 2px 22px', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                                        💬 Chat Sessions
+                                                    </div>
+                                                    {linkedConvIds.length === 0 ? (
+                                                        <div style={{ padding: '2px 10px 6px 24px', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                                            No chats — click 💬+ to link
+                                                        </div>
+                                                    ) : (
+                                                        linkedConvIds.map(cid => {
+                                                            const conv = conversations.find(c => c.id === cid);
+                                                            const label = titles[cid] ?? conv?.title ?? cid.slice(0, 8);
+                                                            const isActive = activeId === cid;
+                                                            return (
+                                                                <div
+                                                                    key={cid}
+                                                                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px 3px 24px', cursor: 'pointer', fontSize: '11px', color: isActive ? 'var(--accent)' : 'var(--text-muted)', background: isActive ? 'var(--accent-glow)' : 'transparent', borderLeft: isActive ? '2px solid var(--accent)' : '2px solid transparent' }}
+                                                                    onClick={() => {
+                                                                        // Just highlight — don't open
+                                                                        router.push(`/?c=${encodeURIComponent(cid)}`);
+                                                                    }}
+                                                                >
+                                                                    <span>💬</span>
+                                                                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                        {label}
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '3px', cursor: 'pointer', fontSize: '9px', color: '#f87171', padding: '2px 5px', flexShrink: 0, fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
+                                                                        title="Unlink chat"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            assignToProject(cid, null);
+                                                                        }}
+                                                                    >unlink</button>
                                                                 </div>
-                                                            </div>
-                                                        );
-                                                    })}
-
-                                                    {/* ── Root-level chats (not in any branch) ── */}
-                                                    {linkedConvIds.filter(cid => !Object.values(folderChats).flat().includes(cid)).map(cid => {
-                                                        const label = titles[cid] ?? conversations.find(cv => cv.id === cid)?.title ?? cid.slice(0, 8);
-                                                        const isAC = activeId === cid;
-                                                        return (
-                                                            <div key={cid}
-                                                                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px 2px 16px', cursor: 'pointer', fontSize: '11px', color: isAC ? 'var(--accent)' : 'var(--text-muted)', background: isAC ? 'var(--accent-glow)' : 'transparent', borderLeft: isAC ? '2px solid var(--accent)' : '2px solid transparent', position: 'relative' }}
-                                                                onMouseEnter={e => { if (!isAC) e.currentTarget.style.background = 'var(--bg-hover)'; const a = e.currentTarget.querySelector<HTMLElement>('.rc-act'); if (a) a.style.opacity = '1'; }}
-                                                                onMouseLeave={e => { if (!isAC) e.currentTarget.style.background = 'transparent'; const a = e.currentTarget.querySelector<HTMLElement>('.rc-act'); if (a) a.style.opacity = '0'; }}
-                                                                onClick={() => { setActiveFolderId(null); router.push(`/?c=${encodeURIComponent(cid)}`); void openConversation(cid); }}
-                                                            >
-                                                                <span style={{ flexShrink: 0 }}>💬</span>
-                                                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-                                                                <div className="rc-act" style={{ display: 'flex', gap: '1px', opacity: 0, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                                                                    <button type="button" title="Unlink" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '9px', color: 'var(--text-muted)', padding: '1px 2px' }}
-                                                                        onMouseEnter={e => (e.currentTarget.style.color = '#f87171')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-                                                                        onClick={() => assignToProject(cid, null)}>✕</button>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
+                                                            );
+                                                        })
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -4725,18 +4507,7 @@ ${codeContext}` : ""}${projectContext}`
                                         onChange={(e) => {
                                             const val = e.target.value;
                                             if (val === 'auto') {
-                                                // Detect from current code
-                                                const c = codeText;
-                                                const detected =
-                                                    /#property\s+(copyright|strict|indicator|version)|OnTick\(\)|OnInit\(\)|OnStart\(\)|\/\/ mql5/i.test(c) ? 'mql5'
-                                                    : /using\s+cAlgo|cAlgo\.API/i.test(c) ? 'ctrader'
-                                                    : /using\s+UnityEngine|MonoBehaviour/i.test(c) ? 'unity'
-                                                    : /import\s+bpy\b|bpy\.ops\.|bpy\.data\./i.test(c) ? 'blender'
-                                                    : /(^|\n)\s*\/\/@version=\d+/i.test(c) || /(^|\n)\s*(indicator|strategy)\s*\(/i.test(c) ? 'pinescript'
-                                                    : /import\s+React|from\s+'react'|\.tsx?\b/.test(c) ? 'react'
-                                                    : /def\s+\w+\(|import\s+\w+|print\s*\(/.test(c) ? 'python'
-                                                    : 'generic';
-                                                setSelectedDomain(detected);
+                                                setSelectedDomain(detectLanguage(codeText));
                                             } else {
                                                 setSelectedDomain(val);
                                             }
