@@ -6,6 +6,15 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "T4N - AI Engineering Assistant",
   description: "Specialized AI for coding, trading, and Pine Script",
+  icons: {
+    icon: [
+      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/favicon.ico' },
+    ],
+    apple: '/apple-touch-icon.png',
+  },
+  manifest: '/site.webmanifest',
 };
 
 export default function RootLayout({
