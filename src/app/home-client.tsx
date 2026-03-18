@@ -2615,8 +2615,16 @@ ${codeContext}` : ""}${projectContext}`
                             <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
                                 onClick={async () => { try { await navigator.clipboard.writeText(codeText || ''); showToast('Code copied!'); } catch { showToast('Copy failed', 'error'); } }}
                                 disabled={!codeText.trim()}>Copy</button>
-                            <select value={selectedDomain} onChange={e => setSelectedDomain(e.target.value)}
+                            <select value={selectedDomain} onChange={e => {
+                                    const val = e.target.value;
+                                    if (val === 'auto') {
+                                        const c = codeText;
+                                        const detected = /#property\s+(copyright|strict|indicator|version)|OnTick\(\)|OnInit\(\)|OnStart\(\)|\/\/ mql5/i.test(c) ? 'mql5' : /using\s+cAlgo|cAlgo\.API/i.test(c) ? 'ctrader' : /using\s+UnityEngine|MonoBehaviour/i.test(c) ? 'unity' : /import\s+bpy\b|bpy\.ops\.|bpy\.data\./i.test(c) ? 'blender' : /(^|\n)\s*\/\/@version=\d+/i.test(c) || /(^|\n)\s*(indicator|strategy)\s*\(/i.test(c) ? 'pinescript' : /import\s+React|from\s+'react'|\.tsx?\b/.test(c) ? 'react' : /def\s+\w+\(|import\s+\w+|print\s*\(/.test(c) ? 'python' : 'generic';
+                                        setSelectedDomain(detected);
+                                    } else { setSelectedDomain(val); }
+                                }}
                                 style={{ fontSize: '12px', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                <option value="auto">🔍 Auto-detect</option>
                                 <option value="pinescript">🌲 Pine Script</option>
                                 <option value="ctrader">📊 cTrader</option>
                                 <option value="python">🐍 Python</option>
@@ -2660,6 +2668,11 @@ ${codeContext}` : ""}${projectContext}`
                                 runDiagnostics(v);
                                 if (activeCodeId) { setHasUnsavedChanges(true); }
                                 else if (v.trim()) { setUnsavedCode(v); setHasUnsavedChanges(true); setActiveCodeId(null); }
+                                // Auto-detect language on substantial paste
+                                if (v.length > 80) {
+                                    const det = /#property\s+(copyright|strict|indicator|version)|OnTick\(\)|OnInit\(\)|OnStart\(\)/i.test(v) ? 'mql5' : /using\s+cAlgo|cAlgo\.API/i.test(v) ? 'ctrader' : /using\s+UnityEngine|MonoBehaviour/i.test(v) ? 'unity' : /import\s+bpy\b|bpy\.ops\.|bpy\.data\./i.test(v) ? 'blender' : /(^|\n)\s*\/\/@version=\d+/i.test(v) || /(^|\n)\s*(indicator|strategy)\s*\(/i.test(v) ? 'pinescript' : /import\s+React|from\s+'react'/.test(v) ? 'react' : /def\s+\w+\(|print\s*\(/.test(v) ? 'python' : null;
+                                    if (det) setSelectedDomain(det);
+                                }
                             }}
                             onKeyDown={e => {
                                 if (e.key === 'Tab') {
@@ -2675,17 +2688,62 @@ ${codeContext}` : ""}${projectContext}`
                             }}
                         />
 
-                        {/* Diagnostics summary bar */}
-                        {codeText.trim() && diagnostics.length > 0 && (
-                            <div style={{ padding: '6px 10px', background: 'var(--bg-elevated)', borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', flexShrink: 0 }}
-                                onClick={() => { runDiagnostics(codeText); setDiagnosticsOpen(v => !v); }}>
-                                {diagnostics.filter(d => d.severity === 'error').length > 0 && (
-                                    <span style={{ fontSize: '11px', color: '#f87171' }}>🔴 {diagnostics.filter(d => d.severity === 'error').length} error{diagnostics.filter(d => d.severity === 'error').length !== 1 ? 's' : ''}</span>
+                        {/* Diagnostics panel */}
+                        {codeText.trim() && (
+                            <div style={{ background: 'var(--bg-elevated)', borderTop: '1px solid var(--border-subtle)', flexShrink: 0 }}>
+                                {/* Summary bar — tap to expand */}
+                                <div style={{ padding: '7px 12px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                                    onClick={() => { runDiagnostics(codeText); setDiagnosticsOpen(v => !v); }}>
+                                    <span style={{ flex: 1, display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                        {diagnostics.filter(d => d.severity === 'error').length > 0 && (
+                                            <span style={{ fontSize: '11px', color: '#f87171', fontWeight: 600 }}>🔴 {diagnostics.filter(d => d.severity === 'error').length} error{diagnostics.filter(d => d.severity === 'error').length !== 1 ? 's' : ''}</span>
+                                        )}
+                                        {diagnostics.filter(d => d.severity === 'warning').length > 0 && (
+                                            <span style={{ fontSize: '11px', color: '#fbbf24', fontWeight: 600 }}>🟡 {diagnostics.filter(d => d.severity === 'warning').length} warning{diagnostics.filter(d => d.severity === 'warning').length !== 1 ? 's' : ''}</span>
+                                        )}
+                                        {diagnostics.length === 0 && <span style={{ fontSize: '11px', color: '#4ade80' }}>✓ No issues</span>}
+                                    </span>
+                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{diagnosticsOpen ? '▲' : '▼'}</span>
+                                </div>
+                                {/* Expanded list */}
+                                {diagnosticsOpen && diagnostics.length > 0 && (
+                                    <div style={{ maxHeight: '40vh', overflowY: 'auto', borderTop: '1px solid var(--border-subtle)' }}>
+                                        {diagnostics.map((d, i) => (
+                                            <div key={i} style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', alignItems: 'flex-start' }}
+                                                onClick={() => {
+                                                    const ta = codeTextareaRef.current;
+                                                    if (!ta) return;
+                                                    const lines = codeText.split('\n');
+                                                    const charsBefore = lines.slice(0, d.line - 1).join('\n').length + (d.line > 1 ? 1 : 0);
+                                                    ta.focus();
+                                                    ta.setSelectionRange(charsBefore, charsBefore + lines[d.line - 1].length);
+                                                    ta.scrollTop = Math.max(0, (d.line - 3) * 20);
+                                                }}>
+                                                <span style={{ fontSize: '12px', flexShrink: 0 }}>{d.severity === 'error' ? '🔴' : d.severity === 'warning' ? '🟡' : 'ℹ️'}</span>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontSize: '12px', color: d.severity === 'error' ? '#f87171' : d.severity === 'warning' ? '#fbbf24' : '#60a5fa', lineHeight: 1.4 }}>{d.message}</div>
+                                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>Line {d.line} · {d.code}</div>
+                                                    {d.quickFix && (
+                                                        <button type="button"
+                                                            style={{ marginTop: '4px', fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.08)', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                                            onClick={e => {
+                                                                e.stopPropagation();
+                                                                const lines = codeText.split('\n');
+                                                                lines[d.line - 1] = d.quickFix!.replacement;
+                                                                const fixed = lines.join('\n');
+                                                                setCodeText(fixed);
+                                                                addToHistory(fixed);
+                                                                setHasUnsavedChanges(true);
+                                                                setTimeout(() => runDiagnostics(fixed), 50);
+                                                            }}>
+                                                            ⚡ {d.quickFix.label}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 )}
-                                {diagnostics.filter(d => d.severity === 'warning').length > 0 && (
-                                    <span style={{ fontSize: '11px', color: '#fbbf24' }}>🟡 {diagnostics.filter(d => d.severity === 'warning').length} warning{diagnostics.filter(d => d.severity === 'warning').length !== 1 ? 's' : ''}</span>
-                                )}
-                                {diagnostics.length === 0 && <span style={{ fontSize: '11px', color: '#4ade80' }}>✓ No issues</span>}
                             </div>
                         )}
                     </div>
