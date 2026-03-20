@@ -351,7 +351,7 @@ export default function HomeClient() {
     const [codeText, setCodeText] = useState<string>("");
 
     // Auto-detect language whenever code changes (silently — selector always shows real language)
-    const autoDetectRef = React.useRef(true);
+    const autoDetectRef = useRef(true);
     useEffect(() => {
         if (!codeText.trim() || codeText.length < 30) return;
         if (!autoDetectRef.current) return;
