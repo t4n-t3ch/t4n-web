@@ -343,11 +343,20 @@ export default function HomeClient() {
         }
     }, [streaming]);
 
+
     // =========================
     // Code panel (auto-detect + manual toggle)
     // =========================
     const [codeOpen, setCodeOpen] = useState(false);
     const [codeText, setCodeText] = useState<string>("");
+
+    // Auto-detect language whenever code changes (silently — selector always shows real language)
+    const autoDetectRef = React.useRef(true);
+    useEffect(() => {
+        if (!codeText.trim() || codeText.length < 30) return;
+        if (!autoDetectRef.current) return;
+        setSelectedDomain(detectLanguage(codeText));
+    }, [codeText]);
 
     // Undo/Redo for code canvas
     const [codeHistory, setCodeHistory] = useState<string[]>([]);
@@ -423,7 +432,7 @@ export default function HomeClient() {
     }, [promptPresets]);
 
     // Domain / language selection
-    const [selectedDomain, setSelectedDomain] = useState<string>('auto');
+    const [selectedDomain, setSelectedDomain] = useState<string>('pinescript');
 
     // Inline AI code actions
     const [inlineActionBusy, setInlineActionBusy] = useState(false);
@@ -1708,7 +1717,7 @@ ${codeContext}` : ""}${projectContext}`
                     const isCtrlFResponse = /ctrl\+f:/i.test(streamed);
 
                     if (isCtrlFResponse) {
-                        messageToShow = streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim();
+                        messageToShow = streamed; // pass raw — the Ctrl+F renderer handles code blocks itself
                     } else if (promptDisplayMode === 'description' && currentDescription && extracted) {
                         messageToShow = `[Code generated → open the Code panel]${currentDescription}`;
                     } else if (extracted) {
@@ -1936,7 +1945,7 @@ ${codeContext}` : ""}${projectContext}`
                     const isCtrlFResponse = /ctrl\+f:/i.test(streamed);
 
                     if (isCtrlFResponse) {
-                        messageToShow = streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim();
+                        messageToShow = streamed; // pass raw — the Ctrl+F renderer handles code blocks itself
                     } else if (promptDisplayMode === 'description' && currentDescription && extracted) {
                         messageToShow = `[Code generated → open the Code panel]${currentDescription}`;
                     } else if (extracted) {
@@ -2535,9 +2544,8 @@ ${codeContext}` : ""}${projectContext}`
                             <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
                                 onClick={async () => { try { await navigator.clipboard.writeText(codeText || ''); showToast('Code copied!'); } catch { showToast('Copy failed', 'error'); } }}
                                 disabled={!codeText.trim()}>Copy</button>
-                            <select value={selectedDomain} onChange={e => { const v = e.target.value; if (v === 'auto') setSelectedDomain(detectLanguage(codeText)); else setSelectedDomain(v); }}
+                            <select value={selectedDomain} onChange={e => { autoDetectRef.current = false; setSelectedDomain(e.target.value); }}
                                 style={{ fontSize: '12px', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                <option value="auto">🔍 Auto-detect</option>
                                 <option value="pinescript">🌲 Pine Script</option>
                                 <option value="ctrader">📊 cTrader</option>
                                 <option value="python">🐍 Python</option>
@@ -4077,42 +4085,40 @@ ${codeContext}` : ""}${projectContext}`
 
                                                 // Detect start of a Ctrl+F block
                                                 if (/^ctrl\+f:/i.test(line.trim())) {
-                                                    // Extract the FIND value (rest of this line, strip backticks/fences)
-                                                    const findVal = line.replace(/^ctrl\+f:\s*/i, '').replace(/```[\w]*/g, '').trim();
+                                                    // Extract the FIND value (rest of this line)
+                                                    const findVal = line.replace(/^ctrl\+f:\s*/i, '').replace(/^```[\w]*/, '').trim();
                                                     const findLines = findVal ? [findVal] : [];
                                                     i++;
 
-                                                    // Collect continuation lines until "Replace with:" or blank+next-instruction
+                                                    // Collect FIND lines — skip opening/closing fences, stop at Replace with:
                                                     while (i < lines.length && !/^replace with:/i.test(lines[i].trim()) && !/^ctrl\+f:/i.test(lines[i].trim()) && !/^add (above|below):/i.test(lines[i].trim())) {
-                                                        const l = lines[i].replace(/```[\w]*/g, '').replace(/^```$/, '').trim();
-                                                        if (l) findLines.push(l);
+                                                        const raw = lines[i];
+                                                        // Skip pure fence lines like ``` or ```pinescript
+                                                        if (/^```[\w]*\s*$/.test(raw.trim())) { i++; continue; }
+                                                        const l = raw.trimEnd();
+                                                        if (l.trim() || findLines.length > 0) findLines.push(l);
                                                         i++;
                                                     }
 
                                                     // Detect action type
                                                     let actionLabel = 'REPLACE';
-                                                    if (i < lines.length && /^replace with:/i.test(lines[i].trim())) {
-                                                        actionLabel = 'REPLACE';
-                                                    } else if (i < lines.length && /^add above:/i.test(lines[i].trim())) {
-                                                        actionLabel = 'ADD ABOVE';
-                                                    } else if (i < lines.length && /^add below:/i.test(lines[i].trim())) {
-                                                        actionLabel = 'ADD BELOW';
-                                                    }
-                                                    i++; // skip the "Replace with:" line
+                                                    if (i < lines.length && /^add above:/i.test(lines[i].trim())) actionLabel = 'ADD ABOVE';
+                                                    else if (i < lines.length && /^add below:/i.test(lines[i].trim())) actionLabel = 'ADD BELOW';
+                                                    i++; // skip the "Replace with:" / "Add above:" line
 
-                                                    // Collect replace lines
+                                                    // Collect REPLACE lines — skip opening fence, stop at closing fence or next ctrl+f
                                                     const replaceLines: string[] = [];
-                                                    while (
-                                                        i < lines.length &&
-                                                        (
-                                                            (!/^ctrl\+f:/i.test(lines[i].trim()) && !/^```$/.test(lines[i].trim())) ||
-                                                            (lines[i].trim() === "```" && replaceLines.length === 0)
-                                                        )
-                                                    ) {
-                                                        const l = lines[i].replace(/```[\w]*/g, "").replace(/^```$/, "");
-                                                        // Stop at closing fence only after we have content
-                                                        if (lines[i].trim() === "```" && replaceLines.length > 0) { i++; break; }
-                                                        if (l.trim() || replaceLines.length > 0) replaceLines.push(l);
+                                                    let inFence = false;
+                                                    while (i < lines.length && !/^ctrl\+f:/i.test(lines[i].trim())) {
+                                                        const raw = lines[i];
+                                                        const trimmed = raw.trim();
+                                                        // Opening fence
+                                                        if (/^```[\w]*\s*$/.test(trimmed) && !inFence) { inFence = true; i++; continue; }
+                                                        // Closing fence
+                                                        if (trimmed === '```' && inFence) { i++; break; }
+                                                        // Stop at next "Replace with:" or "Add above/below:"
+                                                        if (/^(replace with:|add above:|add below:)/i.test(trimmed)) break;
+                                                        replaceLines.push(raw.trimEnd());
                                                         i++;
                                                     }
 
@@ -4505,17 +4511,12 @@ ${codeContext}` : ""}${projectContext}`
                                     <select
                                         value={selectedDomain}
                                         onChange={(e) => {
-                                            const val = e.target.value;
-                                            if (val === 'auto') {
-                                                setSelectedDomain(detectLanguage(codeText));
-                                            } else {
-                                                setSelectedDomain(val);
-                                            }
+                                            autoDetectRef.current = false; // user picked manually — stop auto-switching
+                                            setSelectedDomain(e.target.value);
                                         }}
                                         style={{ fontSize: '11px', padding: '3px 6px', borderRadius: '5px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
                                         title="Select language / domain"
                                     >
-                                        <option value="auto">🔍 Auto-detect</option>
                                         <option value="pinescript">🌲 Pine Script</option>
                                         <option value="ctrader">📊 cTrader</option>
                                         <option value="python">🐍 Python</option>
