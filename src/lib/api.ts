@@ -318,7 +318,8 @@ export async function streamMessage(
     message: string,
     conversationId?: string,
     signal?: AbortSignal,
-    existingCode?: string
+    existingCode?: string,
+    displayMode?: 'description' | 'minimal'
 ) {
     const API_BASE = getApiBase();
     const API_KEY = getApiKey();
@@ -347,6 +348,7 @@ export async function streamMessage(
             message,
             conversationId,
             existingCode,
+            displayMode,
         }),
     });
 
