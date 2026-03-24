@@ -1665,8 +1665,8 @@ ${codeContext}` : ""}${projectContext}`
 
                     const extracted = extractCodeBlocks(streamed);
 
-                    // If we detect code and access is OFF, push to panel. If access is ON, AI should use Ctrl+F only — never push directly.
-                    if (extracted && !/ctrl\+f:/i.test(streamed) && !giveAiAccessToCode) {
+                    // If we detect code, push it to the code canvas and OPEN the code panel.
+                    if (extracted && !/ctrl\+f:/i.test(streamed)) {
                         const merged = (giveAiAccessToCode && accessLockedCode.trim())
                             ? mergePatchWithExisting(accessLockedCode, extracted)
                             : extracted;
@@ -1886,16 +1886,25 @@ ${codeContext}` : ""}${projectContext}`
 
                     const extracted = extractCodeBlocks(streamed);
 
-                    // Access ON = AI uses Ctrl+F only, never push code directly to panel
-                    if (extracted && !/ctrl\+f:/i.test(streamed) && !giveAiAccessToCode) {
-                        setCodeText(extracted);
-                        addToHistory(extracted);
+                    if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                        const merged = (giveAiAccessToCode && accessLockedCode.trim())
+                            ? mergePatchWithExisting(accessLockedCode, extracted)
+                            : extracted;
 
+                        setCodeText(merged);
+                        addToHistory(merged);
+
+                        // Never mark unsaved or clear activeCodeId when AI edits an existing snippet
                         if (!activeCodeId) {
-                            setUnsavedCode(extracted);
+                            setUnsavedCode(merged);
                             setHasUnsavedChanges(true);
                         } else {
+                            // Keep activeCodeId intact — don't drift to "Snippet N"
                             setHasUnsavedChanges(true);
+                        }
+
+                        if (giveAiAccessToCode) {
+                            setAccessLockedCode(merged);
                         }
 
                         if (wantsCodeRef.current) {
@@ -4068,42 +4077,53 @@ ${codeContext}` : ""}${projectContext}`
 
                                                 // Detect start of a Ctrl+F block
                                                 if (/^ctrl\+f:/i.test(line.trim())) {
-                                                    // Extract the FIND value (rest of this line, strip backticks/fences)
-                                                    const findVal = line.replace(/^ctrl\+f:\s*/i, '').replace(/```[\w]*/g, '').trim();
-                                                    const findLines = findVal ? [findVal] : [];
+                                                    // ── FIND content ──────────────────────────────────────────────────
+                                                    // Value may start on same line as Ctrl+F: or on the next lines inside a fence
+                                                    const sameLineVal = line.replace(/^ctrl\+f:\s*/i, '').trim();
+                                                    const findLines: string[] = [];
                                                     i++;
 
-                                                    // Collect continuation lines until "Replace with:" or blank+next-instruction
-                                                    while (i < lines.length && !/^replace with:/i.test(lines[i].trim()) && !/^ctrl\+f:/i.test(lines[i].trim()) && !/^add (above|below):/i.test(lines[i].trim())) {
-                                                        const l = lines[i].replace(/```[\w]*/g, '').replace(/^```$/, '').trim();
-                                                        if (l) findLines.push(l);
-                                                        i++;
+                                                    // If same-line value is an opening fence (```lang), skip it and collect inside
+                                                    if (/^```[\w]*$/.test(sameLineVal) || sameLineVal === '') {
+                                                        // skip opening fence line if needed
+                                                        if (/^```[\w]*$/.test(sameLineVal)) { /* already advanced */ }
+                                                        // collect until closing fence or Replace with:
+                                                        while (i < lines.length) {
+                                                            const t = lines[i].trim();
+                                                            if (/^replace with:/i.test(t) || /^add (above|below):/i.test(t) || /^ctrl\+f:/i.test(t)) break;
+                                                            if (t === '```' && findLines.length > 0) { i++; break; } // closing fence
+                                                            if (/^```[\w]+$/.test(t)) { i++; continue; } // opening fence
+                                                            findLines.push(lines[i].trimEnd());
+                                                            i++;
+                                                        }
+                                                    } else {
+                                                        // value is inline — may continue on next lines
+                                                        findLines.push(sameLineVal);
+                                                        while (i < lines.length) {
+                                                            const t = lines[i].trim();
+                                                            if (/^replace with:/i.test(t) || /^add (above|below):/i.test(t) || /^ctrl\+f:/i.test(t)) break;
+                                                            if (/^```[\w]*$/.test(t)) { i++; break; } // fence = end of find
+                                                            findLines.push(lines[i].trimEnd());
+                                                            i++;
+                                                        }
                                                     }
 
-                                                    // Detect action type
+                                                    // ── Action label ──────────────────────────────────────────────────
                                                     let actionLabel = 'REPLACE';
-                                                    if (i < lines.length && /^replace with:/i.test(lines[i].trim())) {
-                                                        actionLabel = 'REPLACE';
-                                                    } else if (i < lines.length && /^add above:/i.test(lines[i].trim())) {
-                                                        actionLabel = 'ADD ABOVE';
-                                                    } else if (i < lines.length && /^add below:/i.test(lines[i].trim())) {
-                                                        actionLabel = 'ADD BELOW';
-                                                    }
-                                                    i++; // skip the "Replace with:" line
+                                                    if (i < lines.length && /^add above:/i.test(lines[i].trim())) actionLabel = 'ADD ABOVE';
+                                                    else if (i < lines.length && /^add below:/i.test(lines[i].trim())) actionLabel = 'ADD BELOW';
+                                                    i++; // skip "Replace with:" / "Add above:" line
 
-                                                    // Collect replace lines
+                                                    // ── REPLACE content ───────────────────────────────────────────────
                                                     const replaceLines: string[] = [];
-                                                    while (
-                                                        i < lines.length &&
-                                                        (
-                                                            (!/^ctrl\+f:/i.test(lines[i].trim()) && !/^```$/.test(lines[i].trim())) ||
-                                                            (lines[i].trim() === "```" && replaceLines.length === 0)
-                                                        )
-                                                    ) {
-                                                        const l = lines[i].replace(/```[\w]*/g, "").replace(/^```$/, "");
-                                                        // Stop at closing fence only after we have content
-                                                        if (lines[i].trim() === "```" && replaceLines.length > 0) { i++; break; }
-                                                        if (l.trim() || replaceLines.length > 0) replaceLines.push(l);
+                                                    // Skip opening fence
+                                                    if (i < lines.length && /^```[\w]*$/.test(lines[i].trim())) i++;
+                                                    while (i < lines.length) {
+                                                        const t = lines[i].trim();
+                                                        if (/^ctrl\+f:/i.test(t)) break; // next block
+                                                        if (t === '```' && replaceLines.length > 0) { i++; break; } // closing fence
+                                                        if (/^```[\w]+$/.test(t)) { i++; continue; } // stray opening fence
+                                                        replaceLines.push(lines[i].trimEnd());
                                                         i++;
                                                     }
 
@@ -4714,7 +4734,7 @@ ${codeContext}` : ""}${projectContext}`
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
                                             fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
                                         }}
-                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setActionsDropdownPos({ top: r.bottom + 4, left: r.left }); setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}
+                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); const left = Math.min(r.left, window.innerWidth - 200); setActionsDropdownPos({ top: r.bottom + 4, left: Math.max(8, left) }); setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}
                                     >
                                         {inlineActionBusy && ['🔍 Explain','🔧 Fix Errors','✨ Improve','📋 Add Comments','⚡ Optimise'].includes(inlineActionLabel ?? '') ? '⏳' : '⚡'} Actions ▾
                                     </button>
@@ -4800,7 +4820,7 @@ ${codeContext}` : ""}${projectContext}`
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
                                             fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
                                         }}
-                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setProToolsDropdownPos({ top: r.bottom + 4, left: r.left }); setProToolsDropdownOpen(v => !v); setActionsDropdownOpen(false); }}
+                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); const left = Math.min(r.left, window.innerWidth - 220); setProToolsDropdownPos({ top: r.bottom + 4, left: Math.max(8, left) }); setProToolsDropdownOpen(v => !v); setActionsDropdownOpen(false); }}
                                     >
                                         ✦ Pro Tools ▾
                                         {userPlan !== 'pro' && <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', fontWeight: 700 }}>PRO</span>}
@@ -4970,7 +4990,9 @@ ${codeContext}` : ""}${projectContext}`
                                         onClick={(e) => {
                                             if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
                                             const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                            setConvertDropdownPos({ top: r.bottom + 4, left: r.left });
+                                            const dropW = 220;
+                                            const left = Math.min(r.left, window.innerWidth - dropW - 8);
+                                            setConvertDropdownPos({ top: r.bottom + 4, left: Math.max(8, left) });
                                             setConvertDropdownOpen(v => !v);
                                         }}
                                     >
