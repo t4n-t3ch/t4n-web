@@ -349,6 +349,14 @@ export default function HomeClient() {
     const [codeOpen, setCodeOpen] = useState(false);
     const [codeText, setCodeText] = useState<string>("");
 
+    // Silently auto-detect language whenever code changes, unless user manually picked one
+    useEffect(() => {
+        if (!codeText.trim() || codeText.length < 30) return;
+        if (!autoDetectRef.current) return;
+        const detected = detectLanguage(codeText);
+        setSelectedDomain(detected);
+    }, [codeText]);
+
     // Undo/Redo for code canvas
     const [codeHistory, setCodeHistory] = useState<string[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
@@ -423,7 +431,8 @@ export default function HomeClient() {
     }, [promptPresets]);
 
     // Domain / language selection
-    const [selectedDomain, setSelectedDomain] = useState<string>('auto');
+    const [selectedDomain, setSelectedDomain] = useState<string>('pinescript');
+    const autoDetectRef = useRef(true); // false = user manually chose a language
 
     // Inline AI code actions
     const [inlineActionBusy, setInlineActionBusy] = useState(false);
@@ -1652,7 +1661,7 @@ ${codeContext}` : ""}${projectContext}`
                 : `${payload.text}${projectContext}`;
 
             const codeToSend = undefined;
-            const res = await streamMessage(finalText, cid, controller.signal, codeToSend, promptDisplayMode);
+            const res = await streamMessage(finalText, cid, controller.signal, codeToSend);
 
 
             let streamed = "";
@@ -1874,7 +1883,7 @@ ${payload.text}${codeContext ? `
 ${codeContext}` : ""}${projectContext}`
                 : `${payload.text}${projectContext}`;
 
-            const res = await streamMessage(finalText, payload.conversationId, controller.signal, undefined, promptDisplayMode);
+            const res = await streamMessage(finalText, payload.conversationId, controller.signal);
             let streamed = "";
             let sawDone = false;
 
@@ -2535,9 +2544,8 @@ ${codeContext}` : ""}${projectContext}`
                             <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
                                 onClick={async () => { try { await navigator.clipboard.writeText(codeText || ''); showToast('Code copied!'); } catch { showToast('Copy failed', 'error'); } }}
                                 disabled={!codeText.trim()}>Copy</button>
-                            <select value={selectedDomain} onChange={e => { const v = e.target.value; if (v === 'auto') setSelectedDomain(detectLanguage(codeText)); else setSelectedDomain(v); }}
+                            <select value={selectedDomain} onChange={e => { autoDetectRef.current = false; setSelectedDomain(e.target.value); }}
                                 style={{ fontSize: '12px', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                <option value="auto">🔍 Auto-detect</option>
                                 <option value="pinescript">🌲 Pine Script</option>
                                 <option value="ctrader">📊 cTrader</option>
                                 <option value="python">🐍 Python</option>
@@ -4156,28 +4164,60 @@ ${codeContext}` : ""}${projectContext}`
                                                             <div style={{ borderRadius: '0 0 6px 6px', overflow: 'hidden', border: '1px solid rgba(99,102,241,0.35)' }}>
                                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 10px', background: 'rgba(99,102,241,0.1)' }}>
                                                                     <span style={{ fontSize: '10px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{actionLabel}</span>
-                                                                    <button type="button"
-                                                                        style={{
-                                                                            fontSize: '10px',
-                                                                            padding: '2px 8px',
-                                                                            borderRadius: '4px',
-                                                                            border: copiedBlockId === `replace-${blockId}` ? '1px solid #818cf8' : '1px solid rgba(99,102,241,0.3)',
-                                                                            background: copiedBlockId === `replace-${blockId}` ? '#818cf8' : 'transparent',
-                                                                            color: copiedBlockId === `replace-${blockId}` ? '#fff' : '#818cf8',
-                                                                            fontWeight: copiedBlockId === `replace-${blockId}` ? 'bold' : 'normal',
-                                                                            cursor: 'pointer',
-                                                                            transition: 'all 0.2s',
-                                                                            boxShadow: copiedBlockId === `replace-${blockId}` ? '0 0 10px rgba(99,102,241,0.5)' : 'none'
-                                                                        }}
-                                                                        onClick={async () => {
-                                                                            try {
-                                                                                await navigator.clipboard.writeText(replaceText);
-                                                                                setCopiedBlockId(`replace-${blockId}`);
-                                                                                setTimeout(() => setCopiedBlockId(null), 1500);
-                                                                            } catch { }
-                                                                        }}>
-                                                                        {copiedBlockId === `replace-${blockId}` ? '✓ Copied!' : 'Copy'}
-                                                                    </button>
+                                                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                                                        {/* Apply button — replaces findText with replaceText in code panel */}
+                                                                        <button type="button"
+                                                                            style={{
+                                                                                fontSize: '10px', padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', transition: 'all 0.2s',
+                                                                                border: appliedBlockId === `ctrlf-${blockId}` ? '1px solid #4ade80' : '1px solid rgba(34,197,94,0.4)',
+                                                                                background: appliedBlockId === `ctrlf-${blockId}` ? '#4ade80' : 'rgba(34,197,94,0.08)',
+                                                                                color: appliedBlockId === `ctrlf-${blockId}` ? '#000' : '#4ade80',
+                                                                                fontWeight: appliedBlockId === `ctrlf-${blockId}` ? 'bold' : 'normal',
+                                                                            }}
+                                                                            onClick={() => {
+                                                                                if (!codeText || !findText) return;
+                                                                                const occurrences = codeText.split(findText).length - 1;
+                                                                                if (occurrences === 0) {
+                                                                                    showToast('Text not found in code', 'error');
+                                                                                    return;
+                                                                                }
+                                                                                const msg = occurrences > 1
+                                                                                    ? `Replace all ${occurrences} occurrences?`
+                                                                                    : null;
+                                                                                if (msg && !confirm(msg)) return;
+                                                                                const newCode = codeText.split(findText).join(replaceText);
+                                                                                setCodeText(newCode);
+                                                                                addToHistory(newCode);
+                                                                                setHasUnsavedChanges(true);
+                                                                                if (!activeCodeId) setUnsavedCode(newCode);
+                                                                                if (giveAiAccessToCode) setAccessLockedCode(newCode);
+                                                                                setCodeOpen(true);
+                                                                                setAppliedBlockId(`ctrlf-${blockId}`);
+                                                                                setTimeout(() => setAppliedBlockId(null), 2000);
+                                                                                showToast(occurrences > 1 ? `Replaced ${occurrences} occurrences` : 'Applied!');
+                                                                            }}>
+                                                                            {appliedBlockId === `ctrlf-${blockId}` ? '✓ Applied!' : '⚡ Apply'}
+                                                                        </button>
+                                                                        {/* Copy button */}
+                                                                        <button type="button"
+                                                                            style={{
+                                                                                fontSize: '10px', padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', transition: 'all 0.2s',
+                                                                                border: copiedBlockId === `replace-${blockId}` ? '1px solid #818cf8' : '1px solid rgba(99,102,241,0.3)',
+                                                                                background: copiedBlockId === `replace-${blockId}` ? '#818cf8' : 'transparent',
+                                                                                color: copiedBlockId === `replace-${blockId}` ? '#fff' : '#818cf8',
+                                                                                fontWeight: copiedBlockId === `replace-${blockId}` ? 'bold' : 'normal',
+                                                                                boxShadow: copiedBlockId === `replace-${blockId}` ? '0 0 10px rgba(99,102,241,0.5)' : 'none'
+                                                                            }}
+                                                                            onClick={async () => {
+                                                                                try {
+                                                                                    await navigator.clipboard.writeText(replaceText);
+                                                                                    setCopiedBlockId(`replace-${blockId}`);
+                                                                                    setTimeout(() => setCopiedBlockId(null), 1500);
+                                                                                } catch { }
+                                                                            }}>
+                                                                            {copiedBlockId === `replace-${blockId}` ? '✓ Copied!' : 'Copy'}
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
                                                                 <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{replaceText || '(empty — delete the found line)'}</pre>
                                                             </div>
@@ -4506,16 +4546,28 @@ ${codeContext}` : ""}${projectContext}`
                                         value={selectedDomain}
                                         onChange={(e) => {
                                             const val = e.target.value;
-                                            if (val === 'auto') {
-                                                setSelectedDomain(detectLanguage(codeText));
-                                            } else {
-                                                setSelectedDomain(val);
+                                            autoDetectRef.current = false; // user picked manually
+                                            setSelectedDomain(val);
+                                            // Warn if selected language doesn't match detected language
+                                            if (codeText.trim()) {
+                                                const detected = detectLanguage(codeText);
+                                                if (detected !== val && detected !== 'generic') {
+                                                    const wrongLangDiag = [{
+                                                        line: 1, col: 1, endCol: 1,
+                                                        severity: 'warning' as const,
+                                                        message: `⚠ Selected language (${val}) may not match your code — detected: ${detected}`,
+                                                        code: 'LANG_MISMATCH',
+                                                    }];
+                                                    setDiagnostics(prev => [...wrongLangDiag, ...prev.filter(d => d.code !== 'LANG_MISMATCH')]);
+                                                    setDiagnosticsOpen(true);
+                                                } else {
+                                                    setDiagnostics(prev => prev.filter(d => d.code !== 'LANG_MISMATCH'));
+                                                }
                                             }
                                         }}
                                         style={{ fontSize: '11px', padding: '3px 6px', borderRadius: '5px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
                                         title="Select language / domain"
                                     >
-                                        <option value="auto">🔍 Auto-detect</option>
                                         <option value="pinescript">🌲 Pine Script</option>
                                         <option value="ctrader">📊 cTrader</option>
                                         <option value="python">🐍 Python</option>
