@@ -24,7 +24,15 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <head />
+      <head>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-XZ748YHG9T" />
+        <script dangerouslySetInnerHTML={{ __html: `
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-XZ748YHG9T');
+        `}} />
+      </head>
       <body style={{ background: '#0f0f11', margin: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <ThemeProvider>
           <main style={{ flex: 1 }}>
