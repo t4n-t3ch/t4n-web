@@ -109,6 +109,56 @@ function useIsMobile() {
 type ToastType = 'success' | 'error' | 'info';
 interface Toast { id: number; message: string; type: ToastType; }
 
+// ── In-app confirm modal (replaces native browser confirm/alert) ──────────────
+function useConfirm() {
+    const [state, setState] = useState<{
+        message: string;
+        title?: string;
+        confirmLabel?: string;
+        danger?: boolean;
+        resolve: (v: boolean) => void;
+    } | null>(null);
+
+    const confirm = (message: string, opts?: { title?: string; confirmLabel?: string; danger?: boolean }) =>
+        new Promise<boolean>((resolve) => setState({ message, resolve, ...opts }));
+
+    const ConfirmModal = () => {
+        if (!state) return null;
+        return (
+            <div
+                style={{ position: 'fixed', inset: 0, zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)', padding: '16px' }}
+                onMouseDown={() => { state.resolve(false); setState(null); }}
+            >
+                <div
+                    style={{ width: '340px', maxWidth: '95vw', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 16px 64px rgba(0,0,0,0.6)', padding: '24px' }}
+                    onMouseDown={e => e.stopPropagation()}
+                >
+                    <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)', marginBottom: '10px' }}>
+                        {state.title ?? 'T4N'}
+                    </div>
+                    <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '20px', whiteSpace: 'pre-line' }}>
+                        {state.message}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button
+                            type="button"
+                            style={{ padding: '7px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                            onClick={() => { state.resolve(false); setState(null); }}
+                        >Cancel</button>
+                        <button
+                            type="button"
+                            style={{ padding: '7px 16px', fontSize: '13px', borderRadius: '6px', border: 'none', background: state.danger ? '#ef4444' : 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                            onClick={() => { state.resolve(true); setState(null); }}
+                        >{state.confirmLabel ?? 'OK'}</button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    return { confirm, ConfirmModal };
+}
+
 function useToast() {
     const [toasts, setToasts] = useState<Toast[]>([]);
     let nextId = 0;
@@ -140,6 +190,7 @@ function useToast() {
 
 export default function HomeClient() {
     const { showToast, ToastContainer } = useToast();
+    const { confirm: appConfirm, ConfirmModal } = useConfirm();
     const [session, setSession] = useState<Session | null>(null);
     const [authLoading, setAuthLoading] = useState(true);
     const [authEmail, setAuthEmail] = useState("");
@@ -592,7 +643,7 @@ export default function HomeClient() {
     }
 
     async function deleteSnippet(id: string) {
-        if (!confirm("Delete this snippet?")) return;
+        if (!await appConfirm("Delete this snippet?", { title: "Delete Snippet", confirmLabel: "Delete", danger: true })) return;
 
         try {
             const res = await apiDeleteSnippet(id);
@@ -614,6 +665,11 @@ export default function HomeClient() {
         return /(\bcode\b|\bscript\b|\btradingview\b|\bpine\b|\bpinescript\b|\bimplement\b|\bwrite\b|\btsx\b|\bts\b|\bjs\b|\bpython\b|\bsql\b|\bendpoint\b|\bapi\b)/i.test(
             text,
         );
+    }
+
+    // Returns true if the message is asking about/referring to existing code in the panel
+    function looksLikeCodeQuestion(text: string): boolean {
+        return /\b(this code|the code|this script|the script|what does|what is|explain|describe|review|analyse|analyze|how does|what are|what\'s it|what is it|summarise|summarize|tell me about|look at)\b/i.test(text);
     }
 
     function detectLanguage(code: string): string {
@@ -791,7 +847,7 @@ export default function HomeClient() {
     }
 
     function handleNewCode() {
-        if (codeText.trim() && !confirm("Create new code? Unsaved changes will be lost.")) {
+        if (codeText.trim() && !await appConfirm("Unsaved changes will be lost.", { title: "Create New Code?", confirmLabel: "Continue", danger: true })) {
             return;
         }
 
@@ -1344,9 +1400,7 @@ export default function HomeClient() {
             const next = nextRaw.trim();
             const title = next ? next : null;
 
-            const ok = confirm(
-                `Are you sure you want to rename this conversation to:\n\n${title ?? "(no title)"}`
-            );
+            const ok = await appConfirm(`Rename to: "${title ?? "(no title)"}"?`, { title: "Rename Conversation", confirmLabel: "Rename" });
             if (!ok) return;
 
             const res = await renameConversation(conversationId, title);
@@ -1363,7 +1417,7 @@ export default function HomeClient() {
 
     async function handleDeleteConversation(conversationId: string) {
         try {
-            const ok = confirm("Are you sure you want to delete this conversation? This cannot be undone.");
+            const ok = await appConfirm("Delete this conversation? This cannot be undone.", { title: "Delete Conversation", confirmLabel: "Delete", danger: true });
             if (!ok) return;
 
             const res = await deleteConversation(conversationId);
@@ -1637,14 +1691,18 @@ export default function HomeClient() {
                 ? accessLockedCode
                 : codeText;
             const trimmedForPrompt = codeForContext.slice(0, 120000);
-            const codeContext =
-                giveAiAccessToCode && codeForContext.trim()
-                    ? `\n\nEXISTING CODE (you MUST either give Ctrl+F find-and-replace instructions OR output the FULL corrected file — NEVER output a partial truncated file):\n\`\`\`${selectedDomain !== "auto" ? selectedDomain : "code"}\n${trimmedForPrompt}\n\`\`\`\n`
+            const langLabel = selectedDomain !== "auto" ? selectedDomain : "code";
+
+            const isAskingAboutCode = looksLikeCodeQuestion(payload.text) && !!codeText.trim();
+            const codeContext = giveAiAccessToCode && codeForContext.trim()
+                ? `\n\nEXISTING CODE (you MUST either give Ctrl+F find-and-replace instructions OR output the FULL corrected file — NEVER output a partial truncated file):\n\`\`\`${langLabel}\n${trimmedForPrompt}\n\`\`\`\n`
+                : isAskingAboutCode
+                    ? `\n\nCODE (read-only — for context only, do NOT rewrite it unless asked):\n\`\`\`${langLabel}\n${trimmedForPrompt}\n\`\`\`\n`
                     : "";
 
             const projectContext = buildProjectContext();
 
-            const finalText = (wantsCodeRef.current || (giveAiAccessToCode && codeForContext.trim()))
+            const finalText = (wantsCodeRef.current || giveAiAccessToCode || isAskingAboutCode)
                 ? `USER REQUEST:
 ${payload.text}${codeContext ? `
 
@@ -1855,19 +1913,25 @@ ${codeContext}` : ""}${projectContext}`
 
             const payload = lastSendRef.current ?? { text: apiText, conversationId: activeId ?? undefined };
 
-            // Use locked snapshot if available, otherwise fall back to live codeText
+            // Use locked snapshot if access was granted, otherwise fall back to live codeText
             const codeForContext = (giveAiAccessToCode && accessLockedCode)
                 ? accessLockedCode
                 : codeText;
             const trimmedForPrompt = codeForContext.slice(0, 120000);
-            const codeContext =
-                giveAiAccessToCode && codeForContext.trim()
-                    ? `\n\nEXISTING CODE (you MUST either output the FULL corrected file OR give Ctrl+F find-and-replace instructions — NEVER output a partial truncated file):\n\`\`\`${selectedDomain !== "auto" ? selectedDomain : "code"}\n${trimmedForPrompt}\n\`\`\`\n`
+            const langLabel = selectedDomain !== "auto" ? selectedDomain : "code";
+
+            // Include code as editable context when access is ON
+            // Include code as read-only context when the user is clearly asking about the visible code
+            const isAskingAboutCode = looksLikeCodeQuestion(payload.text) && !!codeText.trim();
+            const codeContext = giveAiAccessToCode && codeForContext.trim()
+                ? `\n\nEXISTING CODE (you MUST either output the FULL corrected file OR give Ctrl+F find-and-replace instructions — NEVER output a partial truncated file):\n\`\`\`${langLabel}\n${trimmedForPrompt}\n\`\`\`\n`
+                : isAskingAboutCode
+                    ? `\n\nCODE (read-only — for context only, do NOT rewrite it unless asked):\n\`\`\`${langLabel}\n${trimmedForPrompt}\n\`\`\`\n`
                     : "";
 
             const projectContext = buildProjectContext();
 
-            const finalText = (wantsCodeRef.current || (giveAiAccessToCode && codeForContext.trim()))
+            const finalText = (wantsCodeRef.current || giveAiAccessToCode || isAskingAboutCode)
                 ? `USER REQUEST:
 ${payload.text}${codeContext ? `
 
@@ -2035,9 +2099,9 @@ ${codeContext}` : ""}${projectContext}`
             if (isPaywall) {
                 // Show appropriate message based on error type
                 if (msg.toLowerCase().includes("pro feature") || code === "TOPIC_RESTRICTED") {
-                    alert("✨ This feature requires a Pro subscription. Please upgrade to access it.");
+                    await appConfirm("This feature requires a Pro subscription.", { title: "✨ Pro Feature", confirmLabel: "OK" });
                 } else {
-                    alert("⚠️ You've reached your free message limit. Please upgrade to Pro to continue chatting.");
+                    await appConfirm("You've reached your free message limit. Upgrade to Pro to continue.", { title: "Usage Limit Reached", confirmLabel: "OK" });
                 }
                 setShowUpgradeModal(true);
             } else {
@@ -2196,7 +2260,7 @@ ${codeContext}` : ""}${projectContext}`
     }
 
     async function deleteProject(id: string) {
-        if (!confirm("Delete project? Conversations will be unassigned.")) return;
+        if (!await appConfirm("Delete this project? Conversations will be unassigned.", { title: "Delete Project", confirmLabel: "Delete", danger: true })) return;
         setProjects(p => p.filter(x => x.id !== id));
         setConvProjects(prev => {
             const next = { ...prev };
@@ -2332,7 +2396,7 @@ ${codeContext}` : ""}${projectContext}`
     }
 
     function deletePreset(id: string) {
-        if (!confirm('Delete this preset?')) return;
+        if (!await appConfirm('Delete this preset?', { title: 'Delete Preset', confirmLabel: 'Delete', danger: true })) return;
         setPromptPresets(prev => prev.filter(p => p.id !== id));
     }
 
@@ -2509,7 +2573,7 @@ ${codeContext}` : ""}${projectContext}`
                                     ⚙️ Settings
                                 </button>
                                 <button type="button"
-                                    onClick={async () => { if (confirm('Sign out?')) await supabase.auth.signOut(); }}
+                                    onClick={async () => { if (await appConfirm('Sign out?', { title: 'Sign Out', confirmLabel: 'Sign out' })) await supabase.auth.signOut(); }}
                                     style={{ flex: 1, padding: '10px', borderRadius: '10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                                     Sign out
                                 </button>
@@ -2773,6 +2837,7 @@ ${codeContext}` : ""}${projectContext}`
     return (
         <div className="flex h-screen overflow-hidden">
             <ToastContainer />
+            <ConfirmModal />
             {/* Projects Page Overlay */}
             {showProjectsPage && (
                 <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'var(--bg-primary)' }}>
@@ -3545,7 +3610,7 @@ ${codeContext}` : ""}${projectContext}`
                         )}
                         <button type="button"
                             onClick={async () => {
-                                if (confirm("Sign out?")) {
+                                if (await appConfirm("Sign out?", { title: "Sign Out", confirmLabel: "Sign out" })) {
                                     await supabase.auth.signOut();
                                 }
                             }}
@@ -4433,7 +4498,7 @@ ${codeContext}` : ""}${projectContext}`
                                                                 const proj = projects.find(p => p.id === activeConvProjectId);
                                                                 const files = proj ? (projectFiles[proj.id] ?? []) : [];
                                                                 if (!proj || files.length === 0) {
-                                                                    alert('No project files to export. Assign this chat to a project with files first.');
+                                                                    await appConfirm('No project files to export. Assign this chat to a project with files first.', { title: 'Nothing to Export', confirmLabel: 'OK' });
                                                                     setExportDropdownOpen(false);
                                                                     return;
                                                                 }
@@ -4580,8 +4645,9 @@ ${codeContext}` : ""}${projectContext}`
 
                                                 // If we had unsaved changes, ask user before switching
                                                 if (hasUnsavedChanges && codeText !== unsavedCode) {
-                                                    const confirmSwitch = confirm(
-                                                        "You have unsaved changes. Switch to saved snippet anyway?"
+                                                    const confirmSwitch = await appConfirm(
+                                                        "You have unsaved changes. Switch anyway?",
+                                                        { title: "Unsaved Changes", confirmLabel: "Switch", danger: true }
                                                     );
                                                     if (!confirmSwitch) {
                                                         // Reset dropdown to current selection
@@ -4638,8 +4704,9 @@ ${codeContext}` : ""}${projectContext}`
                                                 if (!activeCodeId) return;
 
                                                 if (!giveAiAccessToCode) {
-                                                    const ok = confirm(
-                                                        "Give the AI access to the selected saved snippet?\n\nThis will include the snippet code in your next message so the AI can edit it.",
+                                                    const ok = await appConfirm(
+                                                        "Give the AI access to this snippet? The code will be included in your next message so the AI can edit it.",
+                                                        { title: "Give AI Access", confirmLabel: "Give access" }
                                                     );
                                                     if (!ok) return;
                                                     setGiveAiAccessToCode(true);
@@ -5373,7 +5440,7 @@ ${codeContext}` : ""}${projectContext}`
                                                                                 onClick={async (e) => {
                                                                                     e.stopPropagation();
                                                                                     if (!activeCodeId) return;
-                                                                                    if (confirm(`Restore version ${version.version_number}?`)) {
+                                                                                    if (await appConfirm(`Restore version ${version.version_number}?`, { title: "Restore Version", confirmLabel: "Restore" })) {
                                                                                         try {
                                                                                             setLoadingSnippets(true);
                                                                                             const res = await restoreSnippetVersion(activeCodeId, version.version_number);
