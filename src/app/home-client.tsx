@@ -306,6 +306,7 @@ export default function HomeClient() {
     const [fileTreeWidth, setFileTreeWidth] = useState(220); // px
     const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
     const [activeFileId, setActiveFileId] = useState<string | null>(null);
+    const [activeFileName, setActiveFileName] = useState<string | null>(null);
     const draggingRef = useRef<null | "sidebar" | "code" | "filetree">(null);
 
     // Explorer overlay menus
@@ -856,6 +857,7 @@ export default function HomeClient() {
         setUnsavedCode("");
         setHasUnsavedChanges(false);
         setActiveCodeId(null);
+        setActiveFileName(null);
         setGiveAiAccessToCode(false);
 
         // Add empty state to history
@@ -1710,7 +1712,7 @@ ${codeContext}` : ""}${projectContext}`
                 : `${payload.text}${projectContext}`;
 
             const codeToSend = undefined;
-            const activeDomain = selectedDomain !== 'auto' ? selectedDomain : undefined;
+            const activeDomain = isAskingAboutCode ? 'readonly' : (selectedDomain !== 'auto' ? selectedDomain : undefined);
             const res = await streamMessage(finalText, cid, controller.signal, codeToSend, promptDisplayMode, activeDomain);
 
 
@@ -1938,7 +1940,7 @@ ${payload.text}${codeContext ? `
 ${codeContext}` : ""}${projectContext}`
                 : `${payload.text}${projectContext}`;
 
-            const activeDomain = selectedDomain !== 'auto' ? selectedDomain : undefined;
+            const activeDomain = isAskingAboutCode ? 'readonly' : (selectedDomain !== 'auto' ? selectedDomain : undefined);
             const res = await streamMessage(finalText, payload.conversationId, controller.signal, undefined, promptDisplayMode, activeDomain);
             let streamed = "";
             let sawDone = false;
@@ -2617,17 +2619,20 @@ ${codeContext}` : ""}${projectContext}`
                         <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', flexShrink: 0 }}>
                             <select
                                 style={{ width: '100%', fontSize: '13px', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}
-                                value={activeCodeId ?? (hasUnsavedChanges ? UNSAVED_ID : '')}
+                                value={activeCodeId ?? (activeFileName ? 'project-file' : hasUnsavedChanges ? UNSAVED_ID : '')}
                                 onChange={async e => {
                                     const id = e.target.value || null;
-                                    if (id === UNSAVED_ID) { setActiveCodeId(null); setCodeText(unsavedCode); return; }
+                                    if (id === UNSAVED_ID) { setActiveCodeId(null); setActiveFileName(null); setCodeText(unsavedCode); return; }
+                                    if (id === 'project-file') return;
                                     setActiveCodeId(id);
+                                    setActiveFileName(null);
                                     setHasUnsavedChanges(false);
                                     const found = savedCodes.find(s => s.id === id);
                                     if (found && id) { setCodeText(found.code); addToHistory(found.code); runDiagnostics(found.code); await loadVersions(id); }
                                 }}>
                                 <option value="">Saved snippets…</option>
-                                {hasUnsavedChanges && <option value={UNSAVED_ID}>📝 Unsaved (new)</option>}
+                                {activeFileName && <option value="project-file">📄 {activeFileName}</option>}
+                                {hasUnsavedChanges && !activeFileName && <option value={UNSAVED_ID}>📝 Unsaved (new)</option>}
                                 {savedCodes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
                         </div>
@@ -3487,6 +3492,7 @@ ${codeContext}` : ""}${projectContext}`
                                                                     style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px 3px 24px', cursor: 'pointer', fontSize: '11px', color: isActiveFile ? 'var(--accent)' : 'var(--text-muted)', background: isActiveFile ? 'var(--accent-glow)' : 'transparent', borderLeft: isActiveFile ? '2px solid var(--accent)' : '2px solid transparent' }}
                                                                     onClick={() => {
                                                                         setActiveFileId(file.id);
+                                                                        setActiveFileName(file.name);
                                                                         setCodeText(file.content);
                                                                         setUnsavedCode(file.content);
                                                                         setHasUnsavedChanges(false);
@@ -4636,13 +4642,17 @@ ${codeContext}` : ""}${projectContext}`
                                     <div className="flex items-center gap-2">
                                         <select
                                             className="border rounded px-2 py-1 text-sm"
-                                            value={activeCodeId ?? (hasUnsavedChanges ? UNSAVED_ID : "")}
+                                            value={activeCodeId ?? (activeFileName ? 'project-file' : hasUnsavedChanges ? UNSAVED_ID : "")}
                                             onChange={async (e) => {
                                                 const id = e.target.value || null;
+
+                                                // Handle project file selection (read-only, no switch needed)
+                                                if (id === 'project-file') return;
 
                                                 // Handle unsaved selection
                                                 if (id === UNSAVED_ID) {
                                                     setActiveCodeId(null);
+                                                    setActiveFileName(null);
                                                     setCodeText(unsavedCode);
                                                     setGiveAiAccessToCode(false);
                                                     setShowVersions(false);
@@ -4656,15 +4666,15 @@ ${codeContext}` : ""}${projectContext}`
                                                         { title: "Unsaved Changes", confirmLabel: "Switch", danger: true }
                                                     );
                                                     if (!confirmSwitch) {
-                                                        // Reset dropdown to current selection
-                                                        e.target.value = activeCodeId ?? (hasUnsavedChanges ? UNSAVED_ID : "");
+                                                        e.target.value = activeCodeId ?? (activeFileName ? 'project-file' : hasUnsavedChanges ? UNSAVED_ID : "");
                                                         return;
                                                     }
                                                 }
 
                                                 setActiveCodeId(id);
+                                                setActiveFileName(null);
                                                 setGiveAiAccessToCode(false);
-                                                setHasUnsavedChanges(false); // Switching to saved snippet clears unsaved flag
+                                                setHasUnsavedChanges(false);
 
                                                 const found = savedCodes.find((s) => s.id === id);
                                                 if (found && id) {
@@ -4681,7 +4691,10 @@ ${codeContext}` : ""}${projectContext}`
                                             }}
                                         >
                                             <option value="">Saved snippets…</option>
-                                            {hasUnsavedChanges && (
+                                            {activeFileName && (
+                                                <option value="project-file">📄 {activeFileName}</option>
+                                            )}
+                                            {hasUnsavedChanges && !activeFileName && (
                                                 <option value={UNSAVED_ID}>📝 Unsaved (new)</option>
                                             )}
                                             {savedCodes.map((s) => (
