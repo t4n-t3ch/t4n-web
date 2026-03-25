@@ -2230,28 +2230,38 @@ Project description: ${newProjectPrompt.trim()}`
                 const projectId = projRes.data.id;
                 setProjects(p => [...p, { id: projectId, name: parsed.name, description: parsed.description ?? null, ai_instructions: parsed.ai_instructions ?? null, emoji: parsed.emoji ?? '🗂️', color, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }]);
                 // Create a conversation branch for each section
+                // Detect language once from the project description + AI instructions
+                const instrLower = (parsed.ai_instructions ?? '' + newProjectPrompt).toLowerCase();
+                const lang = instrLower.includes('unity') || instrLower.includes('c#') ? 'C# for Unity'
+                    : instrLower.includes('python') ? 'Python'
+                    : instrLower.includes('pine') || instrLower.includes('tradingview') ? 'Pine Script v5'
+                    : instrLower.includes('react') || instrLower.includes('next') ? 'TypeScript React'
+                    : instrLower.includes('javascript') ? 'JavaScript'
+                    : instrLower.includes('blender') ? 'Python for Blender (bpy)'
+                    : 'TypeScript';
+                const ext = lang.includes('C#') ? 'cs'
+                    : lang.includes('Python') ? 'py'
+                    : lang.includes('Pine') ? 'pine'
+                    : 'ts';
+
                 for (const branch of (parsed.branches ?? [])) {
                     try {
                         const convRes = await createConversation();
                         if (convRes?.ok) {
                             const convId = convRes.data.conversationId;
-                            // Set title + project in separate calls so neither overwrites the other
-                            await renameConversation(convId, branch.title);
+                            // Assign to project first
                             await assignConversationToProject(convId, projectId);
                             setConversations(prev => [{ id: convId, title: branch.title, updated_at: new Date().toISOString() }, ...prev]);
                             setTitles(prev => ({ ...prev, [convId]: branch.title }));
                             setConvProjects(prev => ({ ...prev, [convId]: projectId }));
-                            // Seed branch with a starter prompt so the AI generates initial code
-                            const starterPrompt = `You are building the "${branch.title}" module for "${parsed.name}". ${branch.description ? `This covers: ${branch.description}. ` : ''}Generate a complete, well-commented starter code file for this module with placeholder functions and a solid foundation to build on. Use the most appropriate language/framework for this project type.`;
+                            // Seed with starter code — language is explicit, no guessing
+                            const starterPrompt = `Generate a complete, well-commented ${lang} starter file for the "${branch.title}" module of "${parsed.name}".${branch.description ? ` This module covers: ${branch.description}.` : ''} Include placeholder functions with clear TODO comments. Output ONLY the raw ${lang} code with no explanation or markdown.`;
                             const msgRes = await apiSendMessage(starterPrompt, convId);
-                            // Save the AI reply as a project file
+                            // Rename AFTER sendMessage so it is the final title written to DB
+                            await renameConversation(convId, branch.title);
+                            setTitles(prev => ({ ...prev, [convId]: branch.title }));
+                            // Save as project file
                             if (msgRes.ok && msgRes.data.reply) {
-                                const instrLower = (parsed.ai_instructions ?? '').toLowerCase();
-                                const ext = instrLower.includes('unity') || instrLower.includes('c#') ? 'cs'
-                                    : instrLower.includes('python') ? 'py'
-                                    : instrLower.includes('pine') ? 'pine'
-                                    : 'ts';
-                                // Strip markdown code fences so the file contains raw code only
                                 const rawCode = msgRes.data.reply
                                     .replace(/^```[\w]*\n?/gm, '')
                                     .replace(/^```$/gm, '')
