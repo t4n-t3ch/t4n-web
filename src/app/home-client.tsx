@@ -4706,7 +4706,7 @@ ${codeContext}` : ""}${projectContext}`
                                                         ? "AI sees first ~200 lines. For deep changes, describe the section by name (e.g. 'edit the ENTRY CONDITIONS section')"
                                                         : "Click to allow AI to see this snippet"
                                             }
-                                            onClick={() => {
+                                            onClick={async () => {
                                                 if (!activeCodeId) return;
 
                                                 if (!giveAiAccessToCode) {
