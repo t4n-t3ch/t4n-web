@@ -349,13 +349,6 @@ export default function HomeClient() {
     const [codeOpen, setCodeOpen] = useState(false);
     const [codeText, setCodeText] = useState<string>("");
 
-    // Auto-detect language whenever code changes (unless user manually picked one)
-    useEffect(() => {
-        if (!codeText.trim() || codeText.length < 40) return;
-        if (!autoDetectRef.current) return;
-        setSelectedDomain(detectLanguage(codeText));
-    }, [codeText]); // eslint-disable-line react-hooks/exhaustive-deps
-
     // Undo/Redo for code canvas
     const [codeHistory, setCodeHistory] = useState<string[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
@@ -430,8 +423,7 @@ export default function HomeClient() {
     }, [promptPresets]);
 
     // Domain / language selection
-    const [selectedDomain, setSelectedDomain] = useState<string>('pinescript');
-    const autoDetectRef = useRef(true); // false = user manually chose
+    const [selectedDomain, setSelectedDomain] = useState<string>('auto');
 
     // Inline AI code actions
     const [inlineActionBusy, setInlineActionBusy] = useState(false);
@@ -1700,29 +1692,22 @@ ${codeContext}` : ""}${projectContext}`
 
                     // HARD RULE: if ANY code detected, chat shows ONLY the hint (no code, no mixed text)
                     // Set a simple neutral description when code is first detected
-                    if (extracted && wantsCodeRef.current && !descriptionGenerated && promptDisplayMode === 'description') {
-                        const newDescription = "\n\n**Code updated** — open the Code panel to review changes.";
-                        descriptionRef.current = newDescription;
-                        setCodeDescription(newDescription);
-                        setDescriptionGenerated(true);
-                    }
-
-                    // Determine what message to show based on display mode and event type
+                    // Determine what message to show
                     let messageToShow = "";
-
-                    // During streaming, use the ref value if available, otherwise use state
-                    const currentDescription = descriptionRef.current || codeDescription;
-
                     const isCtrlFResponse = /ctrl\+f:/i.test(streamed);
+                    const prose = stripCodeBlocks(streamed).trim();
 
                     if (isCtrlFResponse) {
-                        messageToShow = streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim();
-                    } else if (promptDisplayMode === 'description' && currentDescription && extracted) {
-                        messageToShow = `[Code generated → open the Code panel]${currentDescription}`;
+                        messageToShow = streamed; // Ctrl+F renderer handles it
+                    } else if (extracted && promptDisplayMode === 'description') {
+                        // Show [Code generated] header + actual AI prose description
+                        messageToShow = prose
+                            ? `[Code generated → open the Code panel]\n\n${prose}`
+                            : "[Code generated → open the Code panel]";
                     } else if (extracted) {
                         messageToShow = "[Code generated → open the Code panel]";
                     } else {
-                        messageToShow = stripCodeBlocks(streamed);
+                        messageToShow = prose || stripCodeBlocks(streamed);
                     }
 
                     setMessages((m) =>
@@ -1928,29 +1913,22 @@ ${codeContext}` : ""}${projectContext}`
                     }
 
                     // Generate description only once when code is first detected (only if description mode is enabled)
-                    if (extracted && wantsCodeRef.current && !descriptionGenerated && promptDisplayMode === 'description') {
-                        const newDescription = "\n\n**Code updated** — open the Code panel to review changes.";
-                        descriptionRef.current = newDescription;
-                        setCodeDescription(newDescription);
-                        setDescriptionGenerated(true);
-                    }
-
-                    // Determine what message to show based on display mode and event type
+                    // Determine what message to show
                     let messageToShow = "";
-
-                    // During streaming, use the ref value if available, otherwise use state
-                    const currentDescription = descriptionRef.current || codeDescription;
-
                     const isCtrlFResponse = /ctrl\+f:/i.test(streamed);
+                    const prose = stripCodeBlocks(streamed).trim();
 
                     if (isCtrlFResponse) {
-                        messageToShow = streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim();
-                    } else if (promptDisplayMode === 'description' && currentDescription && extracted) {
-                        messageToShow = `[Code generated → open the Code panel]${currentDescription}`;
+                        messageToShow = streamed; // Ctrl+F renderer handles it
+                    } else if (extracted && promptDisplayMode === 'description') {
+                        // Show [Code generated] header + actual AI prose description
+                        messageToShow = prose
+                            ? `[Code generated → open the Code panel]\n\n${prose}`
+                            : "[Code generated → open the Code panel]";
                     } else if (extracted) {
                         messageToShow = "[Code generated → open the Code panel]";
                     } else {
-                        messageToShow = stripCodeBlocks(streamed);
+                        messageToShow = prose || stripCodeBlocks(streamed);
                     }
 
                     setMessages((m) =>
@@ -2543,8 +2521,9 @@ ${codeContext}` : ""}${projectContext}`
                             <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
                                 onClick={async () => { try { await navigator.clipboard.writeText(codeText || ''); showToast('Code copied!'); } catch { showToast('Copy failed', 'error'); } }}
                                 disabled={!codeText.trim()}>Copy</button>
-                            <select value={selectedDomain} onChange={e => { autoDetectRef.current = false; setSelectedDomain(e.target.value); }}
+                            <select value={selectedDomain} onChange={e => { const v = e.target.value; if (v === 'auto') setSelectedDomain(detectLanguage(codeText)); else setSelectedDomain(v); }}
                                 style={{ fontSize: '12px', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                <option value="auto">🔍 Auto-detect</option>
                                 <option value="pinescript">🌲 Pine Script</option>
                                 <option value="ctrader">📊 cTrader</option>
                                 <option value="python">🐍 Python</option>
@@ -2588,6 +2567,7 @@ ${codeContext}` : ""}${projectContext}`
                                 runDiagnostics(v);
                                 if (activeCodeId) { setHasUnsavedChanges(true); }
                                 else if (v.trim()) { setUnsavedCode(v); setHasUnsavedChanges(true); setActiveCodeId(null); }
+                                if (v.length > 80 && selectedDomain === 'auto') setSelectedDomain(detectLanguage(v));
                             }}
                             onKeyDown={e => {
                                 if (e.key === 'Tab') {
@@ -4511,22 +4491,17 @@ ${codeContext}` : ""}${projectContext}`
                                     <select
                                         value={selectedDomain}
                                         onChange={(e) => {
-                                            autoDetectRef.current = false;
-                                            setSelectedDomain(e.target.value);
-                                            // Warn if mismatch
-                                            if (codeText.trim()) {
-                                                const detected = detectLanguage(codeText);
-                                                if (detected !== e.target.value && detected !== 'generic') {
-                                                    setDiagnostics(prev => [{ line: 1, col: 1, endCol: 1, severity: 'warning' as const, message: `⚠ Selected language (${e.target.value}) may not match detected language (${detected})`, code: 'LANG_MISMATCH' }, ...prev.filter(d => d.code !== 'LANG_MISMATCH')]);
-                                                    setDiagnosticsOpen(true);
-                                                } else {
-                                                    setDiagnostics(prev => prev.filter(d => d.code !== 'LANG_MISMATCH'));
-                                                }
+                                            const val = e.target.value;
+                                            if (val === 'auto') {
+                                                setSelectedDomain(detectLanguage(codeText));
+                                            } else {
+                                                setSelectedDomain(val);
                                             }
                                         }}
                                         style={{ fontSize: '11px', padding: '3px 6px', borderRadius: '5px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
                                         title="Select language / domain"
                                     >
+                                        <option value="auto">🔍 Auto-detect</option>
                                         <option value="pinescript">🌲 Pine Script</option>
                                         <option value="ctrader">📊 cTrader</option>
                                         <option value="python">🐍 Python</option>
@@ -4610,7 +4585,6 @@ ${codeContext}` : ""}${projectContext}`
                                                     setCodeText(found.code);
                                                     addToHistory(found.code);
                                                     runDiagnostics(found.code);
-                                                    if (autoDetectRef.current) setSelectedDomain(detectLanguage(found.code));
                                                     await loadVersions(id);
                                                     // Open in tabs if Monaco is on
                                                     if (useMonaco) {
