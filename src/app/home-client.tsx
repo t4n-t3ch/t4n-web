@@ -109,56 +109,6 @@ function useIsMobile() {
 type ToastType = 'success' | 'error' | 'info';
 interface Toast { id: number; message: string; type: ToastType; }
 
-// ── In-app confirm modal (replaces native browser confirm/alert) ──────────────
-function useConfirm() {
-    const [state, setState] = useState<{
-        message: string;
-        title?: string;
-        confirmLabel?: string;
-        danger?: boolean;
-        resolve: (v: boolean) => void;
-    } | null>(null);
-
-    const confirm = (message: string, opts?: { title?: string; confirmLabel?: string; danger?: boolean }) =>
-        new Promise<boolean>((resolve) => setState({ message, resolve, ...opts }));
-
-    const ConfirmModal = () => {
-        if (!state) return null;
-        return (
-            <div
-                style={{ position: 'fixed', inset: 0, zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)', padding: '16px' }}
-                onMouseDown={() => { state.resolve(false); setState(null); }}
-            >
-                <div
-                    style={{ width: '340px', maxWidth: '95vw', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 16px 64px rgba(0,0,0,0.6)', padding: '24px' }}
-                    onMouseDown={e => e.stopPropagation()}
-                >
-                    <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)', marginBottom: '10px' }}>
-                        {state.title ?? 'T4N'}
-                    </div>
-                    <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '20px', whiteSpace: 'pre-line' }}>
-                        {state.message}
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                        <button
-                            type="button"
-                            style={{ padding: '7px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
-                            onClick={() => { state.resolve(false); setState(null); }}
-                        >Cancel</button>
-                        <button
-                            type="button"
-                            style={{ padding: '7px 16px', fontSize: '13px', borderRadius: '6px', border: 'none', background: state.danger ? '#ef4444' : 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
-                            onClick={() => { state.resolve(true); setState(null); }}
-                        >{state.confirmLabel ?? 'OK'}</button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    return { confirm, ConfirmModal };
-}
-
 function useToast() {
     const [toasts, setToasts] = useState<Toast[]>([]);
     let nextId = 0;
@@ -190,7 +140,6 @@ function useToast() {
 
 export default function HomeClient() {
     const { showToast, ToastContainer } = useToast();
-    const { confirm: appConfirm, ConfirmModal } = useConfirm();
     const [session, setSession] = useState<Session | null>(null);
     const [authLoading, setAuthLoading] = useState(true);
     const [authEmail, setAuthEmail] = useState("");
@@ -295,6 +244,11 @@ export default function HomeClient() {
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [projectsLoading, setProjectsLoading] = useState(false);
     const [projectsSynced, setProjectsSynced] = useState(false); // have we loaded from API yet?
+    const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+    const [newProjectMode, setNewProjectMode] = useState<'manual' | 'ai_tree'>('manual');
+    const [newProjectName, setNewProjectName] = useState('');
+    const [newProjectPrompt, setNewProjectPrompt] = useState('');
+    const [newProjectLoading, setNewProjectLoading] = useState(false);
 
     // =========================
     // Layout: resizable panels
@@ -306,7 +260,6 @@ export default function HomeClient() {
     const [fileTreeWidth, setFileTreeWidth] = useState(220); // px
     const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
     const [activeFileId, setActiveFileId] = useState<string | null>(null);
-    const [activeFileName, setActiveFileName] = useState<string | null>(null);
     const draggingRef = useRef<null | "sidebar" | "code" | "filetree">(null);
 
     // Explorer overlay menus
@@ -502,7 +455,6 @@ export default function HomeClient() {
                         if (found) {
                             setActiveCodeId(found.id);
                             setCodeText(found.code);
-                            setSelectedDomain(detectLanguage(found.code));
                         }
                     }
                 }
@@ -645,7 +597,7 @@ export default function HomeClient() {
     }
 
     async function deleteSnippet(id: string) {
-        if (!await appConfirm("Delete this snippet?", { title: "Delete Snippet", confirmLabel: "Delete", danger: true })) return;
+        if (!confirm("Delete this snippet?")) return;
 
         try {
             const res = await apiDeleteSnippet(id);
@@ -667,11 +619,6 @@ export default function HomeClient() {
         return /(\bcode\b|\bscript\b|\btradingview\b|\bpine\b|\bpinescript\b|\bimplement\b|\bwrite\b|\btsx\b|\bts\b|\bjs\b|\bpython\b|\bsql\b|\bendpoint\b|\bapi\b)/i.test(
             text,
         );
-    }
-
-    // Returns true if the message is asking about/referring to existing code in the panel
-    function looksLikeCodeQuestion(text: string): boolean {
-        return /\b(this code|the code|this script|the script|what does|what is|explain|describe|review|analyse|analyze|how does|what are|what\'s it|what is it|summarise|summarize|tell me about|look at)\b/i.test(text);
     }
 
     function detectLanguage(code: string): string {
@@ -848,8 +795,8 @@ export default function HomeClient() {
         }
     }
 
-    async function handleNewCode() {
-        if (codeText.trim() && !await appConfirm("Unsaved changes will be lost.", { title: "Create New Code?", confirmLabel: "Continue", danger: true })) {
+    function handleNewCode() {
+        if (codeText.trim() && !confirm("Create new code? Unsaved changes will be lost.")) {
             return;
         }
 
@@ -858,7 +805,6 @@ export default function HomeClient() {
         setUnsavedCode("");
         setHasUnsavedChanges(false);
         setActiveCodeId(null);
-        setActiveFileName(null);
         setGiveAiAccessToCode(false);
 
         // Add empty state to history
@@ -1403,7 +1349,9 @@ export default function HomeClient() {
             const next = nextRaw.trim();
             const title = next ? next : null;
 
-            const ok = await appConfirm(`Rename to: "${title ?? "(no title)"}"?`, { title: "Rename Conversation", confirmLabel: "Rename" });
+            const ok = confirm(
+                `Are you sure you want to rename this conversation to:\n\n${title ?? "(no title)"}`
+            );
             if (!ok) return;
 
             const res = await renameConversation(conversationId, title);
@@ -1420,7 +1368,7 @@ export default function HomeClient() {
 
     async function handleDeleteConversation(conversationId: string) {
         try {
-            const ok = await appConfirm("Delete this conversation? This cannot be undone.", { title: "Delete Conversation", confirmLabel: "Delete", danger: true });
+            const ok = confirm("Are you sure you want to delete this conversation? This cannot be undone.");
             if (!ok) return;
 
             const res = await deleteConversation(conversationId);
@@ -1694,18 +1642,14 @@ export default function HomeClient() {
                 ? accessLockedCode
                 : codeText;
             const trimmedForPrompt = codeForContext.slice(0, 120000);
-            const langLabel = selectedDomain !== "auto" ? selectedDomain : "code";
-
-            const isAskingAboutCode = looksLikeCodeQuestion(payload.text) && !!codeText.trim();
-            const codeContext = giveAiAccessToCode && codeForContext.trim()
-                ? `\n\nEXISTING CODE (you MUST either give Ctrl+F find-and-replace instructions OR output the FULL corrected file — NEVER output a partial truncated file):\n\`\`\`${langLabel}\n${trimmedForPrompt}\n\`\`\`\n`
-                : isAskingAboutCode
-                    ? `\n\nCODE (read-only — for context only, do NOT rewrite it unless asked):\n\`\`\`${langLabel}\n${trimmedForPrompt}\n\`\`\`\n`
+            const codeContext =
+                giveAiAccessToCode && codeForContext.trim()
+                    ? `\n\nEXISTING CODE (you MUST either give Ctrl+F find-and-replace instructions OR output the FULL corrected file — NEVER output a partial truncated file):\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
                     : "";
 
             const projectContext = buildProjectContext();
 
-            const finalText = (wantsCodeRef.current || giveAiAccessToCode || isAskingAboutCode)
+            const finalText = (wantsCodeRef.current || (giveAiAccessToCode && codeForContext.trim()))
                 ? `USER REQUEST:
 ${payload.text}${codeContext ? `
 
@@ -1713,8 +1657,7 @@ ${codeContext}` : ""}${projectContext}`
                 : `${payload.text}${projectContext}`;
 
             const codeToSend = undefined;
-            const activeDomain = isAskingAboutCode ? 'readonly' : (selectedDomain !== 'auto' ? selectedDomain : undefined);
-            const res = await streamMessage(finalText, cid, controller.signal, codeToSend, promptDisplayMode, activeDomain);
+            const res = await streamMessage(finalText, cid, controller.signal, codeToSend);
 
 
             let streamed = "";
@@ -1735,8 +1678,6 @@ ${codeContext}` : ""}${projectContext}`
 
                         setCodeText(merged);
                         addToHistory(merged);
-                        // Auto-detect language from generated code and update the dropdown
-                        setSelectedDomain(prev => prev === 'auto' ? detectLanguage(merged) : prev);
 
                         // Never mark unsaved or clear activeCodeId when AI edits an existing snippet
                         if (!activeCodeId) {
@@ -1762,11 +1703,7 @@ ${codeContext}` : ""}${projectContext}`
                     const prose = stripCodeBlocks(streamed).trim();
 
                     if (isCtrlFResponse) {
-                        const descMatch = streamed.match(/^Description:\s*(.+)$/m);
-                        const ctrlFDescription = descMatch ? descMatch[1].trim() : "";
-                        messageToShow = ctrlFDescription && promptDisplayMode === 'description'
-                            ? `${streamed}\n\n💬 ${ctrlFDescription}`
-                            : streamed;
+                        messageToShow = streamed; // Ctrl+F renderer handles it
                     } else if (extracted && promptDisplayMode === 'description') {
                         // Show [Code generated] header + actual AI prose description
                         messageToShow = prose
@@ -1775,7 +1712,7 @@ ${codeContext}` : ""}${projectContext}`
                     } else if (extracted) {
                         messageToShow = "[Code generated → open the Code panel]";
                     } else {
-                        messageToShow = prose || stripCodeBlocks(streamed) || (streamed.trim() ? streamed : "");
+                        messageToShow = prose || stripCodeBlocks(streamed);
                     }
 
                     setMessages((m) =>
@@ -1916,33 +1853,26 @@ ${codeContext}` : ""}${projectContext}`
 
             const payload = lastSendRef.current ?? { text: apiText, conversationId: activeId ?? undefined };
 
-            // Use locked snapshot if access was granted, otherwise fall back to live codeText
+            // Use locked snapshot if available, otherwise fall back to live codeText
             const codeForContext = (giveAiAccessToCode && accessLockedCode)
                 ? accessLockedCode
                 : codeText;
             const trimmedForPrompt = codeForContext.slice(0, 120000);
-            const langLabel = selectedDomain !== "auto" ? selectedDomain : "code";
-
-            // Include code as editable context when access is ON
-            // Include code as read-only context when the user is clearly asking about the visible code
-            const isAskingAboutCode = looksLikeCodeQuestion(payload.text) && !!codeText.trim();
-            const codeContext = giveAiAccessToCode && codeForContext.trim()
-                ? `\n\nEXISTING CODE (you MUST either output the FULL corrected file OR give Ctrl+F find-and-replace instructions — NEVER output a partial truncated file):\n\`\`\`${langLabel}\n${trimmedForPrompt}\n\`\`\`\n`
-                : isAskingAboutCode
-                    ? `\n\nCODE (read-only — for context only, do NOT rewrite it unless asked):\n\`\`\`${langLabel}\n${trimmedForPrompt}\n\`\`\`\n`
+            const codeContext =
+                giveAiAccessToCode && codeForContext.trim()
+                    ? `\n\nEXISTING CODE (you MUST either output the FULL corrected file OR give Ctrl+F find-and-replace instructions — NEVER output a partial truncated file):\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
                     : "";
 
             const projectContext = buildProjectContext();
 
-            const finalText = (wantsCodeRef.current || giveAiAccessToCode || isAskingAboutCode)
+            const finalText = (wantsCodeRef.current || (giveAiAccessToCode && codeForContext.trim()))
                 ? `USER REQUEST:
 ${payload.text}${codeContext ? `
 
 ${codeContext}` : ""}${projectContext}`
                 : `${payload.text}${projectContext}`;
 
-            const activeDomain = isAskingAboutCode ? 'readonly' : (selectedDomain !== 'auto' ? selectedDomain : undefined);
-            const res = await streamMessage(finalText, payload.conversationId, controller.signal, undefined, promptDisplayMode, activeDomain);
+            const res = await streamMessage(finalText, payload.conversationId, controller.signal);
             let streamed = "";
             let sawDone = false;
 
@@ -1961,8 +1891,6 @@ ${codeContext}` : ""}${projectContext}`
 
                         setCodeText(merged);
                         addToHistory(merged);
-                        // Auto-detect language from generated code and update the dropdown
-                        setSelectedDomain(prev => prev === 'auto' ? detectLanguage(merged) : prev);
 
                         // Never mark unsaved or clear activeCodeId when AI edits an existing snippet
                         if (!activeCodeId) {
@@ -1996,11 +1924,7 @@ ${codeContext}` : ""}${projectContext}`
                     const prose = stripCodeBlocks(streamed).trim();
 
                     if (isCtrlFResponse) {
-                        const descMatch = streamed.match(/^Description:\s*(.+)$/m);
-                        const ctrlFDescription = descMatch ? descMatch[1].trim() : "";
-                        messageToShow = ctrlFDescription && promptDisplayMode === 'description'
-                            ? `${streamed}\n\n💬 ${ctrlFDescription}`
-                            : streamed;
+                        messageToShow = streamed; // Ctrl+F renderer handles it
                     } else if (extracted && promptDisplayMode === 'description') {
                         // Show [Code generated] header + actual AI prose description
                         messageToShow = prose
@@ -2009,7 +1933,7 @@ ${codeContext}` : ""}${projectContext}`
                     } else if (extracted) {
                         messageToShow = "[Code generated → open the Code panel]";
                     } else {
-                        messageToShow = prose || stripCodeBlocks(streamed) || (streamed.trim() ? streamed : "");
+                        messageToShow = prose || stripCodeBlocks(streamed);
                     }
 
                     setMessages((m) =>
@@ -2102,9 +2026,9 @@ ${codeContext}` : ""}${projectContext}`
             if (isPaywall) {
                 // Show appropriate message based on error type
                 if (msg.toLowerCase().includes("pro feature") || code === "TOPIC_RESTRICTED") {
-                    await appConfirm("This feature requires a Pro subscription.", { title: "✨ Pro Feature", confirmLabel: "OK" });
+                    alert("✨ This feature requires a Pro subscription. Please upgrade to access it.");
                 } else {
-                    await appConfirm("You've reached your free message limit. Upgrade to Pro to continue.", { title: "Usage Limit Reached", confirmLabel: "OK" });
+                    alert("⚠️ You've reached your free message limit. Please upgrade to Pro to continue chatting.");
                 }
                 setShowUpgradeModal(true);
             } else {
@@ -2231,39 +2155,101 @@ ${codeContext}` : ""}${projectContext}`
 
     const PROJECT_COLORS = ['#f97316', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4', '#ef4444'];
 
-    async function createProject() {
-        const name = prompt("Project name:");
-        if (!name?.trim()) return;
-        const color = PROJECT_COLORS[projects.length % PROJECT_COLORS.length];
-        const emoji = '📁';
+    function createProject() {
+        setNewProjectName('');
+        setNewProjectPrompt('');
+        setNewProjectMode('manual');
+        setShowNewProjectModal(true);
+    }
 
-        // Optimistic local add
-        const tempId = globalThis.crypto.randomUUID();
-        const project: Project = {
-            id: tempId,
-            name: name.trim(),
-            description: null,
-            ai_instructions: null,
-            emoji,
-            color,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-        };
-        setProjects(p => [...p, project]);
-
-        try {
-            const res = await apiCreateProject({ name: name.trim(), emoji, color });
-            if (res.ok) {
-                // Replace temp id with real id
-                setProjects(p => p.map(x => x.id === tempId ? { ...x, id: res.data.id } : x));
+    async function submitNewProject() {
+        if (newProjectMode === 'manual') {
+            if (!newProjectName.trim()) return;
+            setShowNewProjectModal(false);
+            const name = newProjectName.trim();
+            const color = PROJECT_COLORS[projects.length % PROJECT_COLORS.length];
+            const emoji = '📁';
+            const tempId = globalThis.crypto.randomUUID();
+            const project: Project = { id: tempId, name, description: null, ai_instructions: null, emoji, color, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+            setProjects(p => [...p, project]);
+            try {
+                const res = await apiCreateProject({ name, emoji, color });
+                if (res.ok) setProjects(p => p.map(x => x.id === tempId ? { ...x, id: res.data.id } : x));
+            } catch (e) { console.error("Failed to create project:", e); }
+        } else {
+            // AI Tree mode
+            if (!newProjectPrompt.trim()) return;
+            setNewProjectLoading(true);
+            try {
+                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
+                const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
+                const { data: { session: currentSession } } = await supabase.auth.getSession();
+                const token = currentSession?.access_token ?? "";
+                const res = await fetch(`${API_BASE}/api/anthropic`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({
+                        model: 'claude-sonnet-4-20250514',
+                        max_tokens: 1000,
+                        messages: [{
+                            role: 'user',
+                            content: `You are a project scaffolding assistant. Given a project description, return ONLY a JSON object (no markdown, no backticks) with this shape:
+{
+  "name": "Short project name",
+  "emoji": "relevant emoji",
+  "description": "One sentence description",
+  "ai_instructions": "Domain-specific AI instructions for this project type",
+  "branches": [
+    { "title": "Branch name", "description": "What this branch covers" },
+    ...
+  ]
+}
+Generate 3-6 branches representing the major functional areas of the project. Branch names should be specific and code-relevant (e.g. "Player Controller", "Enemy AI", "Inventory System").
+Project description: ${newProjectPrompt.trim()}`
+                        }]
+                    })
+                });
+                const data = await res.json();
+                const text = (data.content || []).map((b: { type: string; text?: string }) => b.type === 'text' ? b.text : '').join('');
+                const clean = text.replace(/```json|```/g, '').trim();
+                const parsed = JSON.parse(clean);
+                const color = PROJECT_COLORS[projects.length % PROJECT_COLORS.length];
+                setShowNewProjectModal(false);
+                setNewProjectLoading(false);
+                // Create the parent project
+                const projRes = await apiCreateProject({
+                    name: parsed.name,
+                    emoji: parsed.emoji ?? '🗂️',
+                    color,
+                    description: parsed.description ?? null,
+                    ai_instructions: parsed.ai_instructions ?? null,
+                });
+                if (!projRes.ok) return;
+                const projectId = projRes.data.id;
+                setProjects(p => [...p, { id: projectId, name: parsed.name, description: parsed.description ?? null, ai_instructions: parsed.ai_instructions ?? null, emoji: parsed.emoji ?? '🗂️', color, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }]);
+                // Create a conversation branch for each section
+                for (const branch of (parsed.branches ?? [])) {
+                    try {
+                        const convRes = await createConversation();
+                        if (convRes?.ok) {
+                            const convId = convRes.data.conversationId;
+                            await renameConversation(convId, branch.title);
+                            await fetch(`${API_BASE}/api/conversations/${convId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ project_id: projectId }) });
+                            setConversations(prev => [{ id: convId, title: branch.title, updated_at: new Date().toISOString() }, ...prev]);
+                            setConvProjects(prev => ({ ...prev, [convId]: projectId }));
+                        }
+                    } catch (e) { console.error('Branch creation failed:', e); }
+                }
+                setActiveProjectFilter(projectId);
+            } catch (e) {
+                console.error('AI tree generation failed:', e);
+                setNewProjectLoading(false);
             }
-        } catch (e) {
-            console.error("Failed to create project:", e);
         }
     }
 
     async function deleteProject(id: string) {
-        if (!await appConfirm("Delete this project? Conversations will be unassigned.", { title: "Delete Project", confirmLabel: "Delete", danger: true })) return;
+        if (!confirm("Delete project? Conversations will be unassigned.")) return;
         setProjects(p => p.filter(x => x.id !== id));
         setConvProjects(prev => {
             const next = { ...prev };
@@ -2398,8 +2384,8 @@ ${codeContext}` : ""}${projectContext}`
         setPresetPromptInput('');
     }
 
-    async function deletePreset(id: string) {
-        if (!await appConfirm('Delete this preset?', { title: 'Delete Preset', confirmLabel: 'Delete', danger: true })) return;
+    function deletePreset(id: string) {
+        if (!confirm('Delete this preset?')) return;
         setPromptPresets(prev => prev.filter(p => p.id !== id));
     }
 
@@ -2576,7 +2562,7 @@ ${codeContext}` : ""}${projectContext}`
                                     ⚙️ Settings
                                 </button>
                                 <button type="button"
-                                    onClick={async () => { if (await appConfirm('Sign out?', { title: 'Sign Out', confirmLabel: 'Sign out' })) await supabase.auth.signOut(); }}
+                                    onClick={async () => { if (confirm('Sign out?')) await supabase.auth.signOut(); }}
                                     style={{ flex: 1, padding: '10px', borderRadius: '10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                                     Sign out
                                 </button>
@@ -2620,20 +2606,17 @@ ${codeContext}` : ""}${projectContext}`
                         <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', flexShrink: 0 }}>
                             <select
                                 style={{ width: '100%', fontSize: '13px', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}
-                                value={activeCodeId ?? (activeFileName ? 'project-file' : hasUnsavedChanges ? UNSAVED_ID : '')}
+                                value={activeCodeId ?? (hasUnsavedChanges ? UNSAVED_ID : '')}
                                 onChange={async e => {
                                     const id = e.target.value || null;
-                                    if (id === UNSAVED_ID) { setActiveCodeId(null); setActiveFileName(null); setCodeText(unsavedCode); return; }
-                                    if (id === 'project-file') return;
+                                    if (id === UNSAVED_ID) { setActiveCodeId(null); setCodeText(unsavedCode); return; }
                                     setActiveCodeId(id);
-                                    setActiveFileName(null);
                                     setHasUnsavedChanges(false);
                                     const found = savedCodes.find(s => s.id === id);
-                                    if (found && id) { setCodeText(found.code); addToHistory(found.code); runDiagnostics(found.code); setSelectedDomain(prev => prev === 'auto' ? detectLanguage(found.code) : prev); await loadVersions(id); }
+                                    if (found && id) { setCodeText(found.code); addToHistory(found.code); runDiagnostics(found.code); await loadVersions(id); }
                                 }}>
                                 <option value="">Saved snippets…</option>
-                                {activeFileName && <option value="project-file">📄 {activeFileName}</option>}
-                                {hasUnsavedChanges && !activeFileName && <option value={UNSAVED_ID}>📝 Unsaved (new)</option>}
+                                {hasUnsavedChanges && <option value={UNSAVED_ID}>📝 Unsaved (new)</option>}
                                 {savedCodes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
                         </div>
@@ -2843,7 +2826,6 @@ ${codeContext}` : ""}${projectContext}`
     return (
         <div className="flex h-screen overflow-hidden">
             <ToastContainer />
-            <ConfirmModal />
             {/* Projects Page Overlay */}
             {showProjectsPage && (
                 <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'var(--bg-primary)' }}>
@@ -3456,12 +3438,6 @@ ${codeContext}` : ""}${projectContext}`
                                                         style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 5px', lineHeight: 1.4 }}
                                                         onClick={() => setExplorerOverlay({ type: 'link-chat', projectId: proj.id })}
                                                     >💬+</button>
-                                                    <button
-                                                        type="button"
-                                                        title="Delete project"
-                                                        style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: '#f87171', padding: '1px 5px', lineHeight: 1.4 }}
-                                                        onClick={() => void deleteProject(proj.id)}
-                                                    >🗑</button>
                                                 </div>
                                             </div>
 
@@ -3493,15 +3469,12 @@ ${codeContext}` : ""}${projectContext}`
                                                                     style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px 3px 24px', cursor: 'pointer', fontSize: '11px', color: isActiveFile ? 'var(--accent)' : 'var(--text-muted)', background: isActiveFile ? 'var(--accent-glow)' : 'transparent', borderLeft: isActiveFile ? '2px solid var(--accent)' : '2px solid transparent' }}
                                                                     onClick={() => {
                                                                         setActiveFileId(file.id);
-                                                                        setActiveFileName(file.name);
                                                                         setCodeText(file.content);
                                                                         setUnsavedCode(file.content);
                                                                         setHasUnsavedChanges(false);
                                                                         setActiveCodeId(null);
                                                                         setCodeOpen(true);
                                                                         addToHistory(file.content);
-                                                                        // Auto-detect language from file content
-                                                                        setSelectedDomain(detectLanguage(file.content));
                                                                     }}
                                                                 >
                                                                     <span>{icon}</span>
@@ -3625,7 +3598,7 @@ ${codeContext}` : ""}${projectContext}`
                         )}
                         <button type="button"
                             onClick={async () => {
-                                if (await appConfirm("Sign out?", { title: "Sign Out", confirmLabel: "Sign out" })) {
+                                if (confirm("Sign out?")) {
                                     await supabase.auth.signOut();
                                 }
                             }}
@@ -4513,7 +4486,7 @@ ${codeContext}` : ""}${projectContext}`
                                                                 const proj = projects.find(p => p.id === activeConvProjectId);
                                                                 const files = proj ? (projectFiles[proj.id] ?? []) : [];
                                                                 if (!proj || files.length === 0) {
-                                                                    await appConfirm('No project files to export. Assign this chat to a project with files first.', { title: 'Nothing to Export', confirmLabel: 'OK' });
+                                                                    alert('No project files to export. Assign this chat to a project with files first.');
                                                                     setExportDropdownOpen(false);
                                                                     return;
                                                                 }
@@ -4645,17 +4618,13 @@ ${codeContext}` : ""}${projectContext}`
                                     <div className="flex items-center gap-2">
                                         <select
                                             className="border rounded px-2 py-1 text-sm"
-                                            value={activeCodeId ?? (activeFileName ? 'project-file' : hasUnsavedChanges ? UNSAVED_ID : "")}
+                                            value={activeCodeId ?? (hasUnsavedChanges ? UNSAVED_ID : "")}
                                             onChange={async (e) => {
                                                 const id = e.target.value || null;
-
-                                                // Handle project file selection (read-only, no switch needed)
-                                                if (id === 'project-file') return;
 
                                                 // Handle unsaved selection
                                                 if (id === UNSAVED_ID) {
                                                     setActiveCodeId(null);
-                                                    setActiveFileName(null);
                                                     setCodeText(unsavedCode);
                                                     setGiveAiAccessToCode(false);
                                                     setShowVersions(false);
@@ -4664,28 +4633,25 @@ ${codeContext}` : ""}${projectContext}`
 
                                                 // If we had unsaved changes, ask user before switching
                                                 if (hasUnsavedChanges && codeText !== unsavedCode) {
-                                                    const confirmSwitch = await appConfirm(
-                                                        "You have unsaved changes. Switch anyway?",
-                                                        { title: "Unsaved Changes", confirmLabel: "Switch", danger: true }
+                                                    const confirmSwitch = confirm(
+                                                        "You have unsaved changes. Switch to saved snippet anyway?"
                                                     );
                                                     if (!confirmSwitch) {
-                                                        e.target.value = activeCodeId ?? (activeFileName ? 'project-file' : hasUnsavedChanges ? UNSAVED_ID : "");
+                                                        // Reset dropdown to current selection
+                                                        e.target.value = activeCodeId ?? (hasUnsavedChanges ? UNSAVED_ID : "");
                                                         return;
                                                     }
                                                 }
 
                                                 setActiveCodeId(id);
-                                                setActiveFileName(null);
                                                 setGiveAiAccessToCode(false);
-                                                setHasUnsavedChanges(false);
+                                                setHasUnsavedChanges(false); // Switching to saved snippet clears unsaved flag
 
                                                 const found = savedCodes.find((s) => s.id === id);
                                                 if (found && id) {
                                                     setCodeText(found.code);
                                                     addToHistory(found.code);
                                                     runDiagnostics(found.code);
-                                                    // Auto-detect language from snippet
-                                                    setSelectedDomain(prev => prev === 'auto' ? detectLanguage(found.code) : prev);
                                                     await loadVersions(id);
                                                     // Open in tabs if Monaco is on
                                                     if (useMonaco) {
@@ -4696,10 +4662,7 @@ ${codeContext}` : ""}${projectContext}`
                                             }}
                                         >
                                             <option value="">Saved snippets…</option>
-                                            {activeFileName && (
-                                                <option value="project-file">📄 {activeFileName}</option>
-                                            )}
-                                            {hasUnsavedChanges && !activeFileName && (
+                                            {hasUnsavedChanges && (
                                                 <option value={UNSAVED_ID}>📝 Unsaved (new)</option>
                                             )}
                                             {savedCodes.map((s) => (
@@ -4724,13 +4687,12 @@ ${codeContext}` : ""}${projectContext}`
                                                         ? "AI sees first ~200 lines. For deep changes, describe the section by name (e.g. 'edit the ENTRY CONDITIONS section')"
                                                         : "Click to allow AI to see this snippet"
                                             }
-                                            onClick={async () => {
+                                            onClick={() => {
                                                 if (!activeCodeId) return;
 
                                                 if (!giveAiAccessToCode) {
-                                                    const ok = await appConfirm(
-                                                        "Give the AI access to this snippet? The code will be included in your next message so the AI can edit it.",
-                                                        { title: "Give AI Access", confirmLabel: "Give access" }
+                                                    const ok = confirm(
+                                                        "Give the AI access to the selected saved snippet?\n\nThis will include the snippet code in your next message so the AI can edit it.",
                                                     );
                                                     if (!ok) return;
                                                     setGiveAiAccessToCode(true);
@@ -5110,10 +5072,7 @@ ${codeContext}` : ""}${projectContext}`
                                                     { from: 'Code', to: 'TypeScript', lang: 'TypeScript', domains: ['generic'] },
                                                     { from: 'Code', to: 'JavaScript', lang: 'JavaScript', domains: ['generic'] },
                                                 ];
-                                                return allConversions.filter(c => {
-                                                    const effectiveDomain = selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain;
-                                                    return c.domains.includes(effectiveDomain);
-                                                });
+                                                return allConversions.filter(c => c.domains.includes(selectedDomain));
                                             })().map(({ from, to, lang }) => (
                                                 <button
                                                     key={`${from}-${to}`}
@@ -5467,7 +5426,7 @@ ${codeContext}` : ""}${projectContext}`
                                                                                 onClick={async (e) => {
                                                                                     e.stopPropagation();
                                                                                     if (!activeCodeId) return;
-                                                                                    if (await appConfirm(`Restore version ${version.version_number}?`, { title: "Restore Version", confirmLabel: "Restore" })) {
+                                                                                    if (confirm(`Restore version ${version.version_number}?`)) {
                                                                                         try {
                                                                                             setLoadingSnippets(true);
                                                                                             const res = await restoreSnippetVersion(activeCodeId, version.version_number);
@@ -5799,6 +5758,92 @@ ${codeContext}` : ""}${projectContext}`
                     )}
                 </form>
             </main>
+
+            {/* New Project Modal */}
+            {showNewProjectModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                    onMouseDown={() => { if (!newProjectLoading) setShowNewProjectModal(false); }}>
+                    <div
+                        style={{ width: '460px', maxWidth: '95vw', borderRadius: '14px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden' }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
+                            <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)' }}>📁 New Project</div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Choose how to set up your project</div>
+                        </div>
+
+                        {/* Mode toggle */}
+                        <div style={{ padding: '16px 20px 0' }}>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button type="button"
+                                    onClick={() => setNewProjectMode('manual')}
+                                    style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: `2px solid ${newProjectMode === 'manual' ? 'var(--accent)' : 'var(--border-default)'}`, background: newProjectMode === 'manual' ? 'rgba(249,115,22,0.08)' : 'var(--bg-elevated)', color: newProjectMode === 'manual' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 600, fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', textAlign: 'left' }}>
+                                    ✏️ Manual
+                                    <div style={{ fontSize: '11px', fontWeight: 400, color: 'var(--text-muted)', marginTop: '2px' }}>Name it and start fresh</div>
+                                </button>
+                                <button type="button"
+                                    onClick={() => setNewProjectMode('ai_tree')}
+                                    style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: `2px solid ${newProjectMode === 'ai_tree' ? 'var(--accent)' : 'var(--border-default)'}`, background: newProjectMode === 'ai_tree' ? 'rgba(249,115,22,0.08)' : 'var(--bg-elevated)', color: newProjectMode === 'ai_tree' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 600, fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', textAlign: 'left' }}>
+                                    🌳 AI Full Tree
+                                    <div style={{ fontSize: '11px', fontWeight: 400, color: 'var(--text-muted)', marginTop: '2px' }}>AI scaffolds branches for you</div>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Content */}
+                        <div style={{ padding: '16px 20px 20px' }}>
+                            {newProjectMode === 'manual' ? (
+                                <>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>Project name</div>
+                                    <input
+                                        autoFocus
+                                        style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }}
+                                        placeholder="e.g. Trading Bot, Game Dev, Web App..."
+                                        value={newProjectName}
+                                        onChange={(e) => setNewProjectName(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') void submitNewProject(); if (e.key === 'Escape') setShowNewProjectModal(false); }}
+                                    />
+                                </>
+                            ) : (
+                                <>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>Describe your project</div>
+                                    <textarea
+                                        autoFocus
+                                        style={{ width: '100%', minHeight: '90px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', lineHeight: '1.5' }}
+                                        placeholder="e.g. A Unity 2D game with a player, enemies, inventory system, and save/load functionality..."
+                                        value={newProjectPrompt}
+                                        onChange={(e) => setNewProjectPrompt(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === 'Escape') setShowNewProjectModal(false); }}
+                                    />
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                                        ⚡ AI will generate a project name, description, AI instructions, and a conversation branch for each major area.
+                                    </div>
+                                </>
+                            )}
+
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
+                                <button type="button"
+                                    disabled={newProjectLoading}
+                                    onClick={() => setShowNewProjectModal(false)}
+                                    style={{ padding: '7px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                    Cancel
+                                </button>
+                                <button type="button"
+                                    disabled={newProjectLoading || (newProjectMode === 'manual' ? !newProjectName.trim() : !newProjectPrompt.trim())}
+                                    onClick={() => void submitNewProject()}
+                                    style={{ padding: '7px 18px', fontSize: '13px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: (newProjectLoading || (newProjectMode === 'manual' ? !newProjectName.trim() : !newProjectPrompt.trim())) ? 'not-allowed' : 'pointer', opacity: (newProjectLoading || (newProjectMode === 'manual' ? !newProjectName.trim() : !newProjectPrompt.trim())) ? 0.6 : 1, fontFamily: 'DM Sans, sans-serif', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    {newProjectLoading ? (
+                                        <><span style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Generating...</>
+                                    ) : (
+                                        newProjectMode === 'manual' ? 'Create' : '🌳 Generate Tree'
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Upgrade Modal */}
             {showUpgradeModal && (
