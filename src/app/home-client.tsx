@@ -184,7 +184,7 @@ export default function HomeClient() {
     const [streaming, setStreaming] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const isMobile = useIsMobile();
-    const [mobileTab, setMobileTab] = useState<'chat' | 'code' | 'sessions'>('chat');
+    const [mobileTab, setMobileTab] = useState<'chat' | 'code' | 'sessions' | 'projects'>('chat');
     const [promptDisplayMode, setPromptDisplayMode] = useState<'description' | 'minimal'>('description');
     const [pluginName, setPluginName] = useState<
         "healthcheck" | "summariseConversation" | "exportConversation"
@@ -2251,10 +2251,15 @@ Project description: ${newProjectPrompt.trim()}`
                                     : instrLower.includes('python') ? 'py'
                                     : instrLower.includes('pine') ? 'pine'
                                     : 'ts';
-                                const fileName = branch.title.replace(/\s+/g, '') + '.' + ext;
+                                // Strip markdown code fences so the file contains raw code only
+                                const rawCode = msgRes.data.reply
+                                    .replace(/^```[\w]*\n?/gm, '')
+                                    .replace(/^```$/gm, '')
+                                    .trim();
+                                const fileName = branch.title.replace(/[^a-zA-Z0-9]/g, '') + '.' + ext;
                                 await apiAddProjectFile(projectId, {
                                     name: fileName,
-                                    content: msgRes.data.reply,
+                                    content: rawCode,
                                     file_type: ext,
                                 });
                             }
@@ -2802,6 +2807,45 @@ Project description: ${newProjectPrompt.trim()}`
                     </div>
                 )}
 
+                {/* ── PROJECTS TAB ── */}
+                {mobileTab === 'projects' && (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '10px', borderBottom: '1px solid var(--border-subtle)' }}>
+                            <span style={{ fontWeight: 700, fontSize: '16px', color: 'var(--text-primary)' }}>📁 Projects</span>
+                            <button type="button"
+                                style={{ padding: '7px 16px', fontSize: '13px', borderRadius: '8px', background: 'var(--accent)', border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                onClick={() => void createProject()}>
+                                + New
+                            </button>
+                        </div>
+                        {projects.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: '13px' }}>No projects yet</div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {projects.map(p => {
+                                    const convCount = Object.values(convProjects).filter(v => v === p.id).length;
+                                    return (
+                                        <div key={p.id}
+                                            style={{ padding: '14px', borderRadius: '10px', background: activeProjectFilter === p.id ? 'var(--accent-glow)' : 'var(--bg-secondary)', border: `1px solid ${activeProjectFilter === p.id ? 'rgba(249,115,22,0.3)' : 'var(--border-subtle)'}`, cursor: 'pointer' }}
+                                            onClick={() => { setActiveProjectFilter(activeProjectFilter === p.id ? null : p.id); setMobileTab('sessions'); }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: p.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0 }}>
+                                                    {p.emoji ?? '📁'}
+                                                </div>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                                                    {p.description && <div style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.description}</div>}
+                                                </div>
+                                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>{convCount} chat{convCount !== 1 ? 's' : ''}</div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* ── BOTTOM TAB BAR ── */}
                 <div style={{
                     display: 'flex',
@@ -2813,6 +2857,7 @@ Project description: ${newProjectPrompt.trim()}`
                     {([
                         { id: 'chat', icon: '💬', label: 'Chat' },
                         { id: 'code', icon: '⌨️', label: 'Code' },
+                        { id: 'projects', icon: '📁', label: 'Projects' },
                         { id: 'sessions', icon: '☰', label: 'Sessions' },
                     ] as const).map(tab => (
                         <button
@@ -2842,6 +2887,80 @@ Project description: ${newProjectPrompt.trim()}`
                         </button>
                     ))}
                 </div>
+
+                {/* Settings modal — must live inside mobile return to be reachable */}
+                {settingsOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onMouseDown={() => setSettingsOpen(false)}>
+                        <div style={{ width: '720px', maxWidth: '95vw', maxHeight: '90dvh', overflowY: 'auto', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.6)' }} onMouseDown={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                                <span style={{ fontWeight: 600, fontSize: '15px', color: 'var(--text-primary)' }}>Settings</span>
+                                <button type="button" className="btn-secondary" style={{ padding: '4px 12px', fontSize: '12px' }} onClick={() => setSettingsOpen(false)}>✕ Close</button>
+                            </div>
+                            <div style={{ padding: '20px', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                Open T4N on desktop to access full settings, or use the options below.
+                                <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {userPlan !== 'pro' && (
+                                        <button type="button" onClick={() => { setSettingsOpen(false); setShowUpgradeModal(true); }} style={{ padding: '12px', borderRadius: '8px', background: 'var(--accent)', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                            ⚡ Upgrade to Pro
+                                        </button>
+                                    )}
+                                    {userPlan === 'pro' && (
+                                        <button type="button" onClick={() => { setSettingsOpen(false); void openBillingPortal(); }} style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)', fontWeight: 600, fontSize: '14px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                            Manage Billing
+                                        </button>
+                                    )}
+                                    <button type="button" onClick={async () => { if (confirm('Sign out?')) await supabase.auth.signOut(); }} style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-muted)', fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                        Sign out
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* New Project Modal — needed on mobile too */}
+                {showNewProjectModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={() => { if (!newProjectLoading) setShowNewProjectModal(false); }}>
+                        <div style={{ width: '460px', maxWidth: '95vw', borderRadius: '14px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden' }} onMouseDown={(e) => e.stopPropagation()}>
+                            <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
+                                <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)' }}>📁 New Project</div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Choose how to set up your project</div>
+                            </div>
+                            <div style={{ padding: '16px 20px 0' }}>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button type="button" onClick={() => setNewProjectMode('manual')} style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: `2px solid ${newProjectMode === 'manual' ? 'var(--accent)' : 'var(--border-default)'}`, background: newProjectMode === 'manual' ? 'rgba(249,115,22,0.08)' : 'var(--bg-elevated)', color: newProjectMode === 'manual' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 600, fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', textAlign: 'left' }}>
+                                        ✏️ Manual
+                                        <div style={{ fontSize: '11px', fontWeight: 400, color: 'var(--text-muted)', marginTop: '2px' }}>Name it and start fresh</div>
+                                    </button>
+                                    <button type="button" onClick={() => setNewProjectMode('ai_tree')} style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: `2px solid ${newProjectMode === 'ai_tree' ? 'var(--accent)' : 'var(--border-default)'}`, background: newProjectMode === 'ai_tree' ? 'rgba(249,115,22,0.08)' : 'var(--bg-elevated)', color: newProjectMode === 'ai_tree' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 600, fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', textAlign: 'left' }}>
+                                        🌳 AI Full Tree
+                                        <div style={{ fontSize: '11px', fontWeight: 400, color: 'var(--text-muted)', marginTop: '2px' }}>AI scaffolds branches for you</div>
+                                    </button>
+                                </div>
+                            </div>
+                            <div style={{ padding: '16px 20px 20px' }}>
+                                {newProjectMode === 'manual' ? (
+                                    <>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>Project name</div>
+                                        <input autoFocus style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }} placeholder="e.g. Trading Bot, Game Dev, Web App..." value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void submitNewProject(); if (e.key === 'Escape') setShowNewProjectModal(false); }} />
+                                    </>
+                                ) : (
+                                    <>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>Describe your project</div>
+                                        <textarea autoFocus style={{ width: '100%', minHeight: '90px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', lineHeight: '1.5' }} placeholder="e.g. A Unity 2D game with a player, enemies, inventory system, and save/load functionality..." value={newProjectPrompt} onChange={(e) => setNewProjectPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setShowNewProjectModal(false); }} />
+                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>⚡ AI will generate a project name, description, AI instructions, and a conversation branch for each major area.</div>
+                                    </>
+                                )}
+                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
+                                    <button type="button" disabled={newProjectLoading} onClick={() => setShowNewProjectModal(false)} style={{ padding: '7px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Cancel</button>
+                                    <button type="button" disabled={newProjectLoading || (newProjectMode === 'manual' ? !newProjectName.trim() : !newProjectPrompt.trim())} onClick={() => void submitNewProject()} style={{ padding: '7px 18px', fontSize: '13px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        {newProjectLoading ? <><span style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Generating...</> : newProjectMode === 'manual' ? 'Create' : '🌳 Generate Tree'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
