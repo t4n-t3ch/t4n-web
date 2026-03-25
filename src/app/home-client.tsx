@@ -1698,7 +1698,11 @@ ${codeContext}` : ""}${projectContext}`
                     const prose = stripCodeBlocks(streamed).trim();
 
                     if (isCtrlFResponse) {
-                        messageToShow = streamed; // Ctrl+F renderer handles it
+                        const descMatch = streamed.match(/^Description:\s*(.+)$/m);
+                        const ctrlFDescription = descMatch ? descMatch[1].trim() : "";
+                        messageToShow = ctrlFDescription && promptDisplayMode === 'description'
+                            ? `${streamed}\n\n💬 ${ctrlFDescription}`
+                            : streamed;
                     } else if (extracted && promptDisplayMode === 'description') {
                         // Show [Code generated] header + actual AI prose description
                         messageToShow = prose
@@ -1919,7 +1923,11 @@ ${codeContext}` : ""}${projectContext}`
                     const prose = stripCodeBlocks(streamed).trim();
 
                     if (isCtrlFResponse) {
-                        messageToShow = streamed; // Ctrl+F renderer handles it
+                        const descMatch = streamed.match(/^Description:\s*(.+)$/m);
+                        const ctrlFDescription = descMatch ? descMatch[1].trim() : "";
+                        messageToShow = ctrlFDescription && promptDisplayMode === 'description'
+                            ? `${streamed}\n\n💬 ${ctrlFDescription}`
+                            : streamed;
                     } else if (extracted && promptDisplayMode === 'description') {
                         // Show [Code generated] header + actual AI prose description
                         messageToShow = prose
