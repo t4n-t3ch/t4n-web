@@ -36,7 +36,6 @@ function sleep(ms: number) {
 }
 
 function parseRetryAfterMs(res: Response, text?: string, data?: unknown) {
-    // Prefer Retry-After header (seconds)
     const ra = res.headers.get("retry-after");
     if (ra) {
         const seconds = Number(ra);
@@ -71,8 +70,8 @@ async function fetchWithRetry(
     init: RequestInit,
     opts?: { maxRetries?: number; baseDelayMs?: number; signal?: AbortSignal }
 ) {
-    const maxRetries = opts?.maxRetries ?? 2;      // keep low to avoid spam
-    const baseDelayMs = opts?.baseDelayMs ?? 750;  // backoff base
+    const maxRetries = opts?.maxRetries ?? 2;
+    const baseDelayMs = opts?.baseDelayMs ?? 750;
 
     let attempt = 0;
     while (true) {
@@ -82,7 +81,6 @@ async function fetchWithRetry(
             return res;
         }
 
-        // Try to read body once to estimate retry delay (clone() keeps stream safe)
         let text: string | undefined;
         let data: unknown;
         try {
@@ -98,7 +96,6 @@ async function fetchWithRetry(
             retryAfterMs ?? Math.round(baseDelayMs * Math.pow(2, attempt))
         );
 
-        // small jitter to avoid thundering herd
         const jitter = Math.floor(Math.random() * 250);
 
         await sleep(backoffMs + jitter);
@@ -109,7 +106,6 @@ async function fetchWithRetry(
 function getApiBase(): string {
     const raw = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-    // In production, NEVER fall back to localhost (this is what forces PowerShell)
     if (process.env.NODE_ENV === "production") {
         if (!raw) {
             throw new Error("NEXT_PUBLIC_API_BASE_URL is not set (required in production)");
@@ -117,7 +113,6 @@ function getApiBase(): string {
         return raw.replace(/\/$/, "");
     }
 
-    // Local dev fallback is ok
     return (raw || "http://127.0.0.1:3001").replace(/\/$/, "");
 }
 
@@ -127,7 +122,6 @@ function getApiKey(): string {
     console.log("🔑 API Key from env:", key ? `${key.substring(0, 4)}...` : 'missing');
     console.log("🔑 NODE_ENV:", process.env.NODE_ENV);
 
-    // In production, we MUST have a key
     if (process.env.NODE_ENV === "production") {
         if (!key) {
             console.error("❌ NEXT_PUBLIC_API_KEY is not set in production!");
@@ -169,12 +163,10 @@ async function apiFetch<T>(
             },
         });
 
-        // Additional debug logs
         console.log("🔑 API_KEY value check:", API_KEY ? `Present (${API_KEY.substring(0, 4)}...)` : "MISSING");
         console.log("🔑 API_KEY length:", API_KEY ? API_KEY.length : 0);
         console.log("🔑 Authorization token:", accessToken ? "present" : "missing");
 
-        // Never send "Authorization: Bearer " (empty token) — backend treats it as missing JWT
         const baseHeaders: Record<string, string> = {
             "Content-Type": "application/json",
             "x-api-key": API_KEY,
@@ -265,7 +257,6 @@ export function getMessages(conversationId: string) {
     }>(`/api/conversations/${conversationId}/messages`);
 }
 
-// ✅ Rename conversation title
 export function renameConversation(conversationId: string, title: string | null) {
     return apiFetch<{
         ok: boolean;
@@ -278,7 +269,6 @@ export function renameConversation(conversationId: string, title: string | null)
     });
 }
 
-// ✅ Delete conversation
 export function deleteConversation(conversationId: string) {
     return apiFetch<{
         ok: boolean;
@@ -302,24 +292,18 @@ export function sendMessage(
         timeoutMs: 90000,
         body: JSON.stringify({ message, conversationId }),
     });
-
 }
 
 /**
- * SSE streaming chat
- * Returns the raw Response so the caller can read the stream
+ * SSE streaming chat — domain selects the language-specific system prompt
  */
-/**
- * SSE streaming chat
- * Returns the raw Response so the caller can read the stream
- */
-
 export async function streamMessage(
     message: string,
     conversationId?: string,
     signal?: AbortSignal,
     existingCode?: string,
-    displayMode?: 'description' | 'minimal'
+    displayMode?: 'description' | 'minimal',
+    domain?: string,
 ) {
     const API_BASE = getApiBase();
     const API_KEY = getApiKey();
@@ -335,7 +319,6 @@ export async function streamMessage(
     console.log("🔑 Using API key:", API_KEY ? `${API_KEY.substring(0, 4)}...` : 'missing');
     console.log("🔑 Auth token:", accessToken ? 'present' : 'missing');
 
-    // Use regular fetch, NOT fetchWithRetry, to get raw SSE stream
     const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -349,12 +332,12 @@ export async function streamMessage(
             conversationId,
             existingCode,
             displayMode,
+            domain,
         }),
     });
 
     console.log("📡 Stream response status:", response.status, response.statusText);
 
-    // If not OK, try to get error details
     if (!response.ok) {
         try {
             const text = await response.text();
@@ -380,9 +363,7 @@ export async function executePlugin(
         timeoutMs: 90000,
         body: JSON.stringify({ conversationId, plugin, args }),
     });
-
 }
-
 
 export async function getPluginRuns(conversationId: string, limit: number = 25) {
     const qs = new URLSearchParams({ limit: String(limit) }).toString();
@@ -596,4 +577,3 @@ export async function deleteSnippetVersion(
         }
     );
 }
-

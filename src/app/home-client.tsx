@@ -1639,7 +1639,7 @@ export default function HomeClient() {
             const trimmedForPrompt = codeForContext.slice(0, 120000);
             const codeContext =
                 giveAiAccessToCode && codeForContext.trim()
-                    ? `\n\nEXISTING CODE (you MUST either give Ctrl+F find-and-replace instructions OR output the FULL corrected file — NEVER output a partial truncated file):\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
+                    ? `\n\nEXISTING CODE (you MUST either give Ctrl+F find-and-replace instructions OR output the FULL corrected file — NEVER output a partial truncated file):\n\`\`\`${selectedDomain !== "auto" ? selectedDomain : "code"}\n${trimmedForPrompt}\n\`\`\`\n`
                     : "";
 
             const projectContext = buildProjectContext();
@@ -1652,7 +1652,8 @@ ${codeContext}` : ""}${projectContext}`
                 : `${payload.text}${projectContext}`;
 
             const codeToSend = undefined;
-            const res = await streamMessage(finalText, cid, controller.signal, codeToSend);
+            const activeDomain = selectedDomain !== 'auto' ? selectedDomain : undefined;
+            const res = await streamMessage(finalText, cid, controller.signal, codeToSend, promptDisplayMode, activeDomain);
 
 
             let streamed = "";
@@ -1673,6 +1674,8 @@ ${codeContext}` : ""}${projectContext}`
 
                         setCodeText(merged);
                         addToHistory(merged);
+                        // Auto-detect language from generated code and update the dropdown
+                        setSelectedDomain(prev => prev === 'auto' ? detectLanguage(merged) : prev);
 
                         // Never mark unsaved or clear activeCodeId when AI edits an existing snippet
                         if (!activeCodeId) {
@@ -1711,7 +1714,7 @@ ${codeContext}` : ""}${projectContext}`
                     } else if (extracted) {
                         messageToShow = "[Code generated → open the Code panel]";
                     } else {
-                        messageToShow = prose || stripCodeBlocks(streamed);
+                        messageToShow = prose || stripCodeBlocks(streamed) || (streamed.trim() ? streamed : "");
                     }
 
                     setMessages((m) =>
@@ -1859,7 +1862,7 @@ ${codeContext}` : ""}${projectContext}`
             const trimmedForPrompt = codeForContext.slice(0, 120000);
             const codeContext =
                 giveAiAccessToCode && codeForContext.trim()
-                    ? `\n\nEXISTING CODE (you MUST either output the FULL corrected file OR give Ctrl+F find-and-replace instructions — NEVER output a partial truncated file):\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
+                    ? `\n\nEXISTING CODE (you MUST either output the FULL corrected file OR give Ctrl+F find-and-replace instructions — NEVER output a partial truncated file):\n\`\`\`${selectedDomain !== "auto" ? selectedDomain : "code"}\n${trimmedForPrompt}\n\`\`\`\n`
                     : "";
 
             const projectContext = buildProjectContext();
@@ -1871,7 +1874,8 @@ ${payload.text}${codeContext ? `
 ${codeContext}` : ""}${projectContext}`
                 : `${payload.text}${projectContext}`;
 
-            const res = await streamMessage(finalText, payload.conversationId, controller.signal);
+            const activeDomain = selectedDomain !== 'auto' ? selectedDomain : undefined;
+            const res = await streamMessage(finalText, payload.conversationId, controller.signal, undefined, promptDisplayMode, activeDomain);
             let streamed = "";
             let sawDone = false;
 
@@ -1890,6 +1894,8 @@ ${codeContext}` : ""}${projectContext}`
 
                         setCodeText(merged);
                         addToHistory(merged);
+                        // Auto-detect language from generated code and update the dropdown
+                        setSelectedDomain(prev => prev === 'auto' ? detectLanguage(merged) : prev);
 
                         // Never mark unsaved or clear activeCodeId when AI edits an existing snippet
                         if (!activeCodeId) {
@@ -1936,7 +1942,7 @@ ${codeContext}` : ""}${projectContext}`
                     } else if (extracted) {
                         messageToShow = "[Code generated → open the Code panel]";
                     } else {
-                        messageToShow = prose || stripCodeBlocks(streamed);
+                        messageToShow = prose || stripCodeBlocks(streamed) || (streamed.trim() ? streamed : "");
                     }
 
                     setMessages((m) =>
