@@ -2244,6 +2244,8 @@ Project description: ${newProjectPrompt.trim()}`
             } catch (e) {
                 console.error('AI tree generation failed:', e);
                 setNewProjectLoading(false);
+                setShowNewProjectModal(false);
+                showToast('AI tree generation failed. Please try again.', 'error');
             }
         }
     }
