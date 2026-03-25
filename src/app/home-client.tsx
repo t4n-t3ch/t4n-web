@@ -846,7 +846,7 @@ export default function HomeClient() {
         }
     }
 
-    function handleNewCode() {
+    async function handleNewCode() {
         if (codeText.trim() && !await appConfirm("Unsaved changes will be lost.", { title: "Create New Code?", confirmLabel: "Continue", danger: true })) {
             return;
         }
@@ -2395,7 +2395,7 @@ ${codeContext}` : ""}${projectContext}`
         setPresetPromptInput('');
     }
 
-    function deletePreset(id: string) {
+    async function deletePreset(id: string) {
         if (!await appConfirm('Delete this preset?', { title: 'Delete Preset', confirmLabel: 'Delete', danger: true })) return;
         setPromptPresets(prev => prev.filter(p => p.id !== id));
     }
@@ -3450,6 +3450,12 @@ ${codeContext}` : ""}${projectContext}`
                                                         style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 5px', lineHeight: 1.4 }}
                                                         onClick={() => setExplorerOverlay({ type: 'link-chat', projectId: proj.id })}
                                                     >💬+</button>
+                                                    <button
+                                                        type="button"
+                                                        title="Delete project"
+                                                        style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: '#f87171', padding: '1px 5px', lineHeight: 1.4 }}
+                                                        onClick={() => void deleteProject(proj.id)}
+                                                    >🗑</button>
                                                 </div>
                                             </div>
 
