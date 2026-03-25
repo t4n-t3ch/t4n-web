@@ -349,6 +349,13 @@ export default function HomeClient() {
     const [codeOpen, setCodeOpen] = useState(false);
     const [codeText, setCodeText] = useState<string>("");
 
+    // Auto-detect language whenever code changes (unless user manually picked one)
+    useEffect(() => {
+        if (!codeText.trim() || codeText.length < 40) return;
+        if (!autoDetectRef.current) return;
+        setSelectedDomain(detectLanguage(codeText));
+    }, [codeText]); // eslint-disable-line react-hooks/exhaustive-deps
+
     // Undo/Redo for code canvas
     const [codeHistory, setCodeHistory] = useState<string[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
@@ -424,6 +431,7 @@ export default function HomeClient() {
 
     // Domain / language selection
     const [selectedDomain, setSelectedDomain] = useState<string>('pinescript');
+    const autoDetectRef = useRef(true); // false = user manually chose
 
     // Inline AI code actions
     const [inlineActionBusy, setInlineActionBusy] = useState(false);
@@ -2535,9 +2543,8 @@ ${codeContext}` : ""}${projectContext}`
                             <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
                                 onClick={async () => { try { await navigator.clipboard.writeText(codeText || ''); showToast('Code copied!'); } catch { showToast('Copy failed', 'error'); } }}
                                 disabled={!codeText.trim()}>Copy</button>
-                            <select value={selectedDomain} onChange={e => { const v = e.target.value; if (v === 'auto') setSelectedDomain(detectLanguage(codeText)); else setSelectedDomain(v); }}
+                            <select value={selectedDomain} onChange={e => { autoDetectRef.current = false; setSelectedDomain(e.target.value); }}
                                 style={{ fontSize: '12px', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                <option value="auto">🔍 Auto-detect</option>
                                 <option value="pinescript">🌲 Pine Script</option>
                                 <option value="ctrader">📊 cTrader</option>
                                 <option value="python">🐍 Python</option>
@@ -2581,7 +2588,6 @@ ${codeContext}` : ""}${projectContext}`
                                 runDiagnostics(v);
                                 if (activeCodeId) { setHasUnsavedChanges(true); }
                                 else if (v.trim()) { setUnsavedCode(v); setHasUnsavedChanges(true); setActiveCodeId(null); }
-                                if (v.length > 80 && selectedDomain === 'auto') setSelectedDomain(detectLanguage(v));
                             }}
                             onKeyDown={e => {
                                 if (e.key === 'Tab') {
@@ -4505,17 +4511,22 @@ ${codeContext}` : ""}${projectContext}`
                                     <select
                                         value={selectedDomain}
                                         onChange={(e) => {
-                                            const val = e.target.value;
-                                            if (val === 'auto') {
-                                                setSelectedDomain(detectLanguage(codeText));
-                                            } else {
-                                                setSelectedDomain(val);
+                                            autoDetectRef.current = false;
+                                            setSelectedDomain(e.target.value);
+                                            // Warn if mismatch
+                                            if (codeText.trim()) {
+                                                const detected = detectLanguage(codeText);
+                                                if (detected !== e.target.value && detected !== 'generic') {
+                                                    setDiagnostics(prev => [{ line: 1, col: 1, endCol: 1, severity: 'warning' as const, message: `⚠ Selected language (${e.target.value}) may not match detected language (${detected})`, code: 'LANG_MISMATCH' }, ...prev.filter(d => d.code !== 'LANG_MISMATCH')]);
+                                                    setDiagnosticsOpen(true);
+                                                } else {
+                                                    setDiagnostics(prev => prev.filter(d => d.code !== 'LANG_MISMATCH'));
+                                                }
                                             }
                                         }}
                                         style={{ fontSize: '11px', padding: '3px 6px', borderRadius: '5px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
                                         title="Select language / domain"
                                     >
-                                        <option value="auto">🔍 Auto-detect</option>
                                         <option value="pinescript">🌲 Pine Script</option>
                                         <option value="ctrader">📊 cTrader</option>
                                         <option value="python">🐍 Python</option>
@@ -4599,6 +4610,7 @@ ${codeContext}` : ""}${projectContext}`
                                                     setCodeText(found.code);
                                                     addToHistory(found.code);
                                                     runDiagnostics(found.code);
+                                                    if (autoDetectRef.current) setSelectedDomain(detectLanguage(found.code));
                                                     await loadVersions(id);
                                                     // Open in tabs if Monaco is on
                                                     if (useMonaco) {
@@ -4723,7 +4735,7 @@ ${codeContext}` : ""}${projectContext}`
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
                                             fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
                                         }}
-                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); const dropH = 280; const openUp = r.bottom + dropH > window.innerHeight; const top = openUp ? Math.max(8, r.top - dropH - 4) : r.bottom + 4; const left = Math.min(r.left, window.innerWidth - 200); setActionsDropdownPos({ top, left: Math.max(8, left) }); setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}
+                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setActionsDropdownPos({ top: r.bottom + 4, left: r.left }); setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}
                                     >
                                         {inlineActionBusy && ['🔍 Explain','🔧 Fix Errors','✨ Improve','📋 Add Comments','⚡ Optimise'].includes(inlineActionLabel ?? '') ? '⏳' : '⚡'} Actions ▾
                                     </button>
@@ -4809,7 +4821,7 @@ ${codeContext}` : ""}${projectContext}`
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
                                             fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
                                         }}
-                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); const dropH = 320; const openUp = r.bottom + dropH > window.innerHeight; const top = openUp ? Math.max(8, r.top - dropH - 4) : r.bottom + 4; const left = Math.min(r.left, window.innerWidth - 220); setProToolsDropdownPos({ top, left: Math.max(8, left) }); setProToolsDropdownOpen(v => !v); setActionsDropdownOpen(false); }}
+                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setProToolsDropdownPos({ top: r.bottom + 4, left: r.left }); setProToolsDropdownOpen(v => !v); setActionsDropdownOpen(false); }}
                                     >
                                         ✦ Pro Tools ▾
                                         {userPlan !== 'pro' && <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', fontWeight: 700 }}>PRO</span>}
@@ -4979,11 +4991,7 @@ ${codeContext}` : ""}${projectContext}`
                                         onClick={(e) => {
                                             if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
                                             const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                            const dropH = Math.min(window.innerHeight * 0.6, 400);
-                                            const openUp = r.bottom + dropH > window.innerHeight;
-                                            const top = openUp ? Math.max(8, r.top - dropH - 4) : r.bottom + 4;
-                                            const left = Math.min(r.left, window.innerWidth - 220 - 8);
-                                            setConvertDropdownPos({ top, left: Math.max(8, left) });
+                                            setConvertDropdownPos({ top: r.bottom + 4, left: r.left });
                                             setConvertDropdownOpen(v => !v);
                                         }}
                                     >
@@ -5023,10 +5031,7 @@ ${codeContext}` : ""}${projectContext}`
                                                     { from: 'Code', to: 'TypeScript', lang: 'TypeScript', domains: ['generic'] },
                                                     { from: 'Code', to: 'JavaScript', lang: 'JavaScript', domains: ['generic'] },
                                                 ];
-                                                const effectiveDomain = selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain;
-                                                const filtered = allConversions.filter(c => c.domains.includes(effectiveDomain));
-                                                // fallback to generic if nothing matches
-                                                return filtered.length > 0 ? filtered : allConversions.filter(c => c.domains.includes('generic'));
+                                                return allConversions.filter(c => c.domains.includes(selectedDomain));
                                             })().map(({ from, to, lang }) => (
                                                 <button
                                                     key={`${from}-${to}`}
