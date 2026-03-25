@@ -502,6 +502,7 @@ export default function HomeClient() {
                         if (found) {
                             setActiveCodeId(found.id);
                             setCodeText(found.code);
+                            setSelectedDomain(detectLanguage(found.code));
                         }
                     }
                 }
@@ -2628,7 +2629,7 @@ ${codeContext}` : ""}${projectContext}`
                                     setActiveFileName(null);
                                     setHasUnsavedChanges(false);
                                     const found = savedCodes.find(s => s.id === id);
-                                    if (found && id) { setCodeText(found.code); addToHistory(found.code); runDiagnostics(found.code); await loadVersions(id); }
+                                    if (found && id) { setCodeText(found.code); addToHistory(found.code); runDiagnostics(found.code); setSelectedDomain(prev => prev === 'auto' ? detectLanguage(found.code) : prev); await loadVersions(id); }
                                 }}>
                                 <option value="">Saved snippets…</option>
                                 {activeFileName && <option value="project-file">📄 {activeFileName}</option>}
@@ -3499,6 +3500,8 @@ ${codeContext}` : ""}${projectContext}`
                                                                         setActiveCodeId(null);
                                                                         setCodeOpen(true);
                                                                         addToHistory(file.content);
+                                                                        // Auto-detect language from file content
+                                                                        setSelectedDomain(detectLanguage(file.content));
                                                                     }}
                                                                 >
                                                                     <span>{icon}</span>
@@ -4681,6 +4684,8 @@ ${codeContext}` : ""}${projectContext}`
                                                     setCodeText(found.code);
                                                     addToHistory(found.code);
                                                     runDiagnostics(found.code);
+                                                    // Auto-detect language from snippet
+                                                    setSelectedDomain(prev => prev === 'auto' ? detectLanguage(found.code) : prev);
                                                     await loadVersions(id);
                                                     // Open in tabs if Monaco is on
                                                     if (useMonaco) {
@@ -5105,7 +5110,10 @@ ${codeContext}` : ""}${projectContext}`
                                                     { from: 'Code', to: 'TypeScript', lang: 'TypeScript', domains: ['generic'] },
                                                     { from: 'Code', to: 'JavaScript', lang: 'JavaScript', domains: ['generic'] },
                                                 ];
-                                                return allConversions.filter(c => c.domains.includes(selectedDomain));
+                                                return allConversions.filter(c => {
+                                                    const effectiveDomain = selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain;
+                                                    return c.domains.includes(effectiveDomain);
+                                                });
                                             })().map(({ from, to, lang }) => (
                                                 <button
                                                     key={`${from}-${to}`}
