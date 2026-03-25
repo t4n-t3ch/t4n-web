@@ -17,6 +17,8 @@ import {
     executePlugin,
     getPluginRuns,
     renameConversation,
+    assignConversationToProject,
+    sendMessage as apiSendMessage,
     deleteConversation,
     createBillingPortalSession,
     getSnippets,
@@ -2181,13 +2183,13 @@ ${codeContext}` : ""}${projectContext}`
             if (!newProjectPrompt.trim()) return;
             setNewProjectLoading(true);
             try {
-                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
-                const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
-                const { data: { session: currentSession } } = await supabase.auth.getSession();
-                const token = currentSession?.access_token ?? "";
-                const res = await fetch(`${API_BASE}/api/anthropic`, {
+                const res = await fetch(`${(process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "")}/api/anthropic`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': process.env.NEXT_PUBLIC_API_KEY || "dev-key-123",
+                        'Authorization': `Bearer ${((await supabase.auth.getSession()).data.session?.access_token ?? "")}`,
+                    },
                     body: JSON.stringify({
                         model: 'claude-sonnet-4-20250514',
                         max_tokens: 1000,
@@ -2233,10 +2235,29 @@ Project description: ${newProjectPrompt.trim()}`
                         const convRes = await createConversation();
                         if (convRes?.ok) {
                             const convId = convRes.data.conversationId;
+                            // Set title + project in separate calls so neither overwrites the other
                             await renameConversation(convId, branch.title);
-                            await fetch(`${API_BASE}/api/conversations/${convId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ project_id: projectId }) });
+                            await assignConversationToProject(convId, projectId);
                             setConversations(prev => [{ id: convId, title: branch.title, updated_at: new Date().toISOString() }, ...prev]);
+                            setTitles(prev => ({ ...prev, [convId]: branch.title }));
                             setConvProjects(prev => ({ ...prev, [convId]: projectId }));
+                            // Seed branch with a starter prompt so the AI generates initial code
+                            const starterPrompt = `You are building the "${branch.title}" module for "${parsed.name}". ${branch.description ? `This covers: ${branch.description}. ` : ''}Generate a complete, well-commented starter code file for this module with placeholder functions and a solid foundation to build on. Use the most appropriate language/framework for this project type.`;
+                            const msgRes = await apiSendMessage(starterPrompt, convId);
+                            // Save the AI reply as a project file
+                            if (msgRes.ok && msgRes.data.reply) {
+                                const instrLower = (parsed.ai_instructions ?? '').toLowerCase();
+                                const ext = instrLower.includes('unity') || instrLower.includes('c#') ? 'cs'
+                                    : instrLower.includes('python') ? 'py'
+                                    : instrLower.includes('pine') ? 'pine'
+                                    : 'ts';
+                                const fileName = branch.title.replace(/\s+/g, '') + '.' + ext;
+                                await apiAddProjectFile(projectId, {
+                                    name: fileName,
+                                    content: msgRes.data.reply,
+                                    file_type: ext,
+                                });
+                            }
                         }
                     } catch (e) { console.error('Branch creation failed:', e); }
                 }

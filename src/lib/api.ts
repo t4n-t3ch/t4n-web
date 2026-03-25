@@ -269,6 +269,17 @@ export function renameConversation(conversationId: string, title: string | null)
     });
 }
 
+export function assignConversationToProject(conversationId: string, projectId: string | null) {
+    return apiFetch<{
+        ok: boolean;
+        conversationId: string;
+        requestId: string;
+    }>(`/api/conversations/${encodeURIComponent(conversationId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ project_id: projectId }),
+    });
+}
+
 export function deleteConversation(conversationId: string) {
     return apiFetch<{
         ok: boolean;
