@@ -280,6 +280,13 @@ export function assignConversationToProject(conversationId: string, projectId: s
     });
 }
 
+export function seedConversation(conversationId: string, params: { userMessage?: string; assistantMessage: string }) {
+    return apiFetch<{ ok: boolean; conversationId: string }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/seed`,
+        { method: "POST", body: JSON.stringify(params) }
+    );
+}
+
 export function deleteConversation(conversationId: string) {
     return apiFetch<{
         ok: boolean;

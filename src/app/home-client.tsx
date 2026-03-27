@@ -18,6 +18,7 @@ import {
     getPluginRuns,
     renameConversation,
     assignConversationToProject,
+    seedConversation,
     sendMessage as apiSendMessage,
     deleteConversation,
     createBillingPortalSession,
@@ -2254,28 +2255,47 @@ Project description: ${newProjectPrompt.trim()}`
                             setConversations(prev => [{ id: convId, title: branch.title, updated_at: new Date().toISOString() }, ...prev]);
                             setTitles(prev => ({ ...prev, [convId]: branch.title }));
                             setConvProjects(prev => ({ ...prev, [convId]: projectId }));
-                            // Mark as generating so UI shows spinner
                             setGeneratingBranches(prev => new Set([...prev, convId]));
-                            // Seed with starter code — language is explicit, no guessing
-                            const starterPrompt = `Generate a complete, well-commented ${lang} starter file for the "${branch.title}" module of "${parsed.name}".${branch.description ? ` This module covers: ${branch.description}.` : ''} Include placeholder functions with clear TODO comments. Output ONLY the raw ${lang} code with no explanation or markdown.`;
-                            const msgRes = await apiSendMessage(starterPrompt, convId);
-                            // Rename AFTER sendMessage so it is the final title written to DB
+
+                            // Step 1: Generate code via /api/anthropic
+                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
+                            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
+                            const { data: { session: sess } } = await supabase.auth.getSession();
+                            const token = sess?.access_token ?? "";
+
+                            const codeRes = await fetch(`${API_BASE}/api/anthropic`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
+                                body: JSON.stringify({ messages: [{ role: 'user', content: `Generate a complete, well-commented ${lang} starter file for the "${branch.title}" module of "${parsed.name}".${branch.description ? ` This covers: ${branch.description}.` : ''} Include placeholder functions with clear TODO comments. Output ONLY the raw ${lang} code, no explanation, no markdown fences.` }] })
+                            });
+                            const codeData = await codeRes.json();
+                            const rawCode = ((codeData.content || []).map((b: { type: string; text?: string }) => b.type === 'text' ? b.text : '').join(''))
+                                .replace(/^```[\w]*\n?/gm, '').replace(/^```$/gm, '').trim();
+
+                            // Step 2: Save as named project file
+                            const fileName = branch.title.replace(/[^a-zA-Z0-9]/g, '') + '.' + ext;
+                            if (rawCode) {
+                                await apiAddProjectFile(projectId, { name: fileName, content: rawCode, file_type: ext });
+                            }
+
+                            // Step 3: Generate a clean summary for the chat opening
+                            const summaryRes = await fetch(`${API_BASE}/api/anthropic`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
+                                body: JSON.stringify({ messages: [{ role: 'user', content: `In 2-3 sentences, describe what the "${branch.title}" module does in "${parsed.name}" and list 3 specific things the developer can ask you to implement or improve. Be direct and practical. No code.` }] })
+                            });
+                            const summaryData = await summaryRes.json();
+                            const summary = (summaryData.content || []).map((b: { type: string; text?: string }) => b.type === 'text' ? b.text : '').join('').trim();
+
+                            // Step 4: Seed chat with clean opening message
+                            await seedConversation(convId, {
+                                userMessage: `Set up the ${branch.title} module for ${parsed.name}`,
+                                assistantMessage: `✅ **${fileName}** has been created and added to your project files.\n\n${summary || `This is your ${branch.title} starter file. Open it from the Code Files panel and ask me to implement any part of it.`}`,
+                            });
+
+                            // Step 5: Rename last so it is the final DB write
                             await renameConversation(convId, branch.title);
                             setTitles(prev => ({ ...prev, [convId]: branch.title }));
-                            // Save as project file
-                            if (msgRes.ok && msgRes.data.reply) {
-                                const rawCode = msgRes.data.reply
-                                    .replace(/^```[\w]*\n?/gm, '')
-                                    .replace(/^```$/gm, '')
-                                    .trim();
-                                const fileName = branch.title.replace(/[^a-zA-Z0-9]/g, '') + '.' + ext;
-                                await apiAddProjectFile(projectId, {
-                                    name: fileName,
-                                    content: rawCode,
-                                    file_type: ext,
-                                });
-                            }
-                            // Done — remove spinner
                             setGeneratingBranches(prev => { const n = new Set(prev); n.delete(convId); return n; });
                         }
                     } catch (e) {
