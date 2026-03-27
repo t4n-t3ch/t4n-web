@@ -253,6 +253,7 @@ export default function HomeClient() {
     const [newProjectPrompt, setNewProjectPrompt] = useState('');
     const [newProjectLoading, setNewProjectLoading] = useState(false);
     const [generatingBranches, setGeneratingBranches] = useState<Set<string>>(new Set());
+    const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null);
 
     // =========================
     // Layout: resizable panels
@@ -2231,6 +2232,8 @@ Project description: ${newProjectPrompt.trim()}`
                 if (!projRes.ok) return;
                 const projectId = projRes.data.id;
                 setProjects(p => [...p, { id: projectId, name: parsed.name, description: parsed.description ?? null, ai_instructions: parsed.ai_instructions ?? null, emoji: parsed.emoji ?? '🗂️', color, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }]);
+                // Set filter NOW so sidebar shows branches with spinners during generation
+                setActiveProjectFilter(projectId);
                 // Create a conversation branch for each section
                 // Detect language once from the project description + AI instructions
                 const instrLower = (parsed.ai_instructions ?? '' + newProjectPrompt).toLowerCase();
@@ -2315,8 +2318,14 @@ Project description: ${newProjectPrompt.trim()}`
         }
     }
 
-    async function deleteProject(id: string) {
-        if (!confirm("Delete project? Conversations will be unassigned.")) return;
+    function deleteProject(id: string) {
+        setDeleteProjectId(id);
+    }
+
+    async function confirmDeleteProject() {
+        const id = deleteProjectId;
+        if (!id) return;
+        setDeleteProjectId(null);
         setProjects(p => p.filter(x => x.id !== id));
         setConvProjects(prev => {
             const next = { ...prev };
@@ -2952,6 +2961,23 @@ Project description: ${newProjectPrompt.trim()}`
                                         Sign out
                                     </button>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Delete Project Confirm Modal — mobile */}
+                {deleteProjectId && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={() => setDeleteProjectId(null)}>
+                        <div style={{ width: '380px', maxWidth: '95vw', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden' }} onMouseDown={e => e.stopPropagation()}>
+                            <div style={{ padding: '20px 20px 0' }}>
+                                <div style={{ fontSize: '28px', marginBottom: '10px' }}>🗑️</div>
+                                <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)', marginBottom: '6px' }}>Delete project?</div>
+                                <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px' }}>This will permanently delete the project and all its files. Conversations will be unassigned but not deleted.</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', padding: '0 20px 20px', justifyContent: 'flex-end' }}>
+                                <button type="button" onClick={() => setDeleteProjectId(null)} style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Cancel</button>
+                                <button type="button" onClick={() => void confirmDeleteProject()} style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Delete</button>
                             </div>
                         </div>
                     </div>
@@ -5944,6 +5970,35 @@ Project description: ${newProjectPrompt.trim()}`
                     )}
                 </form>
             </main>
+
+            {/* Delete Project Confirm Modal */}
+            {deleteProjectId && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                    onMouseDown={() => setDeleteProjectId(null)}>
+                    <div style={{ width: '380px', maxWidth: '95vw', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden' }}
+                        onMouseDown={e => e.stopPropagation()}>
+                        <div style={{ padding: '20px 20px 0' }}>
+                            <div style={{ fontSize: '28px', marginBottom: '10px' }}>🗑️</div>
+                            <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)', marginBottom: '6px' }}>Delete project?</div>
+                            <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px' }}>
+                                This will permanently delete the project and all its files. Conversations will be unassigned but not deleted.
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', padding: '0 20px 20px', justifyContent: 'flex-end' }}>
+                            <button type="button"
+                                onClick={() => setDeleteProjectId(null)}
+                                style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                Cancel
+                            </button>
+                            <button type="button"
+                                onClick={() => void confirmDeleteProject()}
+                                style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* New Project Modal */}
             {showNewProjectModal && (
