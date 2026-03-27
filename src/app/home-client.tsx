@@ -1409,7 +1409,7 @@ export default function HomeClient() {
 
                 setMessages(res.data.messages);
                 const t = makeTitleFromMessages(res.data.messages);
-                if (t) setTitles((prev) => ({ ...prev, [id]: t }));
+                if (t) setTitles((prev) => prev[id] ? prev : ({ ...prev, [id]: t }));
 
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Failed to load messages");
@@ -2303,6 +2303,9 @@ Project description: ${newProjectPrompt.trim()}`
                     }
                 }
                 setActiveProjectFilter(projectId);
+                // Force reload files from DB — optimistic state may be stale after file creation
+                await loadProjectDetail(projectId);
+                setExpandedProjects(prev => ({ ...prev, [projectId]: true }));
             } catch (e) {
                 console.error('AI tree generation failed:', e);
                 setNewProjectLoading(false);
@@ -3594,8 +3597,9 @@ Project description: ${newProjectPrompt.trim()}`
                                             <div
                                                 style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 10px', cursor: 'pointer', userSelect: 'none', fontSize: '12px', color: 'var(--text-secondary)', background: activeProjectFilter === proj.id ? 'var(--accent-glow)' : 'transparent' }}
                                                 onClick={() => {
-                                                    setExpandedProjects(prev => ({ ...prev, [proj.id]: !isExpanded }));
-                                                    if (!projectFiles[proj.id]) void loadProjectDetail(proj.id);
+                                                    const expanding = !isExpanded;
+                                                    setExpandedProjects(prev => ({ ...prev, [proj.id]: expanding }));
+                                                    if (expanding) void loadProjectDetail(proj.id);
                                                 }}
                                             >
                                                 <span style={{ fontSize: '9px', color: 'var(--text-muted)', width: '10px', display: 'inline-block' }}>
