@@ -251,6 +251,7 @@ export default function HomeClient() {
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectPrompt, setNewProjectPrompt] = useState('');
     const [newProjectLoading, setNewProjectLoading] = useState(false);
+    const [generatingBranches, setGeneratingBranches] = useState<Set<string>>(new Set());
 
     // =========================
     // Layout: resizable panels
@@ -2249,11 +2250,12 @@ Project description: ${newProjectPrompt.trim()}`
                         const convRes = await createConversation();
                         if (convRes?.ok) {
                             const convId = convRes.data.conversationId;
-                            // Assign to project first
                             await assignConversationToProject(convId, projectId);
                             setConversations(prev => [{ id: convId, title: branch.title, updated_at: new Date().toISOString() }, ...prev]);
                             setTitles(prev => ({ ...prev, [convId]: branch.title }));
                             setConvProjects(prev => ({ ...prev, [convId]: projectId }));
+                            // Mark as generating so UI shows spinner
+                            setGeneratingBranches(prev => new Set([...prev, convId]));
                             // Seed with starter code — language is explicit, no guessing
                             const starterPrompt = `Generate a complete, well-commented ${lang} starter file for the "${branch.title}" module of "${parsed.name}".${branch.description ? ` This module covers: ${branch.description}.` : ''} Include placeholder functions with clear TODO comments. Output ONLY the raw ${lang} code with no explanation or markdown.`;
                             const msgRes = await apiSendMessage(starterPrompt, convId);
@@ -2273,8 +2275,12 @@ Project description: ${newProjectPrompt.trim()}`
                                     file_type: ext,
                                 });
                             }
+                            // Done — remove spinner
+                            setGeneratingBranches(prev => { const n = new Set(prev); n.delete(convId); return n; });
                         }
-                    } catch (e) { console.error('Branch creation failed:', e); }
+                    } catch (e) {
+                        console.error('Branch creation failed:', e);
+                    }
                 }
                 setActiveProjectFilter(projectId);
             } catch (e) {
@@ -2626,9 +2632,9 @@ Project description: ${newProjectPrompt.trim()}`
                             <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
                                 onClick={async () => { try { await navigator.clipboard.writeText(codeText || ''); showToast('Code copied!'); } catch { showToast('Copy failed', 'error'); } }}
                                 disabled={!codeText.trim()}>Copy</button>
-                            <select value={selectedDomain} onChange={e => { const v = e.target.value; if (v === 'auto') setSelectedDomain(detectLanguage(codeText)); else setSelectedDomain(v); }}
+                            <select value={selectedDomain === 'auto' && codeText.length > 80 ? detectLanguage(codeText) : selectedDomain} onChange={e => { const v = e.target.value; if (v === 'auto') setSelectedDomain(detectLanguage(codeText)); else setSelectedDomain(v); }}
                                 style={{ fontSize: '12px', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                <option value="auto">🔍 Auto-detect</option>
+                                <option value="auto">🔍 {codeText.length > 80 ? (() => { const d = detectLanguage(codeText); return d === 'unity' ? 'Unity C#' : d === 'pinescript' ? 'Pine Script' : d === 'python' ? 'Python' : d === 'mql5' ? 'MQL5' : d === 'ctrader' ? 'cTrader' : d === 'react' ? 'React' : d === 'blender' ? 'Blender' : d === 'generic' ? 'Generic' : 'Auto-detect'; })() : 'Auto-detect'}</option>
                                 <option value="pinescript">🌲 Pine Script</option>
                                 <option value="ctrader">📊 cTrader</option>
                                 <option value="python">🐍 Python</option>
@@ -3359,6 +3365,9 @@ Project description: ${newProjectPrompt.trim()}`
                                                             <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#4ade80', flexShrink: 0, display: 'inline-block', boxShadow: '0 0 5px #4ade80' }} title="Active" />
                                                         )}
                                                         {proj && activeId !== c.id && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: proj.color, flexShrink: 0, display: 'inline-block' }} title={proj.name} />}
+                                                        {generatingBranches.has(c.id) && (
+                                                            <span style={{ display: 'inline-block', width: '10px', height: '10px', border: '2px solid rgba(249,115,22,0.3)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} title="Generating code..." />
+                                                        )}
                                                         <span className="truncate" style={{ fontSize: '13px' }}>
                                                             {titles[c.id] ?? c.title ?? c.id.slice(0, 8)}
                                                         </span>
@@ -3610,11 +3619,12 @@ Project description: ${newProjectPrompt.trim()}`
                                                             const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
                                                             const icon = ext === 'pine' || ext === 'pinescript' ? '🌲'
                                                                 : ext === 'py' ? '🐍'
-                                                                    : ext === 'ts' || ext === 'tsx' ? '📘'
-                                                                        : ext === 'js' || ext === 'jsx' ? '📙'
-                                                                            : ext === 'json' ? '📋'
-                                                                                : ext === 'md' ? '📝'
-                                                                                    : '📄';
+                                                                    : ext === 'cs' ? '🎮'
+                                                                        : ext === 'ts' || ext === 'tsx' ? '📘'
+                                                                            : ext === 'js' || ext === 'jsx' ? '📙'
+                                                                                : ext === 'json' ? '📋'
+                                                                                    : ext === 'md' ? '📝'
+                                                                                        : '📄';
                                                             return (
                                                                 <div
                                                                     key={file.id}
@@ -4708,7 +4718,7 @@ Project description: ${newProjectPrompt.trim()}`
                                     )}
 
                                     <select
-                                        value={selectedDomain}
+                                        value={selectedDomain === 'auto' && codeText.length > 80 ? detectLanguage(codeText) : selectedDomain}
                                         onChange={(e) => {
                                             const val = e.target.value;
                                             if (val === 'auto') {
@@ -4720,7 +4730,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         style={{ fontSize: '11px', padding: '3px 6px', borderRadius: '5px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
                                         title="Select language / domain"
                                     >
-                                        <option value="auto">🔍 Auto-detect</option>
+                                        <option value="auto">🔍 {codeText.length > 80 ? (() => { const d = detectLanguage(codeText); return d === 'unity' ? 'Unity C#' : d === 'pinescript' ? 'Pine Script' : d === 'python' ? 'Python' : d === 'mql5' ? 'MQL5' : d === 'ctrader' ? 'cTrader' : d === 'react' ? 'React' : d === 'blender' ? 'Blender' : d === 'generic' ? 'Generic' : 'Auto-detect'; })() : 'Auto-detect'}</option>
                                         <option value="pinescript">🌲 Pine Script</option>
                                         <option value="ctrader">📊 cTrader</option>
                                         <option value="python">🐍 Python</option>
@@ -4813,7 +4823,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                 }
                                             }}
                                         >
-                                            <option value="">Saved snippets…</option>
+                                            <option value="">{activeCodeId ? (savedCodes.find(s => s.id === activeCodeId)?.name ?? 'Saved snippets…') : 'Saved snippets…'}</option>
                                             {hasUnsavedChanges && (
                                                 <option value={UNSAVED_ID}>📝 Unsaved (new)</option>
                                             )}
