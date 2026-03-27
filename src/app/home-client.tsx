@@ -4823,7 +4823,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                 }
                                             }}
                                         >
-                                            <option value="">{activeCodeId ? (savedCodes.find(s => s.id === activeCodeId)?.name ?? 'Saved snippets…') : 'Saved snippets…'}</option>
+                                            <option value="">{activeCodeId ? (savedCodes.find(s => s.id === activeCodeId)?.name ?? 'Saved snippets…') : activeFileId ? (Object.values(projectFiles).flat().find(f => f.id === activeFileId)?.name ?? 'Saved snippets…') : 'Saved snippets…'}</option>
                                             {hasUnsavedChanges && (
                                                 <option value={UNSAVED_ID}>📝 Unsaved (new)</option>
                                             )}

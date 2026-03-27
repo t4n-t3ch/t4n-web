@@ -163,3 +163,7 @@
     color: var(--text-primary);
   }
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

@@ -25,12 +25,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <script async src="https://www.googletagmanager.com/gtag/js?id=G-XZ748YHG9T" />
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-0EKZZ8SGRR" />
         <script dangerouslySetInnerHTML={{ __html: `
           window.dataLayer = window.dataLayer || [];
           function gtag(){dataLayer.push(arguments);}
           gtag('js', new Date());
-          gtag('config', 'G-XZ748YHG9T');
+          gtag('config', 'G-0EKZZ8SGRR');
         `}} />
       </head>
       <body style={{ background: '#0f0f11', margin: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
