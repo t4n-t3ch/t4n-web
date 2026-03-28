@@ -231,6 +231,7 @@ export default function HomeClient() {
     const [proToolsDropdownOpen, setProToolsDropdownOpen] = useState(false);
     const [proToolsDropdownPos, setProToolsDropdownPos] = useState({ top: 0, left: 0 });
     const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+    const diagnosticsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [pluginRuns, setPluginRuns] = useState<PluginRun[]>([]);
     // last tool event emitted from /api/chat/stream (server sends `event: tool`)
 
@@ -768,11 +769,14 @@ export default function HomeClient() {
     }
 
     function runDiagnostics(code: string) {
-        const results = lintCode(code, selectedDomain === 'auto' ? detectLanguage(code) : selectedDomain);
-        setDiagnostics(results);
-        if (results.length > 0 && results.some(d => d.severity === 'error' || d.severity === 'warning')) {
-            setDiagnosticsOpen(true);
-        }
+        if (diagnosticsTimerRef.current) clearTimeout(diagnosticsTimerRef.current);
+        diagnosticsTimerRef.current = setTimeout(() => {
+            const results = lintCode(code, selectedDomain === 'auto' ? detectLanguage(code) : selectedDomain);
+            setDiagnostics(results);
+            if (results.length > 0 && results.some(d => d.severity === 'error' || d.severity === 'warning')) {
+                setDiagnosticsOpen(true);
+            }
+        }, 600);
     }
 
     function addToHistory(newCode: string, opts?: { allowEmpty?: boolean }) {
@@ -2265,6 +2269,12 @@ Project description: ${newProjectPrompt.trim()}`
                     : lang.includes('Pine') ? 'pine'
                     : 'ts';
 
+                // Fetch credentials once before the loop — avoids session expiry mid-loop on mobile
+                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
+                const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
+                const { data: { session: branchSess } } = await supabase.auth.getSession();
+                const branchToken = branchSess?.access_token ?? "";
+
                 for (const branch of (parsed.branches ?? [])) {
                     try {
                         const convRes = await createConversation();
@@ -2277,14 +2287,9 @@ Project description: ${newProjectPrompt.trim()}`
                             setGeneratingBranches(prev => new Set([...prev, convId]));
 
                             // Step 1: Generate code via /api/anthropic
-                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
-                            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
-                            const { data: { session: sess } } = await supabase.auth.getSession();
-                            const token = sess?.access_token ?? "";
-
                             const codeRes = await fetch(`${API_BASE}/api/anthropic`, {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
+                                headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${branchToken}` },
                                 body: JSON.stringify({ messages: [{ role: 'user', content: `Generate a complete, well-commented ${lang} starter file for the "${branch.title}" module of "${parsed.name}".${branch.description ? ` This covers: ${branch.description}.` : ''} Include placeholder functions with clear TODO comments. Output ONLY the raw ${lang} code, no explanation, no markdown fences.` }] })
                             });
                             const codeData = await codeRes.json();
@@ -2300,7 +2305,7 @@ Project description: ${newProjectPrompt.trim()}`
                             // Step 3: Generate a clean summary for the chat opening
                             const summaryRes = await fetch(`${API_BASE}/api/anthropic`, {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
+                                headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${branchToken}` },
                                 body: JSON.stringify({ messages: [{ role: 'user', content: `In 2-3 sentences, describe what the "${branch.title}" module does in "${parsed.name}" and list 3 specific things the developer can ask you to implement or improve. Be direct and practical. No code.` }] })
                             });
                             const summaryData = await summaryRes.json();
@@ -2712,6 +2717,17 @@ Project description: ${newProjectPrompt.trim()}`
                                 {hasUnsavedChanges && <option value={UNSAVED_ID}>📝 Unsaved (new)</option>}
                                 {savedCodes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
+                        </div>
+
+                        {/* Desktop features banner + Actions quick access */}
+                        <div style={{ padding: '8px 10px', background: 'rgba(249,115,22,0.06)', borderBottom: '1px solid rgba(249,115,22,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>💻 Pro Tools & Convert on desktop</span>
+                            <button type="button"
+                                disabled={!codeText.trim() || inlineActionBusy}
+                                style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '5px', border: '1px solid var(--border-default)', background: actionsDropdownOpen ? 'var(--accent-glow)' : 'var(--bg-elevated)', color: actionsDropdownOpen ? 'var(--accent)' : 'var(--text-secondary)', cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer', opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1, fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}
+                                onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setActionsDropdownPos({ top: r.bottom + 4, left: window.innerWidth - r.right }); setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}>
+                                ⚡ Actions ▾
+                            </button>
                         </div>
 
                         {/* Code textarea — fills remaining height */}
@@ -5264,7 +5280,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         onClick={(e) => {
                                             if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
                                             const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                            setConvertDropdownPos({ top: r.bottom + 4, left: window.innerWidth - r.right });
+                                            setConvertDropdownPos({ top: window.innerHeight - r.top + 4, left: window.innerWidth - r.right });
                                             setConvertDropdownOpen(v => !v);
                                         }}
                                     >
@@ -5275,7 +5291,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         <>
                                         <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setConvertDropdownOpen(false)} />
                                         <div
-                                            style={{ position: 'fixed', top: convertDropdownPos.top, right: convertDropdownPos.left, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
+                                            style={{ position: 'fixed', bottom: convertDropdownPos.top, right: convertDropdownPos.left, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
                                             onMouseLeave={() => setConvertDropdownOpen(false)}
                                         >
                                             {(() => {
@@ -5356,7 +5372,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                     <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
                                                 </button>
                                             ))}
-                                                                                </div>
+                                        </div>
                                         </>
                                     )}
                                 </div>
