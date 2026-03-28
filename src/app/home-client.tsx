@@ -5001,7 +5001,7 @@ Project description: ${newProjectPrompt.trim()}`
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
                                             fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
                                         }}
-                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setActionsDropdownPos({ top: r.bottom + 4, left: r.left }); setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}
+                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); const dw = 220; setActionsDropdownPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - dw - 8)) }); setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}
                                     >
                                         {inlineActionBusy && ['🔍 Explain','🔧 Fix Errors','✨ Improve','📋 Add Comments','⚡ Optimise'].includes(inlineActionLabel ?? '') ? '⏳' : '⚡'} Actions ▾
                                     </button>
@@ -5087,7 +5087,7 @@ Project description: ${newProjectPrompt.trim()}`
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
                                             fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
                                         }}
-                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setProToolsDropdownPos({ top: r.bottom + 4, left: r.left }); setProToolsDropdownOpen(v => !v); setActionsDropdownOpen(false); }}
+                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); const dw = 220; setProToolsDropdownPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - dw - 8)) }); setProToolsDropdownOpen(v => !v); setActionsDropdownOpen(false); }}
                                     >
                                         ✦ Pro Tools ▾
                                         {userPlan !== 'pro' && <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', fontWeight: 700 }}>PRO</span>}
@@ -5257,7 +5257,9 @@ Project description: ${newProjectPrompt.trim()}`
                                         onClick={(e) => {
                                             if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
                                             const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                            setConvertDropdownPos({ top: r.bottom + 4, left: r.left });
+                                            const dropdownWidth = 210;
+                                            const left = Math.max(8, Math.min(r.left, window.innerWidth - dropdownWidth - 8));
+                                            setConvertDropdownPos({ top: r.bottom + 4, left });
                                             setConvertDropdownOpen(v => !v);
                                         }}
                                     >
