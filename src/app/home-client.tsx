@@ -5001,13 +5001,13 @@ Project description: ${newProjectPrompt.trim()}`
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
                                             fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
                                         }}
-                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); const dw = 220; setActionsDropdownPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - dw - 8)) }); setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}
+                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setActionsDropdownPos({ top: r.bottom + 4, left: window.innerWidth - r.right }); setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}
                                     >
                                         {inlineActionBusy && ['🔍 Explain','🔧 Fix Errors','✨ Improve','📋 Add Comments','⚡ Optimise'].includes(inlineActionLabel ?? '') ? '⏳' : '⚡'} Actions ▾
                                     </button>
                                     {actionsDropdownOpen && (
                                         <div
-                                            style={{ position: 'fixed', top: actionsDropdownPos.top, left: actionsDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '190px', overflow: 'auto', maxHeight: '60vh' }}
+                                            style={{ position: 'fixed', top: actionsDropdownPos.top, right: actionsDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '190px', overflow: 'auto', maxHeight: '60vh' }}
                                             onMouseLeave={() => setActionsDropdownOpen(false)}
                                         >
                                             {([
@@ -5087,14 +5087,14 @@ Project description: ${newProjectPrompt.trim()}`
                                             opacity: !codeText.trim() || inlineActionBusy ? 0.5 : 1,
                                             fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
                                         }}
-                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); const dw = 220; setProToolsDropdownPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - dw - 8)) }); setProToolsDropdownOpen(v => !v); setActionsDropdownOpen(false); }}
+                                        onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setProToolsDropdownPos({ top: r.bottom + 4, left: window.innerWidth - r.right }); setProToolsDropdownOpen(v => !v); setActionsDropdownOpen(false); }}
                                     >
                                         ✦ Pro Tools ▾
                                         {userPlan !== 'pro' && <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', fontWeight: 700 }}>PRO</span>}
                                     </button>
                                     {proToolsDropdownOpen && (
                                         <div
-                                            style={{ position: 'fixed', top: proToolsDropdownPos.top, left: proToolsDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
+                                            style={{ position: 'fixed', top: proToolsDropdownPos.top, right: proToolsDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
                                             onMouseLeave={() => setProToolsDropdownOpen(false)}
                                         >
                                             {([
@@ -5257,9 +5257,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         onClick={(e) => {
                                             if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
                                             const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                            const dropdownWidth = 210;
-                                            const left = Math.max(8, Math.min(r.left, window.innerWidth - dropdownWidth - 8));
-                                            setConvertDropdownPos({ top: r.bottom + 4, left });
+                                            setConvertDropdownPos({ top: r.bottom + 4, left: window.innerWidth - r.right });
                                             setConvertDropdownOpen(v => !v);
                                         }}
                                     >
@@ -5268,7 +5266,7 @@ Project description: ${newProjectPrompt.trim()}`
 
                                     {convertDropdownOpen && (
                                         <div
-                                            style={{ position: 'fixed', top: convertDropdownPos.top, left: convertDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
+                                            style={{ position: 'fixed', top: convertDropdownPos.top, right: convertDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
                                             onMouseLeave={() => setConvertDropdownOpen(false)}
                                         >
                                             {(() => {
