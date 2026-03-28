@@ -5262,6 +5262,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         {inlineActionLabel === `preset-${preset.id}` ? '⏳' : `📋 ${preset.name}`}
                                     </button>
                                 ))}
+                                </div>{/* closes ProTools position:relative wrapper */}
 
                                 {/* ── Convert dropdown — Pro only ── */}
                                 <div style={{ position: 'relative' }}>
@@ -5280,7 +5281,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         onClick={(e) => {
                                             if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
                                             const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                            setConvertDropdownPos({ top: window.innerHeight - r.top + 4, left: window.innerWidth - r.right });
+                                            setConvertDropdownPos({ top: r.bottom + 4, left: window.innerWidth - r.right });
                                             setConvertDropdownOpen(v => !v);
                                         }}
                                     >
@@ -5291,7 +5292,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         <>
                                         <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setConvertDropdownOpen(false)} />
                                         <div
-                                            style={{ position: 'fixed', bottom: convertDropdownPos.top, right: convertDropdownPos.left, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
+                                            style={{ position: 'fixed', top: convertDropdownPos.top, right: convertDropdownPos.left, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
                                             onMouseLeave={() => setConvertDropdownOpen(false)}
                                         >
                                             {(() => {
