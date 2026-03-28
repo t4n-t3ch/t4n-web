@@ -5094,7 +5094,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         </>
                                     )}
                                 </div>
-                                <div style={{ position: 'relative' }}>
+                                <div>
                                     <button
                                         type="button"
                                         disabled={!codeText.trim() || inlineActionBusy}
@@ -5262,9 +5262,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         {inlineActionLabel === `preset-${preset.id}` ? '⏳' : `📋 ${preset.name}`}
                                     </button>
                                 ))}
-                                </div>{/* closes ProTools position:relative wrapper */}
-
-                                {/* ── Convert dropdown — Pro only ── */}
+                                                  {/* ── Convert dropdown — Pro only ── */}
                                 <div style={{ position: 'relative' }}>
                                     <button
                                         type="button"
