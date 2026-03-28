@@ -825,6 +825,7 @@ export default function HomeClient() {
         setUnsavedCode("");
         setHasUnsavedChanges(false);
         setActiveCodeId(null);
+        setActiveFileId(null);
         setGiveAiAccessToCode(false);
 
         // Add empty state to history
@@ -2697,11 +2698,12 @@ Project description: ${newProjectPrompt.trim()}`
                         <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', flexShrink: 0 }}>
                             <select
                                 style={{ width: '100%', fontSize: '13px', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}
-                                value={activeCodeId ?? (hasUnsavedChanges ? UNSAVED_ID : '')}
+                                value={activeFileId ? "" : (activeCodeId ?? (hasUnsavedChanges ? UNSAVED_ID : ''))}
                                 onChange={async e => {
                                     const id = e.target.value || null;
                                     if (id === UNSAVED_ID) { setActiveCodeId(null); setCodeText(unsavedCode); return; }
                                     setActiveCodeId(id);
+                                    setActiveFileId(null);
                                     setHasUnsavedChanges(false);
                                     const found = savedCodes.find(s => s.id === id);
                                     if (found && id) { setCodeText(found.code); addToHistory(found.code); runDiagnostics(found.code); await loadVersions(id); }
@@ -3046,7 +3048,7 @@ Project description: ${newProjectPrompt.trim()}`
     }
 
     return (
-        <div className="flex h-screen overflow-hidden">
+        <div className="flex h-screen" style={{ overflow: 'clip' }}>
             <ToastContainer />
             {/* Projects Page Overlay */}
             {showProjectsPage && (
@@ -4276,7 +4278,7 @@ Project description: ${newProjectPrompt.trim()}`
                     </div>
                 )}
 
-                <div className="flex-1 flex overflow-hidden">
+                <div className="flex-1 flex" style={{ overflow: 'visible', minWidth: 0 }}>
                     {/* Chat area */}
                     <div className="flex-1 p-5 overflow-y-auto space-y-4 relative" style={{ background: 'var(--bg-primary)' }}>
                         <Image
@@ -4563,7 +4565,7 @@ Project description: ${newProjectPrompt.trim()}`
 
                     {codeOpen && (
                         <aside
-                            className="max-w-[45vw] flex flex-col shrink-0 overflow-hidden"
+                            className="max-w-[45vw] flex flex-col shrink-0"
                             style={{ width: codeWidth, background: 'var(--bg-secondary)', borderLeft: '1px solid var(--border-subtle)' }}
                         >
                             <div className="flex items-center gap-2 p-2 flex-wrap" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)' }}>
@@ -4843,7 +4845,7 @@ Project description: ${newProjectPrompt.trim()}`
                                     <div className="flex items-center gap-2">
                                         <select
                                             className="border rounded px-2 py-1 text-sm"
-                                            value={activeCodeId ?? (hasUnsavedChanges ? UNSAVED_ID : "")}
+                                            value={activeFileId ? "" : (activeCodeId ?? (hasUnsavedChanges ? UNSAVED_ID : ""))}
                                             onChange={async (e) => {
                                                 const id = e.target.value || null;
 
@@ -4869,8 +4871,9 @@ Project description: ${newProjectPrompt.trim()}`
                                                 }
 
                                                 setActiveCodeId(id);
+                                                setActiveFileId(null); // clear project file selection
                                                 setGiveAiAccessToCode(false);
-                                                setHasUnsavedChanges(false); // Switching to saved snippet clears unsaved flag
+                                                setHasUnsavedChanges(false);
 
                                                 const found = savedCodes.find((s) => s.id === id);
                                                 if (found && id) {
@@ -5006,8 +5009,10 @@ Project description: ${newProjectPrompt.trim()}`
                                         {inlineActionBusy && ['🔍 Explain','🔧 Fix Errors','✨ Improve','📋 Add Comments','⚡ Optimise'].includes(inlineActionLabel ?? '') ? '⏳' : '⚡'} Actions ▾
                                     </button>
                                     {actionsDropdownOpen && (
+                                        <>
+                                        <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setActionsDropdownOpen(false)} />
                                         <div
-                                            style={{ position: 'fixed', top: actionsDropdownPos.top, right: actionsDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '190px', overflow: 'auto', maxHeight: '60vh' }}
+                                            style={{ position: 'fixed', top: actionsDropdownPos.top, right: actionsDropdownPos.left, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '190px', overflow: 'auto', maxHeight: '60vh' }}
                                             onMouseLeave={() => setActionsDropdownOpen(false)}
                                         >
                                             {([
@@ -5070,10 +5075,9 @@ Project description: ${newProjectPrompt.trim()}`
                                                 </button>
                                             ))}
                                         </div>
+                                        </>
                                     )}
                                 </div>
-
-                                {/* ── Pro Tools dropdown ── */}
                                 <div style={{ position: 'relative' }}>
                                     <button
                                         type="button"
@@ -5093,8 +5097,10 @@ Project description: ${newProjectPrompt.trim()}`
                                         {userPlan !== 'pro' && <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', fontWeight: 700 }}>PRO</span>}
                                     </button>
                                     {proToolsDropdownOpen && (
+                                        <>
+                                        <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setProToolsDropdownOpen(false)} />
                                         <div
-                                            style={{ position: 'fixed', top: proToolsDropdownPos.top, right: proToolsDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
+                                            style={{ position: 'fixed', top: proToolsDropdownPos.top, right: proToolsDropdownPos.left, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
                                             onMouseLeave={() => setProToolsDropdownOpen(false)}
                                         >
                                             {([
@@ -5163,6 +5169,8 @@ Project description: ${newProjectPrompt.trim()}`
                                         </div>
                                     )}
                                 </div>
+                                        </>
+                                    )}
 
                                 {/* ── ⭐ Preset star button ── */}
                                 <button
@@ -5265,8 +5273,10 @@ Project description: ${newProjectPrompt.trim()}`
                                     </button>
 
                                     {convertDropdownOpen && (
+                                        <>
+                                        <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setConvertDropdownOpen(false)} />
                                         <div
-                                            style={{ position: 'fixed', top: convertDropdownPos.top, right: convertDropdownPos.left, zIndex: 9999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
+                                            style={{ position: 'fixed', top: convertDropdownPos.top, right: convertDropdownPos.left, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
                                             onMouseLeave={() => setConvertDropdownOpen(false)}
                                         >
                                             {(() => {
@@ -5347,9 +5357,9 @@ Project description: ${newProjectPrompt.trim()}`
                                                     <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
                                                 </button>
                                             ))}
-                                        </div>
-                                    )}
-                                </div>
+                                                                                </div>
+                                        </>
+                                    )}                          </div>
                             </div>
 
                             <div className="p-3 overflow-y-auto pb-8">
