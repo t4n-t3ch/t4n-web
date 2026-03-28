@@ -503,21 +503,22 @@ export default function HomeClient() {
         }
     }
 
-    async function saveCurrentCode() {
+    async function saveCurrentCode(overrideName?: string) {
         if (!codeText.trim()) return;
-        // Never auto-save over an existing named snippet — only called for truly new unsaved code
         if (activeCodeId) return;
+
+        const detectedLang = detectLanguage(codeText);
+        const name = overrideName?.trim() || `Snippet ${savedCodes.length + 1}`;
 
         try {
             const res = await createSnippet({
-                name: `Snippet ${savedCodes.length + 1}`,
-                language: "pinescript", // You might want to detect this
+                name,
+                language: detectedLang,
                 code: codeText,
                 source: 'user_edit'
             });
 
             if (res.ok) {
-                // Refresh the list
                 const snippetsRes = await getSnippets();
                 if (snippetsRes.ok) {
                     setSavedCodes(snippetsRes.data.snippets);
@@ -527,6 +528,12 @@ export default function HomeClient() {
         } catch (error) {
             console.error("Failed to save snippet:", error);
         }
+    }
+
+    function promptSaveCurrentCode() {
+        if (!codeText.trim() || activeCodeId) return;
+        setRenameModalId('__new__');
+        setRenameModalValue('');
     }
 
     async function updateActiveSnippet() {
@@ -564,6 +571,12 @@ export default function HomeClient() {
         setRenameModalId(null);
         setRenameModalValue('');
         if (!id || !next) return;
+
+        // Special case: saving new unsaved code with a name
+        if (id === '__new__') {
+            await saveCurrentCode(next);
+            return;
+        }
 
         // Optimistic update
         setSavedCodes((p) => p.map((x) => (x.id === id ? { ...x, name: next } : x)));
@@ -632,8 +645,10 @@ export default function HomeClient() {
         if (/using\s+UnityEngine|MonoBehaviour/i.test(code)) return 'unity';
         if (/import\s+bpy\b|bpy\.ops\.|bpy\.data\./i.test(code)) return 'blender';
         if (/(^|\n)\s*\/\/@version=\d+/i.test(code) || /(^|\n)\s*(indicator|strategy)\s*\(/i.test(code)) return 'pinescript';
-        if (/import\s+React|from\s+'react'|\.tsx?\b/.test(code)) return 'react';
-        if (/def\s+\w+\(|import\s+\w+|print\s*\(/.test(code)) return 'python';
+        if (/import\s+React|from\s+['"]react['"]|useState\b|useEffect\b|useRef\b|JSX\.Element|React\.FC/.test(code)) return 'react';
+        if (/from\s+['"][^'"]+['"]|interface\s+\w+\s*{|type\s+\w+\s*=|:\s*(string|number|boolean|void)\b/.test(code)) return 'typescript';
+        if (/def\s+\w+\s*\(|^import\s+\w+\s*$/m.test(code)) return 'python';
+        if (/function\s+\w+\s*\(|const\s+\w+\s*=\s*(async\s*)?\(|=>\s*{/.test(code)) return 'javascript';
         return 'generic';
     }
 
@@ -2657,7 +2672,7 @@ Project description: ${newProjectPrompt.trim()}`
                             <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap', opacity: historyIndex < codeHistory.length - 1 ? 1 : 0.4 }} onClick={handleRedo} disabled={historyIndex >= codeHistory.length - 1}>↪ Redo</button>
                             <button type="button" className="btn-secondary"
                                 style={{ padding: '6px 12px', fontSize: '12px', whiteSpace: 'nowrap', background: hasUnsavedChanges ? 'rgba(34,197,94,0.1)' : undefined }}
-                                onClick={() => { if (activeCodeId) { updateActiveSnippet(); setHasUnsavedChanges(false); } else if (hasUnsavedChanges) { saveCurrentCode(); setHasUnsavedChanges(false); setUnsavedCode(''); } }}
+                                onClick={() => { if (activeCodeId) { updateActiveSnippet(); setHasUnsavedChanges(false); } else if (hasUnsavedChanges) { promptSaveCurrentCode(); } }}
                                 disabled={!codeText.trim() || !hasUnsavedChanges}>
                                 {activeCodeId ? 'Update' : 'Save'}
                             </button>
@@ -4611,10 +4626,8 @@ Project description: ${newProjectPrompt.trim()}`
                                                 updateActiveSnippet();
                                                 setHasUnsavedChanges(false);
                                             } else if (hasUnsavedChanges) {
-                                                // Save as new snippet
-                                                saveCurrentCode();
-                                                setHasUnsavedChanges(false);
-                                                setUnsavedCode("");
+                                                // Prompt for name then save as new snippet
+                                                promptSaveCurrentCode();
                                             }
                                         }}
                                         disabled={!codeText.trim() || !hasUnsavedChanges}
@@ -6296,7 +6309,8 @@ Project description: ${newProjectPrompt.trim()}`
                         style={{ width: '320px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', padding: '20px' }}
                         onMouseDown={(e) => e.stopPropagation()}
                     >
-                        <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)', marginBottom: '12px' }}>✏️ Rename snippet</div>
+                        <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)', marginBottom: '4px' }}>{renameModalId === '__new__' ? '💾 Name your snippet' : '✏️ Rename snippet'}</div>
+                        {renameModalId === '__new__' && <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>Give this file a name before saving</div>}
                         <input
                             autoFocus
                             style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', marginBottom: '12px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }}
