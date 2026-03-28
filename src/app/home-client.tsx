@@ -5167,10 +5167,9 @@ Project description: ${newProjectPrompt.trim()}`
                                                 </button>
                                             ))}
                                         </div>
-                                    )}
-                                </div>
                                         </>
                                     )}
+                                </div>
 
                                 {/* ── ⭐ Preset star button ── */}
                                 <button
@@ -5359,7 +5358,8 @@ Project description: ${newProjectPrompt.trim()}`
                                             ))}
                                                                                 </div>
                                         </>
-                                    )}                          </div>
+                                    )}
+                                </div>
                             </div>
 
                             <div className="p-3 overflow-y-auto pb-8">
