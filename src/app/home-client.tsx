@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import ReactDOM from "react-dom";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Session } from "@supabase/supabase-js";
@@ -5298,7 +5299,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         🔄 Convert ▾ {userPlan !== 'pro' && <span style={{ fontSize: '9px', marginLeft: '2px', opacity: 0.7 }}>✦ Pro</span>}
                                     </button>
 
-                                    {convertDropdownOpen && (
+                                    {convertDropdownOpen && ReactDOM.createPortal(
                                         <>
                                         <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setConvertDropdownOpen(false)} />
                                         <div
@@ -5402,7 +5403,8 @@ Project description: ${newProjectPrompt.trim()}`
                 </button>
             ))}
         </div>
-                                        </>
+                                        </>,
+                                        document.body
                                     )}
                                 </div>
                             </div>
