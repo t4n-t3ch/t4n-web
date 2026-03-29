@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Session } from "@supabase/supabase-js";
@@ -5299,27 +5298,13 @@ Project description: ${newProjectPrompt.trim()}`
                                         🔄 Convert ▾ {userPlan !== 'pro' && <span style={{ fontSize: '9px', marginLeft: '2px', opacity: 0.7 }}>✦ Pro</span>}
                                     </button>
 
-                                    {convertDropdownOpen && createPortal(
-    <>
-        <div
-            style={{ position: 'fixed', inset: 0, zIndex: 2147483646 }}
-            onClick={() => setConvertDropdownOpen(false)}
-        />
-        <div
-            style={{
-                position: 'fixed',
-                top: convertDropdownPos.top,
-                right: convertDropdownPos.right,
-                zIndex: 2147483647,
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border-default)',
-                borderRadius: '8px',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-                minWidth: '210px',
-                overflow: 'auto',
-                maxHeight: '60vh',
-            }}
-        >
+                                    {convertDropdownOpen && (
+                                        <>
+                                        <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setConvertDropdownOpen(false)} />
+                                        <div
+                                            style={{ position: 'fixed', top: convertDropdownPos.top, right: convertDropdownPos.right, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
+                                            onMouseLeave={() => setConvertDropdownOpen(false)}
+                                        >
             {(() => {
                 const allConversions: { from: string; to: string; lang: string; domains: string[] }[] = [
                     { from: 'Pine Script', to: 'Python', lang: 'Python', domains: ['pinescript'] },
@@ -5417,9 +5402,8 @@ Project description: ${newProjectPrompt.trim()}`
                 </button>
             ))}
         </div>
-    </>,
-    document.body
-)}
+                                        </>
+                                    )}
                                 </div>
                             </div>
 
