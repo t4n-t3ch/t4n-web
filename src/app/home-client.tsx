@@ -5377,7 +5377,7 @@ Project description: ${newProjectPrompt.trim()}`
                                 </div>
                             </div>
 
-                            <div className="p-3 overflow-y-auto pb-8">
+                            <div className="p-3 overflow-y-auto pb-8" style={{ position: 'relative', zIndex: 0 }}>
                                 {useMonaco ? (
                                     <div style={{ height: '55vh', border: '1px solid var(--border-default)', borderRadius: '6px', overflow: 'hidden' }}>
                                         <MonacoEditor
