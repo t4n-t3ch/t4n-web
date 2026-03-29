@@ -5300,126 +5300,126 @@ Project description: ${newProjectPrompt.trim()}`
                                     </button>
 
                                     {convertDropdownOpen && createPortal(
-                                        <>
-                                            <div
-                                                style={{ position: 'fixed', inset: 0, zIndex: 2147483646 }}
-                                                onClick={() => setConvertDropdownOpen(false)}
-                                            />
-                                            <div
-                                                style={{
-                                                    position: 'fixed',
-                                                    top: convertDropdownPos.top,
-                                                    right: convertDropdownPos.right,
-                                                    zIndex: 2147483647,
-                                                    background: 'var(--bg-elevated)',
-                                                    border: '1px solid var(--border-default)',
-                                                    borderRadius: '8px',
-                                                    boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-                                                    minWidth: '210px',
-                                                    overflow: 'auto',
-                                                    maxHeight: '60vh',
-                                                }}
-                                            >
-                                                {(() => {
-                                                    const allConversions: { from: string; to: string; lang: string; domains: string[] }[] = [
-                                                        { from: 'Pine Script', to: 'Python', lang: 'Python', domains: ['pinescript'] },
-                                                        { from: 'Pine Script', to: 'cTrader C#', lang: 'cTrader C#', domains: ['pinescript'] },
-                                                        { from: 'Pine Script', to: 'MQL5', lang: 'MQL5', domains: ['pinescript'] },
-                                                        { from: 'Pine Script', to: 'JavaScript', lang: 'JavaScript', domains: ['pinescript'] },
-                                                        { from: 'Pine Script', to: 'TypeScript', lang: 'TypeScript', domains: ['pinescript'] },
-                                                        { from: 'Python', to: 'Pine Script', lang: 'Pine Script v5', domains: ['python'] },
-                                                        { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['python'] },
-                                                        { from: 'Python', to: 'TypeScript', lang: 'TypeScript', domains: ['python'] },
-                                                        { from: 'Python', to: 'MQL5', lang: 'MQL5', domains: ['python'] },
-                                                        { from: 'cTrader C#', to: 'Pine Script', lang: 'Pine Script v5', domains: ['ctrader'] },
-                                                        { from: 'cTrader C#', to: 'Python', lang: 'Python', domains: ['ctrader'] },
-                                                        { from: 'cTrader C#', to: 'MQL5', lang: 'MQL5', domains: ['ctrader'] },
-                                                        { from: 'MQL5', to: 'Pine Script', lang: 'Pine Script v5', domains: ['mql5'] },
-                                                        { from: 'MQL5', to: 'Python', lang: 'Python', domains: ['mql5'] },
-                                                        { from: 'MQL5', to: 'cTrader C#', lang: 'cTrader C#', domains: ['mql5'] },
-                                                        { from: 'JavaScript', to: 'TypeScript', lang: 'TypeScript', domains: ['javascript'] },
-                                                        { from: 'JavaScript', to: 'Python', lang: 'Python', domains: ['javascript'] },
-                                                        { from: 'TypeScript', to: 'JavaScript', lang: 'JavaScript', domains: ['typescript', 'react'] },
-                                                        { from: 'TypeScript', to: 'Python', lang: 'Python', domains: ['typescript', 'react'] },
-                                                        { from: 'C#', to: 'Python', lang: 'Python', domains: ['unity'] },
-                                                        { from: 'C#', to: 'TypeScript', lang: 'TypeScript', domains: ['unity'] },
-                                                        { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['blender'] },
-                                                        { from: 'Code', to: 'Python', lang: 'Python', domains: ['generic'] },
-                                                        { from: 'Code', to: 'TypeScript', lang: 'TypeScript', domains: ['generic'] },
-                                                        { from: 'Code', to: 'JavaScript', lang: 'JavaScript', domains: ['generic'] },
-                                                    ];
-                                                    return allConversions.filter(c => c.domains.includes(selectedDomain));
-                                                })().map(({ from, to, lang }) => (
-                                                    <button
-                                                        key={`${from}-${to}`}
-                                                        type="button"
-                                                        style={{
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'space-between',
-                                                            width: '100%',
-                                                            padding: '8px 14px',
-                                                            background: 'none',
-                                                            border: 'none',
-                                                            borderBottom: '1px solid var(--border-subtle)',
-                                                            cursor: 'pointer',
-                                                            fontFamily: 'DM Sans, sans-serif',
-                                                            transition: 'background 0.1s',
-                                                        }}
-                                                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
-                                                        onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                                                        onClick={async () => {
-                                                            setConvertDropdownOpen(false);
-                                                            if (!codeText.trim() || inlineActionBusy) return;
-                                                            setInlineActionBusy(true);
-                                                            setInlineActionLabel('🔄 Convert');
-                                                            const projectContext = buildProjectContext();
-                                                            const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
-                                                            try {
-                                                                let cid = activeId;
-                                                                if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
-                                                                setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
-                                                                const assistantId = globalThis.crypto.randomUUID();
-                                                                activeAssistantIdRef.current = assistantId;
-                                                                setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-                                                                abortRef.current?.abort();
-                                                                const controller = new AbortController();
-                                                                abortRef.current = controller;
-                                                                setStreaming(true); setLoading(true);
-                                                                const res = await streamMessage(fullPrompt, cid, controller.signal);
-                                                                let streamed = '';
-                                                                await readSseStream(
-                                                                    res,
-                                                                    (delta) => {
-                                                                        streamed += delta;
-                                                                        const extracted = extractCodeBlocks(streamed);
-                                                                        if (extracted) {
-                                                                            setCodeText(extracted); addToHistory(extracted); setHasUnsavedChanges(true); setCodeOpen(true);
-                                                                            const domainMap: Record<string, string> = { 'Python': 'python', 'Pine Script': 'pinescript', 'Pine Script v5': 'pinescript', 'cTrader C#': 'ctrader', 'MQL5': 'mql5', 'JavaScript': 'javascript', 'TypeScript': 'typescript' };
-                                                                            if (domainMap[to]) setSelectedDomain(domainMap[to]);
-                                                                        }
-                                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: extractCodeBlocks(streamed) ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg));
-                                                                    },
-                                                                    (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
-                                                                    undefined,
-                                                                    undefined,
-                                                                    controller.signal,
-                                                                );
-                                                            } catch (err) {
-                                                                setError(err instanceof Error ? err.message : 'Conversion failed');
-                                                            } finally {
-                                                                setInlineActionBusy(false); setInlineActionLabel(null); setStreaming(false); setLoading(false); activeAssistantIdRef.current = null; abortRef.current = null;
-                                                            }
-                                                        }}
-                                                    >
-                                                        <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{from} → {to}</span>
-                                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </>,
-                                        document.body
-                                    )}
+    <>
+        <div
+            style={{ position: 'fixed', inset: 0, zIndex: 2147483646 }}
+            onClick={() => setConvertDropdownOpen(false)}
+        />
+        <div
+            style={{
+                position: 'fixed',
+                top: convertDropdownPos.top,
+                right: convertDropdownPos.right,
+                zIndex: 2147483647,
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-default)',
+                borderRadius: '8px',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                minWidth: '210px',
+                overflow: 'auto',
+                maxHeight: '60vh',
+            }}
+        >
+            {(() => {
+                const allConversions: { from: string; to: string; lang: string; domains: string[] }[] = [
+                    { from: 'Pine Script', to: 'Python', lang: 'Python', domains: ['pinescript'] },
+                    { from: 'Pine Script', to: 'cTrader C#', lang: 'cTrader C#', domains: ['pinescript'] },
+                    { from: 'Pine Script', to: 'MQL5', lang: 'MQL5', domains: ['pinescript'] },
+                    { from: 'Pine Script', to: 'JavaScript', lang: 'JavaScript', domains: ['pinescript'] },
+                    { from: 'Pine Script', to: 'TypeScript', lang: 'TypeScript', domains: ['pinescript'] },
+                    { from: 'Python', to: 'Pine Script', lang: 'Pine Script v5', domains: ['python'] },
+                    { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['python'] },
+                    { from: 'Python', to: 'TypeScript', lang: 'TypeScript', domains: ['python'] },
+                    { from: 'Python', to: 'MQL5', lang: 'MQL5', domains: ['python'] },
+                    { from: 'cTrader C#', to: 'Pine Script', lang: 'Pine Script v5', domains: ['ctrader'] },
+                    { from: 'cTrader C#', to: 'Python', lang: 'Python', domains: ['ctrader'] },
+                    { from: 'cTrader C#', to: 'MQL5', lang: 'MQL5', domains: ['ctrader'] },
+                    { from: 'MQL5', to: 'Pine Script', lang: 'Pine Script v5', domains: ['mql5'] },
+                    { from: 'MQL5', to: 'Python', lang: 'Python', domains: ['mql5'] },
+                    { from: 'MQL5', to: 'cTrader C#', lang: 'cTrader C#', domains: ['mql5'] },
+                    { from: 'JavaScript', to: 'TypeScript', lang: 'TypeScript', domains: ['javascript'] },
+                    { from: 'JavaScript', to: 'Python', lang: 'Python', domains: ['javascript'] },
+                    { from: 'TypeScript', to: 'JavaScript', lang: 'JavaScript', domains: ['typescript', 'react'] },
+                    { from: 'TypeScript', to: 'Python', lang: 'Python', domains: ['typescript', 'react'] },
+                    { from: 'C#', to: 'Python', lang: 'Python', domains: ['unity'] },
+                    { from: 'C#', to: 'TypeScript', lang: 'TypeScript', domains: ['unity'] },
+                    { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['blender'] },
+                    { from: 'Code', to: 'Python', lang: 'Python', domains: ['generic'] },
+                    { from: 'Code', to: 'TypeScript', lang: 'TypeScript', domains: ['generic'] },
+                    { from: 'Code', to: 'JavaScript', lang: 'JavaScript', domains: ['generic'] },
+                ];
+                return allConversions.filter(c => c.domains.includes(selectedDomain));
+            })().map(({ from, to, lang }) => (
+                <button
+                    key={`${from}-${to}`}
+                    type="button"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        padding: '8px 14px',
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: '1px solid var(--border-subtle)',
+                        cursor: 'pointer',
+                        fontFamily: 'DM Sans, sans-serif',
+                        transition: 'background 0.1s',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                    onClick={async () => {
+                        setConvertDropdownOpen(false);
+                        if (!codeText.trim() || inlineActionBusy) return;
+                        setInlineActionBusy(true);
+                        setInlineActionLabel('🔄 Convert');
+                        const projectContext = buildProjectContext();
+                        const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+                        try {
+                            let cid = activeId;
+                            if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
+                            setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
+                            const assistantId = globalThis.crypto.randomUUID();
+                            activeAssistantIdRef.current = assistantId;
+                            setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+                            abortRef.current?.abort();
+                            const controller = new AbortController();
+                            abortRef.current = controller;
+                            setStreaming(true); setLoading(true);
+                            const res = await streamMessage(fullPrompt, cid, controller.signal);
+                            let streamed = '';
+                            await readSseStream(
+                                res,
+                                (delta) => {
+                                    streamed += delta;
+                                    const extracted = extractCodeBlocks(streamed);
+                                    if (extracted) {
+                                        setCodeText(extracted); addToHistory(extracted); setHasUnsavedChanges(true); setCodeOpen(true);
+                                        const domainMap: Record<string, string> = { 'Python': 'python', 'Pine Script': 'pinescript', 'Pine Script v5': 'pinescript', 'cTrader C#': 'ctrader', 'MQL5': 'mql5', 'JavaScript': 'javascript', 'TypeScript': 'typescript' };
+                                        if (domainMap[to]) setSelectedDomain(domainMap[to]);
+                                    }
+                                    setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: extractCodeBlocks(streamed) ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg));
+                                },
+                                (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
+                                undefined,
+                                undefined,
+                                controller.signal,
+                            );
+                        } catch (err) {
+                            setError(err instanceof Error ? err.message : 'Conversion failed');
+                        } finally {
+                            setInlineActionBusy(false); setInlineActionLabel(null); setStreaming(false); setLoading(false); activeAssistantIdRef.current = null; abortRef.current = null;
+                        }
+                    }}
+                >
+                    <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{from} → {to}</span>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
+                </button>
+            ))}
+        </div>
+    </>,
+    document.body
+)}
                                 </div>
                             </div>
 
