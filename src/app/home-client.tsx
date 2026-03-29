@@ -5334,7 +5334,8 @@ Project description: ${newProjectPrompt.trim()}`
                     { from: 'Code', to: 'TypeScript', lang: 'TypeScript', domains: ['generic'] },
                     { from: 'Code', to: 'JavaScript', lang: 'JavaScript', domains: ['generic'] },
                 ];
-                return allConversions.filter(c => c.domains.includes(selectedDomain));
+                const resolvedDomain = selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain;
+                return allConversions.filter(c => c.domains.includes(resolvedDomain));
             })().map(({ from, to, lang }) => (
                 <button
                     key={`${from}-${to}`}
