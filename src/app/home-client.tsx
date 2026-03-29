@@ -2259,15 +2259,15 @@ Project description: ${newProjectPrompt.trim()}`
                 const instrLower = (parsed.ai_instructions ?? '' + newProjectPrompt).toLowerCase();
                 const lang = instrLower.includes('unity') || instrLower.includes('c#') ? 'C# for Unity'
                     : instrLower.includes('python') ? 'Python'
-                    : instrLower.includes('pine') || instrLower.includes('tradingview') ? 'Pine Script v5'
-                    : instrLower.includes('react') || instrLower.includes('next') ? 'TypeScript React'
-                    : instrLower.includes('javascript') ? 'JavaScript'
-                    : instrLower.includes('blender') ? 'Python for Blender (bpy)'
-                    : 'TypeScript';
+                        : instrLower.includes('pine') || instrLower.includes('tradingview') ? 'Pine Script v5'
+                            : instrLower.includes('react') || instrLower.includes('next') ? 'TypeScript React'
+                                : instrLower.includes('javascript') ? 'JavaScript'
+                                    : instrLower.includes('blender') ? 'Python for Blender (bpy)'
+                                        : 'TypeScript';
                 const ext = lang.includes('C#') ? 'cs'
                     : lang.includes('Python') ? 'py'
-                    : lang.includes('Pine') ? 'pine'
-                    : 'ts';
+                        : lang.includes('Pine') ? 'pine'
+                            : 'ts';
 
                 // Fetch credentials once before the loop — avoids session expiry mid-loop on mobile
                 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
@@ -5004,7 +5004,19 @@ Project description: ${newProjectPrompt.trim()}`
                             </div>
 
                             {/* ── Toolbar: Actions + Pro Tools dropdowns ── */}
-                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-primary)', flexWrap: 'wrap' }}>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    gap: '6px',
+                                    alignItems: 'center',
+                                    padding: '6px 10px',
+                                    borderBottom: '1px solid var(--border-subtle)',
+                                    background: 'var(--bg-primary)',
+                                    flexWrap: 'wrap',
+                                    position: 'relative',
+                                    zIndex: 20,
+                                }}
+                            >
 
                                 {/* ── Actions dropdown ── */}
                                 <div style={{ position: 'relative' }}>
@@ -5022,75 +5034,75 @@ Project description: ${newProjectPrompt.trim()}`
                                         }}
                                         onClick={(e) => { const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect(); setActionsDropdownPos({ top: r.bottom + 4, left: window.innerWidth - r.right }); setActionsDropdownOpen(v => !v); setProToolsDropdownOpen(false); }}
                                     >
-                                        {inlineActionBusy && ['🔍 Explain','🔧 Fix Errors','✨ Improve','📋 Add Comments','⚡ Optimise'].includes(inlineActionLabel ?? '') ? '⏳' : '⚡'} Actions ▾
+                                        {inlineActionBusy && ['🔍 Explain', '🔧 Fix Errors', '✨ Improve', '📋 Add Comments', '⚡ Optimise'].includes(inlineActionLabel ?? '') ? '⏳' : '⚡'} Actions ▾
                                     </button>
                                     {actionsDropdownOpen && (
                                         <>
-                                        <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setActionsDropdownOpen(false)} />
-                                        <div
-                                            style={{ position: 'fixed', top: actionsDropdownPos.top, right: actionsDropdownPos.left, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '190px', overflow: 'auto', maxHeight: '60vh' }}
-                                            onMouseLeave={() => setActionsDropdownOpen(false)}
-                                        >
-                                            {([
-                                                { label: '🔍 Explain', prompt: 'Explain what this code does in plain English. Be concise.' },
-                                                { label: '🔧 Fix Errors', prompt: 'Find and fix any errors, bugs, or issues in this code. Use Ctrl+F format for changes.' },
-                                                { label: '✨ Improve', prompt: 'Suggest and apply improvements to this code for readability, performance, and best practices. Use Ctrl+F format.' },
-                                                { label: '📋 Add Comments', prompt: 'Add clear inline comments to this code explaining what each section does. Use Ctrl+F format.' },
-                                                { label: '⚡ Optimise', prompt: 'Optimise this code for speed and efficiency. Use Ctrl+F format for changes.' },
-                                            ] as const).map(({ label, prompt }) => (
-                                                <button
-                                                    key={label}
-                                                    type="button"
-                                                    disabled={!codeText.trim() || inlineActionBusy}
-                                                    style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '9px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
-                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
-                                                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                                                    onClick={async () => {
-                                                        if (!codeText.trim() || inlineActionBusy) return;
-                                                        setActionsDropdownOpen(false);
-                                                        setInlineActionBusy(true);
-                                                        setInlineActionLabel(label);
-                                                        const domain = selectedDomain;
-                                                        const projectContext = buildProjectContext();
-                                                        const fullPrompt = `USER REQUEST:\n${prompt}\n\nEXISTING CODE (${domain}) — output the FULL corrected file, no truncation:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
-                                                        try {
-                                                            let cid = activeId;
-                                                            if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
-                                                            setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `${label} — running on current code…` }]);
-                                                            const assistantId = globalThis.crypto.randomUUID();
-                                                            activeAssistantIdRef.current = assistantId;
-                                                            setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-                                                            abortRef.current?.abort();
-                                                            const controller = new AbortController();
-                                                            abortRef.current = controller;
-                                                            setStreaming(true); setLoading(true);
-                                                            const res = await streamMessage(fullPrompt, cid, controller.signal);
-                                                            let streamed = '';
-                                                            await readSseStream(res,
-                                                                (delta) => {
-                                                                    streamed += delta;
-                                                                    const extracted = extractCodeBlocks(streamed);
-                                                                    if (extracted && !/ctrl\+f:/i.test(streamed)) {
-                                                                        const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
-                                                                        setCodeText(merged); addToHistory(merged); setHasUnsavedChanges(true);
-                                                                        if (!activeCodeId) setUnsavedCode(merged);
-                                                                        if (giveAiAccessToCode) setAccessLockedCode(merged);
-                                                                        setCodeOpen(true);
-                                                                    }
-                                                                    const isCtrlF = /ctrl\+f:/i.test(streamed);
-                                                                    setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : extractCodeBlocks(streamed) ? '[Code updated → check Code panel]' : stripCodeBlocks(streamed) } : msg));
-                                                                },
-                                                                (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
-                                                                undefined, undefined, controller.signal,
-                                                            );
-                                                        } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); }
-                                                        finally { setInlineActionBusy(false); setInlineActionLabel(null); setStreaming(false); setLoading(false); activeAssistantIdRef.current = null; abortRef.current = null; }
-                                                    }}
-                                                >
-                                                    <span style={{ fontSize: '12px', color: inlineActionLabel === label ? 'var(--accent)' : 'var(--text-primary)', fontWeight: 500 }}>{inlineActionLabel === label ? '⏳' : label}</span>
-                                                </button>
-                                            ))}
-                                        </div>
+                                            <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setActionsDropdownOpen(false)} />
+                                            <div
+                                                style={{ position: 'fixed', top: actionsDropdownPos.top, right: actionsDropdownPos.left, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '190px', overflow: 'auto', maxHeight: '60vh' }}
+                                                onMouseLeave={() => setActionsDropdownOpen(false)}
+                                            >
+                                                {([
+                                                    { label: '🔍 Explain', prompt: 'Explain what this code does in plain English. Be concise.' },
+                                                    { label: '🔧 Fix Errors', prompt: 'Find and fix any errors, bugs, or issues in this code. Use Ctrl+F format for changes.' },
+                                                    { label: '✨ Improve', prompt: 'Suggest and apply improvements to this code for readability, performance, and best practices. Use Ctrl+F format.' },
+                                                    { label: '📋 Add Comments', prompt: 'Add clear inline comments to this code explaining what each section does. Use Ctrl+F format.' },
+                                                    { label: '⚡ Optimise', prompt: 'Optimise this code for speed and efficiency. Use Ctrl+F format for changes.' },
+                                                ] as const).map(({ label, prompt }) => (
+                                                    <button
+                                                        key={label}
+                                                        type="button"
+                                                        disabled={!codeText.trim() || inlineActionBusy}
+                                                        style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '9px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
+                                                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                        onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                        onClick={async () => {
+                                                            if (!codeText.trim() || inlineActionBusy) return;
+                                                            setActionsDropdownOpen(false);
+                                                            setInlineActionBusy(true);
+                                                            setInlineActionLabel(label);
+                                                            const domain = selectedDomain;
+                                                            const projectContext = buildProjectContext();
+                                                            const fullPrompt = `USER REQUEST:\n${prompt}\n\nEXISTING CODE (${domain}) — output the FULL corrected file, no truncation:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+                                                            try {
+                                                                let cid = activeId;
+                                                                if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
+                                                                setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `${label} — running on current code…` }]);
+                                                                const assistantId = globalThis.crypto.randomUUID();
+                                                                activeAssistantIdRef.current = assistantId;
+                                                                setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+                                                                abortRef.current?.abort();
+                                                                const controller = new AbortController();
+                                                                abortRef.current = controller;
+                                                                setStreaming(true); setLoading(true);
+                                                                const res = await streamMessage(fullPrompt, cid, controller.signal);
+                                                                let streamed = '';
+                                                                await readSseStream(res,
+                                                                    (delta) => {
+                                                                        streamed += delta;
+                                                                        const extracted = extractCodeBlocks(streamed);
+                                                                        if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                                                                            const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
+                                                                            setCodeText(merged); addToHistory(merged); setHasUnsavedChanges(true);
+                                                                            if (!activeCodeId) setUnsavedCode(merged);
+                                                                            if (giveAiAccessToCode) setAccessLockedCode(merged);
+                                                                            setCodeOpen(true);
+                                                                        }
+                                                                        const isCtrlF = /ctrl\+f:/i.test(streamed);
+                                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : extractCodeBlocks(streamed) ? '[Code updated → check Code panel]' : stripCodeBlocks(streamed) } : msg));
+                                                                    },
+                                                                    (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
+                                                                    undefined, undefined, controller.signal,
+                                                                );
+                                                            } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); }
+                                                            finally { setInlineActionBusy(false); setInlineActionLabel(null); setStreaming(false); setLoading(false); activeAssistantIdRef.current = null; abortRef.current = null; }
+                                                        }}
+                                                    >
+                                                        <span style={{ fontSize: '12px', color: inlineActionLabel === label ? 'var(--accent)' : 'var(--text-primary)', fontWeight: 500 }}>{inlineActionLabel === label ? '⏳' : label}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </>
                                     )}
                                 </div>
@@ -5114,75 +5126,75 @@ Project description: ${newProjectPrompt.trim()}`
                                     </button>
                                     {proToolsDropdownOpen && (
                                         <>
-                                        <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setProToolsDropdownOpen(false)} />
-                                        <div
-                                            style={{ position: 'fixed', top: proToolsDropdownPos.top, right: proToolsDropdownPos.left, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
-                                            onMouseLeave={() => setProToolsDropdownOpen(false)}
-                                        >
-                                            {([
-                                                { label: '🔬 AI Code Review', prompt: `Perform a comprehensive code review. Return your analysis in this exact format:\n\n## 🔒 Security Issues\nList any security vulnerabilities, injection risks, or unsafe patterns. If none, say "None found."\n\n## ⚡ Performance Problems\nList any performance issues, unnecessary loops, memory leaks. If none, say "None found."\n\n## ❌ Bad Patterns\nList anti-patterns, code smells, poor naming. If none, say "None found."\n\n## ✅ Better Approaches\nSuggest concrete improvements with Ctrl+F format where applicable.\n\nBe specific with line references.` },
-                                                { label: '🐛 Debug Mode', prompt: `Debug this code thoroughly. Return your analysis in this exact format:\n\n## 🔴 Error Identified\nDescribe the most likely bug or error\n\n## 🔍 Possible Causes\n1. First possible root cause\n2. Second possible root cause\n3. Third possible root cause\n\n## 🛠 Suggested Fix\nProvide the exact fix using Ctrl+F find-and-replace format.` },
-                                                { label: '🧪 Generate Tests', prompt: `Generate comprehensive unit tests for this code. Include happy path, edge cases, and error handling. Use the correct framework (Jest/Vitest for TS/JS, pytest for Python, NUnit for C#). Output the full test file, ready to run.` },
-                                                { label: '🏗️ Project Analysis', prompt: `Analyse this entire codebase/file and return:\n\n## 📐 Architecture Overview\nDescribe structure and patterns.\n\n## 🚨 Issues Found\n- Duplicated functions\n- Circular dependencies\n- Missing error handling\n- Performance bottlenecks\n\n## 🔧 Suggested Improvements\nPrioritised list with Ctrl+F format fixes.\n\n## 📊 Code Quality Score\nScore out of 10 with justification.` },
-                                                { label: '🔀 Multi-File Refactor', prompt: `Refactor this code to clean architecture:\n- Extract repeated logic into reusable functions\n- Separate concerns (auth, data, UI)\n- Convert callbacks to async/await\n- Add TypeScript types where missing\n- Remove dead code\n\nOutput the FULL refactored file — no truncation.` },
-                                                { label: '🚀 DevOps Assist', prompt: `Generate DevOps config for this project:\n\n## 🐳 Docker Setup\nDockerfile and docker-compose.yml\n\n## ⚙️ CI/CD Pipeline\nGitHub Actions YAML\n\n## 🚢 Deployment Commands\nStep-by-step shell commands\n\n## 🔑 Environment Variables\nRequired env vars with descriptions` },
-                                                { label: '💬 Ask Project', prompt: `You are a codebase assistant. Analyse the provided code and answer questions about it — where features are, how things connect, what functions do. Be specific with line numbers and function names.\n\nCurrent code to analyse:` },
-                                            ] as const).map(({ label, prompt }) => (
-                                                <button
-                                                    key={label}
-                                                    type="button"
-                                                    disabled={!codeText.trim() || inlineActionBusy}
-                                                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '9px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
-                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
-                                                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                                                    onClick={async () => {
-                                                        if (!codeText.trim() || inlineActionBusy) return;
-                                                        setProToolsDropdownOpen(false);
-                                                        if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
-                                                        const finalPrompt = label === '💬 Ask Project'
-                                                            ? `${prompt}\n\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\``
-                                                            : `USER REQUEST:\n${prompt}\n\nSOURCE CODE (${selectedDomain}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${buildProjectContext()}`;
-                                                        setInlineActionBusy(true);
-                                                        setInlineActionLabel(label);
-                                                        try {
-                                                            let cid = activeId;
-                                                            if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
-                                                            setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `${label} — running on current code…` }]);
-                                                            const assistantId = globalThis.crypto.randomUUID();
-                                                            activeAssistantIdRef.current = assistantId;
-                                                            setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-                                                            abortRef.current?.abort();
-                                                            const controller = new AbortController();
-                                                            abortRef.current = controller;
-                                                            setStreaming(true); setLoading(true);
-                                                            const res = await streamMessage(finalPrompt, cid, controller.signal);
-                                                            let streamed = '';
-                                                            await readSseStream(res,
-                                                                (delta) => {
-                                                                    streamed += delta;
-                                                                    const extracted = extractCodeBlocks(streamed);
-                                                                    if (extracted && !/ctrl\+f:/i.test(streamed)) {
-                                                                        const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
-                                                                        setCodeText(merged); addToHistory(merged); setHasUnsavedChanges(true);
-                                                                        if (!activeCodeId) setUnsavedCode(merged);
-                                                                        if (giveAiAccessToCode) setAccessLockedCode(merged);
-                                                                        setCodeOpen(true);
-                                                                    }
-                                                                    const isCtrlF = /ctrl\+f:/i.test(streamed);
-                                                                    setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : extractCodeBlocks(streamed) ? `[${label} → check Code panel]` : stripCodeBlocks(streamed) } : msg));
-                                                                },
-                                                                (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
-                                                                undefined, undefined, controller.signal,
-                                                            );
-                                                        } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); }
-                                                        finally { setInlineActionBusy(false); setInlineActionLabel(null); setStreaming(false); setLoading(false); activeAssistantIdRef.current = null; abortRef.current = null; }
-                                                    }}
-                                                >
-                                                    <span style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 500 }}>{inlineActionLabel === label ? '⏳' : label}</span>
-                                                    {userPlan !== 'pro' && <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', fontWeight: 700, flexShrink: 0 }}>PRO</span>}
-                                                </button>
-                                            ))}
-                                        </div>
+                                            <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setProToolsDropdownOpen(false)} />
+                                            <div
+                                                style={{ position: 'fixed', top: proToolsDropdownPos.top, right: proToolsDropdownPos.left, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
+                                                onMouseLeave={() => setProToolsDropdownOpen(false)}
+                                            >
+                                                {([
+                                                    { label: '🔬 AI Code Review', prompt: `Perform a comprehensive code review. Return your analysis in this exact format:\n\n## 🔒 Security Issues\nList any security vulnerabilities, injection risks, or unsafe patterns. If none, say "None found."\n\n## ⚡ Performance Problems\nList any performance issues, unnecessary loops, memory leaks. If none, say "None found."\n\n## ❌ Bad Patterns\nList anti-patterns, code smells, poor naming. If none, say "None found."\n\n## ✅ Better Approaches\nSuggest concrete improvements with Ctrl+F format where applicable.\n\nBe specific with line references.` },
+                                                    { label: '🐛 Debug Mode', prompt: `Debug this code thoroughly. Return your analysis in this exact format:\n\n## 🔴 Error Identified\nDescribe the most likely bug or error\n\n## 🔍 Possible Causes\n1. First possible root cause\n2. Second possible root cause\n3. Third possible root cause\n\n## 🛠 Suggested Fix\nProvide the exact fix using Ctrl+F find-and-replace format.` },
+                                                    { label: '🧪 Generate Tests', prompt: `Generate comprehensive unit tests for this code. Include happy path, edge cases, and error handling. Use the correct framework (Jest/Vitest for TS/JS, pytest for Python, NUnit for C#). Output the full test file, ready to run.` },
+                                                    { label: '🏗️ Project Analysis', prompt: `Analyse this entire codebase/file and return:\n\n## 📐 Architecture Overview\nDescribe structure and patterns.\n\n## 🚨 Issues Found\n- Duplicated functions\n- Circular dependencies\n- Missing error handling\n- Performance bottlenecks\n\n## 🔧 Suggested Improvements\nPrioritised list with Ctrl+F format fixes.\n\n## 📊 Code Quality Score\nScore out of 10 with justification.` },
+                                                    { label: '🔀 Multi-File Refactor', prompt: `Refactor this code to clean architecture:\n- Extract repeated logic into reusable functions\n- Separate concerns (auth, data, UI)\n- Convert callbacks to async/await\n- Add TypeScript types where missing\n- Remove dead code\n\nOutput the FULL refactored file — no truncation.` },
+                                                    { label: '🚀 DevOps Assist', prompt: `Generate DevOps config for this project:\n\n## 🐳 Docker Setup\nDockerfile and docker-compose.yml\n\n## ⚙️ CI/CD Pipeline\nGitHub Actions YAML\n\n## 🚢 Deployment Commands\nStep-by-step shell commands\n\n## 🔑 Environment Variables\nRequired env vars with descriptions` },
+                                                    { label: '💬 Ask Project', prompt: `You are a codebase assistant. Analyse the provided code and answer questions about it — where features are, how things connect, what functions do. Be specific with line numbers and function names.\n\nCurrent code to analyse:` },
+                                                ] as const).map(({ label, prompt }) => (
+                                                    <button
+                                                        key={label}
+                                                        type="button"
+                                                        disabled={!codeText.trim() || inlineActionBusy}
+                                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '9px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: !codeText.trim() || inlineActionBusy ? 'not-allowed' : 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
+                                                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                        onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                        onClick={async () => {
+                                                            if (!codeText.trim() || inlineActionBusy) return;
+                                                            setProToolsDropdownOpen(false);
+                                                            if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
+                                                            const finalPrompt = label === '💬 Ask Project'
+                                                                ? `${prompt}\n\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\``
+                                                                : `USER REQUEST:\n${prompt}\n\nSOURCE CODE (${selectedDomain}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${buildProjectContext()}`;
+                                                            setInlineActionBusy(true);
+                                                            setInlineActionLabel(label);
+                                                            try {
+                                                                let cid = activeId;
+                                                                if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
+                                                                setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `${label} — running on current code…` }]);
+                                                                const assistantId = globalThis.crypto.randomUUID();
+                                                                activeAssistantIdRef.current = assistantId;
+                                                                setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+                                                                abortRef.current?.abort();
+                                                                const controller = new AbortController();
+                                                                abortRef.current = controller;
+                                                                setStreaming(true); setLoading(true);
+                                                                const res = await streamMessage(finalPrompt, cid, controller.signal);
+                                                                let streamed = '';
+                                                                await readSseStream(res,
+                                                                    (delta) => {
+                                                                        streamed += delta;
+                                                                        const extracted = extractCodeBlocks(streamed);
+                                                                        if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                                                                            const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
+                                                                            setCodeText(merged); addToHistory(merged); setHasUnsavedChanges(true);
+                                                                            if (!activeCodeId) setUnsavedCode(merged);
+                                                                            if (giveAiAccessToCode) setAccessLockedCode(merged);
+                                                                            setCodeOpen(true);
+                                                                        }
+                                                                        const isCtrlF = /ctrl\+f:/i.test(streamed);
+                                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : extractCodeBlocks(streamed) ? `[${label} → check Code panel]` : stripCodeBlocks(streamed) } : msg));
+                                                                    },
+                                                                    (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
+                                                                    undefined, undefined, controller.signal,
+                                                                );
+                                                            } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); }
+                                                            finally { setInlineActionBusy(false); setInlineActionLabel(null); setStreaming(false); setLoading(false); activeAssistantIdRef.current = null; abortRef.current = null; }
+                                                        }}
+                                                    >
+                                                        <span style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 500 }}>{inlineActionLabel === label ? '⏳' : label}</span>
+                                                        {userPlan !== 'pro' && <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', fontWeight: 700, flexShrink: 0 }}>PRO</span>}
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </>
                                     )}
                                 </div>
@@ -5262,7 +5274,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         {inlineActionLabel === `preset-${preset.id}` ? '⏳' : `📋 ${preset.name}`}
                                     </button>
                                 ))}
-                                                  {/* ── Convert dropdown — Pro only ── */}
+                                {/* ── Convert dropdown — Pro only ── */}
                                 <div style={{ position: 'relative' }}>
                                     <button
                                         type="button"
@@ -5288,96 +5300,96 @@ Project description: ${newProjectPrompt.trim()}`
 
                                     {convertDropdownOpen && (
                                         <>
-                                        <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setConvertDropdownOpen(false)} />
-                                        <div
-                                            style={{ position: 'fixed', top: convertDropdownPos.top, left: convertDropdownPos.left, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
-                                            onMouseLeave={() => setConvertDropdownOpen(false)}
-                                        >
-                                            {(() => {
-                                                const allConversions: { from: string; to: string; lang: string; domains: string[] }[] = [
-                                                    { from: 'Pine Script', to: 'Python', lang: 'Python', domains: ['pinescript'] },
-                                                    { from: 'Pine Script', to: 'cTrader C#', lang: 'cTrader C#', domains: ['pinescript'] },
-                                                    { from: 'Pine Script', to: 'MQL5', lang: 'MQL5', domains: ['pinescript'] },
-                                                    { from: 'Pine Script', to: 'JavaScript', lang: 'JavaScript', domains: ['pinescript'] },
-                                                    { from: 'Pine Script', to: 'TypeScript', lang: 'TypeScript', domains: ['pinescript'] },
-                                                    { from: 'Python', to: 'Pine Script', lang: 'Pine Script v5', domains: ['python'] },
-                                                    { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['python'] },
-                                                    { from: 'Python', to: 'TypeScript', lang: 'TypeScript', domains: ['python'] },
-                                                    { from: 'Python', to: 'MQL5', lang: 'MQL5', domains: ['python'] },
-                                                    { from: 'cTrader C#', to: 'Pine Script', lang: 'Pine Script v5', domains: ['ctrader'] },
-                                                    { from: 'cTrader C#', to: 'Python', lang: 'Python', domains: ['ctrader'] },
-                                                    { from: 'cTrader C#', to: 'MQL5', lang: 'MQL5', domains: ['ctrader'] },
-                                                    { from: 'MQL5', to: 'Pine Script', lang: 'Pine Script v5', domains: ['mql5'] },
-                                                    { from: 'MQL5', to: 'Python', lang: 'Python', domains: ['mql5'] },
-                                                    { from: 'MQL5', to: 'cTrader C#', lang: 'cTrader C#', domains: ['mql5'] },
-                                                    { from: 'JavaScript', to: 'TypeScript', lang: 'TypeScript', domains: ['javascript'] },
-                                                    { from: 'JavaScript', to: 'Python', lang: 'Python', domains: ['javascript'] },
-                                                    { from: 'TypeScript', to: 'JavaScript', lang: 'JavaScript', domains: ['typescript', 'react'] },
-                                                    { from: 'TypeScript', to: 'Python', lang: 'Python', domains: ['typescript', 'react'] },
-                                                    { from: 'C#', to: 'Python', lang: 'Python', domains: ['unity'] },
-                                                    { from: 'C#', to: 'TypeScript', lang: 'TypeScript', domains: ['unity'] },
-                                                    { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['blender'] },
-                                                    { from: 'Code', to: 'Python', lang: 'Python', domains: ['generic'] },
-                                                    { from: 'Code', to: 'TypeScript', lang: 'TypeScript', domains: ['generic'] },
-                                                    { from: 'Code', to: 'JavaScript', lang: 'JavaScript', domains: ['generic'] },
-                                                ];
-                                                return allConversions.filter(c => c.domains.includes(selectedDomain));
-                                            })().map(({ from, to, lang }) => (
-                                                <button
-                                                    key={`${from}-${to}`}
-                                                    type="button"
-                                                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
-                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
-                                                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                                                    onClick={async () => {
-                                                        setConvertDropdownOpen(false);
-                                                        if (!codeText.trim() || inlineActionBusy) return;
-                                                        setInlineActionBusy(true);
-                                                        setInlineActionLabel('🔄 Convert');
-                                                        const projectContext = buildProjectContext();
-                                                        const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
-                                                        try {
-                                                            let cid = activeId;
-                                                            if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
-                                                            setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
-                                                            const assistantId = globalThis.crypto.randomUUID();
-                                                            activeAssistantIdRef.current = assistantId;
-                                                            setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-                                                            abortRef.current?.abort();
-                                                            const controller = new AbortController();
-                                                            abortRef.current = controller;
-                                                            setStreaming(true); setLoading(true);
-                                                            const res = await streamMessage(fullPrompt, cid, controller.signal);
-                                                            let streamed = '';
-                                                            await readSseStream(res,
-                                                                (delta) => {
-                                                                    streamed += delta;
-                                                                    const extracted = extractCodeBlocks(streamed);
-                                                                    if (extracted) {
-                                                                        setCodeText(extracted); addToHistory(extracted); setHasUnsavedChanges(true); setCodeOpen(true);
-                                                                        const domainMap: Record<string, string> = { 'Python': 'python', 'Pine Script': 'pinescript', 'Pine Script v5': 'pinescript', 'cTrader C#': 'ctrader', 'MQL5': 'mql5', 'JavaScript': 'javascript', 'TypeScript': 'typescript' };
-                                                                        if (domainMap[to]) setSelectedDomain(domainMap[to]);
-                                                                    }
-                                                                    setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: extractCodeBlocks(streamed) ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg));
-                                                                },
-                                                                (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
-                                                                undefined, undefined, controller.signal,
-                                                            );
-                                                        } catch (err) { setError(err instanceof Error ? err.message : 'Conversion failed'); }
-                                                        finally { setInlineActionBusy(false); setInlineActionLabel(null); setStreaming(false); setLoading(false); activeAssistantIdRef.current = null; abortRef.current = null; }
-                                                    }}
-                                                >
-                                                    <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{from} → {to}</span>
-                                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
-                                                </button>
-                                            ))}
-                                        </div>
+                                            <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setConvertDropdownOpen(false)} />
+                                            <div
+                                                style={{ position: 'fixed', top: convertDropdownPos.top, left: convertDropdownPos.left, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
+                                                onMouseLeave={() => setConvertDropdownOpen(false)}
+                                            >
+                                                {(() => {
+                                                    const allConversions: { from: string; to: string; lang: string; domains: string[] }[] = [
+                                                        { from: 'Pine Script', to: 'Python', lang: 'Python', domains: ['pinescript'] },
+                                                        { from: 'Pine Script', to: 'cTrader C#', lang: 'cTrader C#', domains: ['pinescript'] },
+                                                        { from: 'Pine Script', to: 'MQL5', lang: 'MQL5', domains: ['pinescript'] },
+                                                        { from: 'Pine Script', to: 'JavaScript', lang: 'JavaScript', domains: ['pinescript'] },
+                                                        { from: 'Pine Script', to: 'TypeScript', lang: 'TypeScript', domains: ['pinescript'] },
+                                                        { from: 'Python', to: 'Pine Script', lang: 'Pine Script v5', domains: ['python'] },
+                                                        { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['python'] },
+                                                        { from: 'Python', to: 'TypeScript', lang: 'TypeScript', domains: ['python'] },
+                                                        { from: 'Python', to: 'MQL5', lang: 'MQL5', domains: ['python'] },
+                                                        { from: 'cTrader C#', to: 'Pine Script', lang: 'Pine Script v5', domains: ['ctrader'] },
+                                                        { from: 'cTrader C#', to: 'Python', lang: 'Python', domains: ['ctrader'] },
+                                                        { from: 'cTrader C#', to: 'MQL5', lang: 'MQL5', domains: ['ctrader'] },
+                                                        { from: 'MQL5', to: 'Pine Script', lang: 'Pine Script v5', domains: ['mql5'] },
+                                                        { from: 'MQL5', to: 'Python', lang: 'Python', domains: ['mql5'] },
+                                                        { from: 'MQL5', to: 'cTrader C#', lang: 'cTrader C#', domains: ['mql5'] },
+                                                        { from: 'JavaScript', to: 'TypeScript', lang: 'TypeScript', domains: ['javascript'] },
+                                                        { from: 'JavaScript', to: 'Python', lang: 'Python', domains: ['javascript'] },
+                                                        { from: 'TypeScript', to: 'JavaScript', lang: 'JavaScript', domains: ['typescript', 'react'] },
+                                                        { from: 'TypeScript', to: 'Python', lang: 'Python', domains: ['typescript', 'react'] },
+                                                        { from: 'C#', to: 'Python', lang: 'Python', domains: ['unity'] },
+                                                        { from: 'C#', to: 'TypeScript', lang: 'TypeScript', domains: ['unity'] },
+                                                        { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['blender'] },
+                                                        { from: 'Code', to: 'Python', lang: 'Python', domains: ['generic'] },
+                                                        { from: 'Code', to: 'TypeScript', lang: 'TypeScript', domains: ['generic'] },
+                                                        { from: 'Code', to: 'JavaScript', lang: 'JavaScript', domains: ['generic'] },
+                                                    ];
+                                                    return allConversions.filter(c => c.domains.includes(selectedDomain));
+                                                })().map(({ from, to, lang }) => (
+                                                    <button
+                                                        key={`${from}-${to}`}
+                                                        type="button"
+                                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.1s' }}
+                                                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                        onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                        onClick={async () => {
+                                                            setConvertDropdownOpen(false);
+                                                            if (!codeText.trim() || inlineActionBusy) return;
+                                                            setInlineActionBusy(true);
+                                                            setInlineActionLabel('🔄 Convert');
+                                                            const projectContext = buildProjectContext();
+                                                            const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+                                                            try {
+                                                                let cid = activeId;
+                                                                if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
+                                                                setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
+                                                                const assistantId = globalThis.crypto.randomUUID();
+                                                                activeAssistantIdRef.current = assistantId;
+                                                                setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+                                                                abortRef.current?.abort();
+                                                                const controller = new AbortController();
+                                                                abortRef.current = controller;
+                                                                setStreaming(true); setLoading(true);
+                                                                const res = await streamMessage(fullPrompt, cid, controller.signal);
+                                                                let streamed = '';
+                                                                await readSseStream(res,
+                                                                    (delta) => {
+                                                                        streamed += delta;
+                                                                        const extracted = extractCodeBlocks(streamed);
+                                                                        if (extracted) {
+                                                                            setCodeText(extracted); addToHistory(extracted); setHasUnsavedChanges(true); setCodeOpen(true);
+                                                                            const domainMap: Record<string, string> = { 'Python': 'python', 'Pine Script': 'pinescript', 'Pine Script v5': 'pinescript', 'cTrader C#': 'ctrader', 'MQL5': 'mql5', 'JavaScript': 'javascript', 'TypeScript': 'typescript' };
+                                                                            if (domainMap[to]) setSelectedDomain(domainMap[to]);
+                                                                        }
+                                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: extractCodeBlocks(streamed) ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg));
+                                                                    },
+                                                                    (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
+                                                                    undefined, undefined, controller.signal,
+                                                                );
+                                                            } catch (err) { setError(err instanceof Error ? err.message : 'Conversion failed'); }
+                                                            finally { setInlineActionBusy(false); setInlineActionLabel(null); setStreaming(false); setLoading(false); activeAssistantIdRef.current = null; abortRef.current = null; }
+                                                        }}
+                                                    >
+                                                        <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{from} → {to}</span>
+                                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </>
                                     )}
                                 </div>
                             </div>
 
-                            <div className="p-3 overflow-y-auto pb-8" style={{ position: 'relative', zIndex: 0 }}>
+                            <div className="p-3 overflow-y-auto pb-8" style={{ position: 'relative' }}>
                                 {useMonaco ? (
                                     <div style={{ height: '55vh', border: '1px solid var(--border-default)', borderRadius: '6px', overflow: 'hidden' }}>
                                         <MonacoEditor
