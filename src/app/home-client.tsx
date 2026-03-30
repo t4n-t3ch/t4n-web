@@ -642,15 +642,17 @@ export default function HomeClient() {
     }
 
     function detectLanguage(code: string): string {
-        if (/#property\s+(copyright|strict|indicator|version)|OnTick\(\)|OnInit\(\)|OnStart\(\)/i.test(code)) return 'mql5';
-        if (/using\s+cAlgo|cAlgo\.API/i.test(code)) return 'ctrader';
-        if (/using\s+UnityEngine|MonoBehaviour/i.test(code)) return 'unity';
-        if (/import\s+bpy\b|bpy\.ops\.|bpy\.data\./i.test(code)) return 'blender';
-        if (/(^|\n)\s*\/\/@version=\d+/i.test(code) || /(^|\n)\s*(indicator|strategy)\s*\(/i.test(code)) return 'pinescript';
-        if (/import\s+React|from\s+['"]react['"]|useState\b|useEffect\b|useRef\b|JSX\.Element|React\.FC/.test(code)) return 'react';
-        if (/from\s+['"][^'"]+['"]|interface\s+\w+\s*{|type\s+\w+\s*=|:\s*(string|number|boolean|void)\b/.test(code)) return 'typescript';
-        if (/def\s+\w+\s*\(|^import\s+\w+\s*$/m.test(code)) return 'python';
-        if (/function\s+\w+\s*\(|const\s+\w+\s*=\s*(async\s*)?\(|=>\s*{/.test(code)) return 'javascript';
+        // Only check first 200 lines to avoid self-referential matches in large files
+        const sample = code.split('\n').slice(0, 200).join('\n');
+        if (/#property\s+(copyright|strict|indicator|version)|OnTick\(\)|OnInit\(\)|OnStart\(\)/i.test(sample)) return 'mql5';
+        if (/using\s+cAlgo|cAlgo\.API/i.test(sample)) return 'ctrader';
+        if (/using\s+UnityEngine|:\s*MonoBehaviour/i.test(sample)) return 'unity';
+        if (/import\s+bpy\b|bpy\.ops\.|bpy\.data\./i.test(sample)) return 'blender';
+        if (/(^|\n)\s*\/\/@version=\d+/i.test(sample) || /(^|\n)\s*(indicator|strategy)\s*\(/i.test(sample)) return 'pinescript';
+        if (/import\s+React|from\s+['"]react['"]|useState\b|useEffect\b|useRef\b|JSX\.Element|React\.FC/.test(sample)) return 'react';
+        if (/from\s+['"][^'"]+['"]|interface\s+\w+\s*{|type\s+\w+\s*=|:\s*(string|number|boolean|void)\b/.test(sample)) return 'typescript';
+        if (/def\s+\w+\s*\(|^import\s+\w+\s*$/m.test(sample)) return 'python';
+        if (/function\s+\w+\s*\(|const\s+\w+\s*=\s*(async\s*)?\(|=>\s*{/.test(sample)) return 'javascript';
         return 'generic';
     }
 
