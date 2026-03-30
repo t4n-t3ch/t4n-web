@@ -5361,7 +5361,7 @@ Project description: ${newProjectPrompt.trim()}`
                         setInlineActionBusy(true);
                         setInlineActionLabel('🔄 Convert');
                         const projectContext = buildProjectContext();
-                        const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+                        const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 240000)}\n\`\`\`${projectContext}`;
                         try {
                             let cid = activeId;
                             if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
