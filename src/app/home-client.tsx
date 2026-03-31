@@ -4297,7 +4297,7 @@ Project description: ${newProjectPrompt.trim()}`
                     </div>
                 )}
 
-                <div className="flex-1 flex" style={{ overflow: 'visible', minWidth: 0 }}>
+                <div className="flex-1 flex" style={{ overflow: 'hidden', minWidth: 0 }}>
                     {/* Chat area */}
                     <div className="flex-1 p-5 overflow-y-auto space-y-4 relative" style={{ background: 'var(--bg-primary)' }}>
                         <Image
