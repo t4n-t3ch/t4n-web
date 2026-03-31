@@ -5071,7 +5071,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                             try {
                                                                 let cid = activeId;
                                                                 if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
-                                                                setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `${label} — running on current code…` }]);
+                                                                setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `${label} — applied to current code…` }]);
                                                                 const assistantId = globalThis.crypto.randomUUID();
                                                                 activeAssistantIdRef.current = assistantId;
                                                                 setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
@@ -5162,7 +5162,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                             try {
                                                                 let cid = activeId;
                                                                 if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
-                                                                setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `${label} — running on current code…` }]);
+                                                                setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `${label} — applied to current code…` }]);
                                                                 const assistantId = globalThis.crypto.randomUUID();
                                                                 activeAssistantIdRef.current = assistantId;
                                                                 setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
