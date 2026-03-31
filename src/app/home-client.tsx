@@ -8,6 +8,7 @@ import { Session } from "@supabase/supabase-js";
 import Image from "next/image";
 import MonacoEditor from "@monaco-editor/react";
 import type * as Monaco from 'monaco-editor';
+import { Analytics } from "@vercel/analytics/next";
 import DiffViewer from 'react-diff-viewer-continued';
 import { lintCode, severityIcon, severityColor, type Diagnostic } from '@/lib/linter';
 import {
