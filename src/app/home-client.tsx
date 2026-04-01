@@ -5047,12 +5047,12 @@ Project description: ${newProjectPrompt.trim()}`
                                                 onMouseLeave={() => setActionsDropdownOpen(false)}
                                             >
                                                 {([
-                                                    { label: '🔍 Explain', prompt: 'Explain what this code does in plain English. Be concise.' },
-                                                    { label: '🔧 Fix Errors', prompt: 'Find and fix any errors, bugs, or issues in this code. Use Ctrl+F format for changes.' },
-                                                    { label: '✨ Improve', prompt: 'Suggest and apply improvements to this code for readability, performance, and best practices. Use Ctrl+F format.' },
-                                                    { label: '📋 Add Comments', prompt: 'Add clear inline comments to this code explaining what each section does. Use Ctrl+F format.' },
-                                                    { label: '⚡ Optimise', prompt: 'Optimise this code for speed and efficiency. Use Ctrl+F format for changes.' },
-                                                ] as const).map(({ label, prompt }) => (
+                                                    { label: '🔍 Explain', prompt: 'Explain what this code does in plain English. Be concise.', mode: 'prose' as const },
+                                                    { label: '🔧 Fix Errors', prompt: 'Find and fix any errors, bugs, or issues in this code. Use Ctrl+F format for changes.', mode: 'ctrlf' as const },
+                                                    { label: '✨ Improve', prompt: 'Suggest and apply improvements to this code for readability, performance, and best practices. Use Ctrl+F format.', mode: 'ctrlf' as const },
+                                                    { label: '📋 Add Comments', prompt: 'Add clear inline comments to this code explaining what each section does. Use Ctrl+F format.', mode: 'ctrlf' as const },
+                                                    { label: '⚡ Optimise', prompt: 'Optimise this code for speed and efficiency. Use Ctrl+F format for changes.', mode: 'ctrlf' as const },
+                                                ] as const).map(({ label, prompt, mode }) => (
                                                     <button
                                                         key={label}
                                                         type="button"
@@ -5067,7 +5067,9 @@ Project description: ${newProjectPrompt.trim()}`
                                                             setInlineActionLabel(label);
                                                             const domain = selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain;
                                                             const projectContext = buildProjectContext();
-                                                            const fullPrompt = `USER REQUEST:\n${prompt}\n\nLanguage: ${domain}${projectContext}`;
+                                                            const fullPrompt = mode === 'prose'
+                                                                ? `USER REQUEST:\n${prompt}\n\nLanguage: ${domain}\n\n\`\`\`${domain}\n${codeText.slice(0, 30000)}\n\`\`\`${projectContext}`
+                                                                : `USER REQUEST:\n${prompt}\n\nLanguage: ${domain}${projectContext}`;
                                                             try {
                                                                 let cid = activeId;
                                                                 if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
@@ -5079,11 +5081,16 @@ Project description: ${newProjectPrompt.trim()}`
                                                                 const controller = new AbortController();
                                                                 abortRef.current = controller;
                                                                 setStreaming(true); setLoading(true);
-                                                                const res = await streamMessage(fullPrompt, cid, controller.signal, codeText);
+                                                                const res = await streamMessage(fullPrompt, cid, controller.signal, mode === 'ctrlf' ? codeText : undefined);
                                                                 let streamed = '';
                                                                 await readSseStream(res,
                                                                     (delta) => {
                                                                         streamed += delta;
+                                                                        if (mode === 'prose') {
+                                                                            // Explain mode: show prose response directly, no code extraction
+                                                                            setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: stripCodeBlocks(streamed) } : msg));
+                                                                            return;
+                                                                        }
                                                                         const extracted = extractCodeBlocks(streamed);
                                                                         if (extracted && !/ctrl\+f:/i.test(streamed)) {
                                                                             const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
