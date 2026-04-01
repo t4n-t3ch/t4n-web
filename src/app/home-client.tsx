@@ -5093,11 +5093,17 @@ Project description: ${newProjectPrompt.trim()}`
                                                                         }
                                                                         const extracted = extractCodeBlocks(streamed);
                                                                         if (extracted && !/ctrl\+f:/i.test(streamed)) {
-                                                                            const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
-                                                                            setCodeText(merged); addToHistory(merged); setHasUnsavedChanges(true);
-                                                                            if (!activeCodeId) setUnsavedCode(merged);
-                                                                            if (giveAiAccessToCode) setAccessLockedCode(merged);
-                                                                            setCodeOpen(true);
+                                                                            // Safety: don't replace canvas if AI returned tiny garbage compared to original
+                                                                            const originalLen = codeText.length;
+                                                                            const isSuspiciouslySmall = originalLen > 500 && extracted.length < originalLen * 0.1;
+                                                                            const looksLikeMarkdown = /^#{1,4}\s/m.test(extracted) && !/function |const |let |var |import |export |class /.test(extracted);
+                                                                            if (!isSuspiciouslySmall && !looksLikeMarkdown) {
+                                                                                const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
+                                                                                setCodeText(merged); addToHistory(merged); setHasUnsavedChanges(true);
+                                                                                if (!activeCodeId) setUnsavedCode(merged);
+                                                                                if (giveAiAccessToCode) setAccessLockedCode(merged);
+                                                                                setCodeOpen(true);
+                                                                            }
                                                                         }
                                                                         const isCtrlF = /ctrl\+f:/i.test(streamed);
                                                                         setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : extractCodeBlocks(streamed) ? '[Code updated → check Code panel]' : stripCodeBlocks(streamed) } : msg));
