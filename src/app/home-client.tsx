@@ -5065,9 +5065,9 @@ Project description: ${newProjectPrompt.trim()}`
                                                             setActionsDropdownOpen(false);
                                                             setInlineActionBusy(true);
                                                             setInlineActionLabel(label);
-                                                            const domain = selectedDomain;
+                                                            const domain = selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain;
                                                             const projectContext = buildProjectContext();
-                                                            const fullPrompt = `USER REQUEST:\n${prompt}\n\nEXISTING CODE (${domain}) — output the FULL corrected file, no truncation:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+                                                            const fullPrompt = `USER REQUEST:\n${prompt}\n\nLanguage: ${domain}${projectContext}`;
                                                             try {
                                                                 let cid = activeId;
                                                                 if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
@@ -5079,7 +5079,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                                 const controller = new AbortController();
                                                                 abortRef.current = controller;
                                                                 setStreaming(true); setLoading(true);
-                                                                const res = await streamMessage(fullPrompt, cid, controller.signal);
+                                                                const res = await streamMessage(fullPrompt, cid, controller.signal, codeText);
                                                                 let streamed = '';
                                                                 await readSseStream(res,
                                                                     (delta) => {
@@ -5154,9 +5154,8 @@ Project description: ${newProjectPrompt.trim()}`
                                                             if (!codeText.trim() || inlineActionBusy) return;
                                                             setProToolsDropdownOpen(false);
                                                             if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
-                                                            const finalPrompt = label === '💬 Ask Project'
-                                                                ? `${prompt}\n\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\``
-                                                                : `USER REQUEST:\n${prompt}\n\nSOURCE CODE (${selectedDomain}):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${buildProjectContext()}`;
+                                                            const resolvedDomain = selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain;
+                                                            const finalPrompt = `USER REQUEST:\n${prompt}\n\nLanguage: ${resolvedDomain}${buildProjectContext()}`;
                                                             setInlineActionBusy(true);
                                                             setInlineActionLabel(label);
                                                             try {
@@ -5170,7 +5169,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                                 const controller = new AbortController();
                                                                 abortRef.current = controller;
                                                                 setStreaming(true); setLoading(true);
-                                                                const res = await streamMessage(finalPrompt, cid, controller.signal);
+                                                                const res = await streamMessage(finalPrompt, cid, controller.signal, codeText);
                                                                 let streamed = '';
                                                                 await readSseStream(res,
                                                                     (delta) => {
@@ -5239,7 +5238,7 @@ Project description: ${newProjectPrompt.trim()}`
                                             setInlineActionBusy(true);
                                             setInlineActionLabel(`preset-${preset.id}`);
                                             const projectContext = buildProjectContext();
-                                            const fullPrompt = `USER REQUEST:\n${preset.prompt}\n\nSOURCE CODE:\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\`${projectContext}`;
+                                            const fullPrompt = `USER REQUEST:\n${preset.prompt}\n\nLanguage: ${selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain}${projectContext}`;
                                             try {
                                                 let cid = activeId;
                                                 if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
@@ -5251,7 +5250,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                 const controller = new AbortController();
                                                 abortRef.current = controller;
                                                 setStreaming(true); setLoading(true);
-                                                const res = await streamMessage(fullPrompt, cid, controller.signal);
+                                                const res = await streamMessage(fullPrompt, cid, controller.signal, codeText);
                                                 let streamed = '';
                                                 await readSseStream(res,
                                                     (delta) => {
@@ -5363,7 +5362,7 @@ Project description: ${newProjectPrompt.trim()}`
                         setInlineActionBusy(true);
                         setInlineActionLabel('🔄 Convert');
                         const projectContext = buildProjectContext();
-                        const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.\n\nSOURCE CODE (${from}):\n\`\`\`\n${codeText.slice(0, 280000000)}\n\`\`\`${projectContext}`;
+                        const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.${projectContext}`;
                         try {
                             let cid = activeId;
                             if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
@@ -5375,7 +5374,7 @@ Project description: ${newProjectPrompt.trim()}`
                             const controller = new AbortController();
                             abortRef.current = controller;
                             setStreaming(true); setLoading(true);
-                            const res = await streamMessage(fullPrompt, cid, controller.signal);
+                            const res = await streamMessage(fullPrompt, cid, controller.signal, codeText);
                             let streamed = '';
                             await readSseStream(
                                 res,
