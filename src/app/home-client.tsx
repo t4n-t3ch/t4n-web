@@ -5068,8 +5068,8 @@ Project description: ${newProjectPrompt.trim()}`
                                                             const domain = selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain;
                                                             const projectContext = buildProjectContext();
                                                             const fullPrompt = mode === 'prose'
-                                                                ? `USER REQUEST:\n${prompt}\n\nLanguage: ${domain}\n\n\`\`\`${domain}\n${codeText.slice(0, 30000)}\n\`\`\`${projectContext}`
-                                                                : `USER REQUEST:\n${prompt}\n\nLanguage: ${domain}${projectContext}`;
+                                                                ? `${prompt}\n\nLanguage: ${domain}\n\n\`\`\`${domain}\n${codeText.slice(0, 30000)}\n\`\`\`${projectContext}`
+                                                                : `${prompt}\n\nLanguage: ${domain}${projectContext}`;
                                                             try {
                                                                 let cid = activeId;
                                                                 if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
@@ -5168,7 +5168,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                             setProToolsDropdownOpen(false);
                                                             if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
                                                             const resolvedDomain = selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain;
-                                                            const finalPrompt = `USER REQUEST:\n${prompt}\n\nLanguage: ${resolvedDomain}${buildProjectContext()}`;
+                                                            const finalPrompt = `${prompt}\n\nLanguage: ${resolvedDomain}${buildProjectContext()}`;
                                                             setInlineActionBusy(true);
                                                             setInlineActionLabel(label);
                                                             try {
@@ -5251,7 +5251,7 @@ Project description: ${newProjectPrompt.trim()}`
                                             setInlineActionBusy(true);
                                             setInlineActionLabel(`preset-${preset.id}`);
                                             const projectContext = buildProjectContext();
-                                            const fullPrompt = `USER REQUEST:\n${preset.prompt}\n\nLanguage: ${selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain}${projectContext}`;
+                                            const fullPrompt = `${preset.prompt}\n\nLanguage: ${selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain}${projectContext}`;
                                             try {
                                                 let cid = activeId;
                                                 if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
@@ -5375,7 +5375,7 @@ Project description: ${newProjectPrompt.trim()}`
                         setInlineActionBusy(true);
                         setInlineActionLabel('🔄 Convert');
                         const projectContext = buildProjectContext();
-                        const fullPrompt = `USER REQUEST:\nConvert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.${projectContext}`;
+                        const fullPrompt = `Convert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.${projectContext}`;
                         try {
                             let cid = activeId;
                             if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
