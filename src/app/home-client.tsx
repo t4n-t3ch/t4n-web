@@ -5067,9 +5067,12 @@ Project description: ${newProjectPrompt.trim()}`
                                                             setInlineActionLabel(label);
                                                             const domain = selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain;
                                                             const projectContext = buildProjectContext();
+                                                            const hasAccess = giveAiAccessToCode && !!activeCodeId;
                                                             const fullPrompt = mode === 'prose'
                                                                 ? `${prompt}\n\nLanguage: ${domain}\n\n\`\`\`${domain}\n${codeText.slice(0, 30000)}\n\`\`\`${projectContext}`
-                                                                : `${prompt}\n\nLanguage: ${domain}${projectContext}`;
+                                                                : hasAccess
+                                                                    ? `${prompt}\n\nLanguage: ${domain}${projectContext}`
+                                                                    : `${prompt}\n\nLanguage: ${domain}\n\n\`\`\`${domain}\n${codeText.slice(0, 30000)}\n\`\`\`${projectContext}`;
                                                             try {
                                                                 let cid = activeId;
                                                                 if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
@@ -5081,14 +5084,14 @@ Project description: ${newProjectPrompt.trim()}`
                                                                 const controller = new AbortController();
                                                                 abortRef.current = controller;
                                                                 setStreaming(true); setLoading(true);
-                                                                const res = await streamMessage(fullPrompt, cid, controller.signal, mode === 'ctrlf' ? codeText : undefined);
+                                                                const res = await streamMessage(fullPrompt, cid, controller.signal, (mode === 'ctrlf' && hasAccess) ? codeText : undefined);
                                                                 let streamed = '';
                                                                 await readSseStream(res,
                                                                     (delta) => {
                                                                         streamed += delta;
-                                                                        if (mode === 'prose') {
-                                                                            // Explain mode: show prose response directly, no code extraction
-                                                                            setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: stripCodeBlocks(streamed) } : msg));
+                                                                        if (mode === 'prose' || !hasAccess) {
+                                                                            // Prose mode or no access: show response directly, never touch code canvas
+                                                                            setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: streamed } : msg));
                                                                             return;
                                                                         }
                                                                         const extracted = extractCodeBlocks(streamed);
