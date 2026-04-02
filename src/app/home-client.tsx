@@ -5048,10 +5048,10 @@ Project description: ${newProjectPrompt.trim()}`
                                             >
                                                 {([
                                                     { label: '🔍 Explain', prompt: 'Explain what this code does in plain English. Be concise.', mode: 'prose' as const },
-                                                    { label: '🔧 Fix Errors', prompt: 'Find and fix any errors, bugs, or issues in this code. Use Ctrl+F format for changes.', mode: 'ctrlf' as const },
-                                                    { label: '✨ Improve', prompt: 'Suggest and apply improvements to this code for readability, performance, and best practices. Use Ctrl+F format.', mode: 'ctrlf' as const },
-                                                    { label: '📋 Add Comments', prompt: 'Add clear inline comments to this code explaining what each section does. Use Ctrl+F format.', mode: 'ctrlf' as const },
-                                                    { label: '⚡ Optimise', prompt: 'Optimise this code for speed and efficiency. Use Ctrl+F format for changes.', mode: 'ctrlf' as const },
+                                                    { label: '🔧 Fix Errors', prompt: 'Find and fix any errors, bugs, or issues in this code. For each fix, show the exact original code line(s) and the exact corrected code line(s).', mode: 'ctrlf' as const },
+                                                    { label: '✨ Improve', prompt: 'Find specific improvements for readability, performance, and best practices in this code. For each improvement, show the exact original code and the exact improved replacement code. Maximum 5 changes.', mode: 'ctrlf' as const },
+                                                    { label: '📋 Add Comments', prompt: 'Add clear inline comments to the most important functions and sections in this code. For each comment, show the exact original line and the same line with a comment added above or inline. Maximum 8 changes.', mode: 'ctrlf' as const },
+                                                    { label: '⚡ Optimise', prompt: 'Identify the top 5 specific performance issues in this code. For each one, show the exact original code and the exact optimised replacement code. Focus on: unnecessary re-renders, redundant computations, missing memoization, and inefficient loops.', mode: 'ctrlf' as const },
                                                 ] as const).map(({ label, prompt, mode }) => (
                                                     <button
                                                         key={label}
