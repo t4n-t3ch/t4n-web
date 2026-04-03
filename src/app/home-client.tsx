@@ -928,6 +928,95 @@ export default function HomeClient() {
     const lastSendRef = useRef<{ text: string; conversationId?: string } | null>(null);
     const [canRetry, setCanRetry] = useState(false);
 
+    function applyCtrlFToCode(content: string, originalCode: string): { newCode: string; applied: number; failed: number } {
+        const lines = content.split('\n');
+        let result = originalCode;
+        let applied = 0;
+        let failed = 0;
+        let i = 0;
+
+        while (i < lines.length) {
+            const line = lines[i];
+
+            // Detect Ctrl+F block — with or without line number hint
+            if (/^ctrl\+f(\s*\(line\s*~?\d+\))?:/i.test(line.trim())) {
+                // Extract FIND text
+                const findVal = line.replace(/^ctrl\+f(\s*\(line\s*~?\d+\))?:\s*/i, '').replace(/```[\w]*/g, '').trim();
+                const findLines = findVal ? [findVal] : [];
+                i++;
+
+                while (i < lines.length && !/^replace with:/i.test(lines[i].trim()) && !/^ctrl\+f/i.test(lines[i].trim()) && !/^add (above|below):/i.test(lines[i].trim())) {
+                    const l = lines[i].replace(/```[\w]*/g, '').replace(/^```$/, '');
+                    if (l.trim() || findLines.length > 0) findLines.push(l);
+                    i++;
+                }
+
+                // Detect action
+                let action = 'replace';
+                if (i < lines.length && /^add above:/i.test(lines[i].trim())) action = 'add_above';
+                else if (i < lines.length && /^add below:/i.test(lines[i].trim())) action = 'add_below';
+                i++; // skip "Replace with:" line
+
+                // Extract REPLACE text
+                const replaceLines: string[] = [];
+                while (i < lines.length && !/^ctrl\+f/i.test(lines[i].trim())) {
+                    const l = lines[i].replace(/```[\w]*/g, '').replace(/^```$/, '');
+                    if (lines[i].trim() === '```' && replaceLines.length > 0) { i++; break; }
+                    if (l.trim() || replaceLines.length > 0) replaceLines.push(l);
+                    i++;
+                }
+
+                const findText = findLines.join('\n').trim();
+                const replaceText = replaceLines.join('\n').trim();
+
+                if (!findText) { failed++; continue; }
+
+                // Apply the change
+                if (action === 'replace') {
+                    if (result.includes(findText)) {
+                        result = result.replace(findText, replaceText);
+                        applied++;
+                    } else {
+                        // Fuzzy: try trimmed matching
+                        const trimmedFind = findText.split('\n').map(l => l.trim()).join('\n');
+                        const resultLines = result.split('\n');
+                        let matchStart = -1;
+                        const findTrimmedLines = trimmedFind.split('\n');
+
+                        for (let r = 0; r <= resultLines.length - findTrimmedLines.length; r++) {
+                            let match = true;
+                            for (let f = 0; f < findTrimmedLines.length; f++) {
+                                if (resultLines[r + f].trim() !== findTrimmedLines[f].trim()) { match = false; break; }
+                            }
+                            if (match) { matchStart = r; break; }
+                        }
+
+                        if (matchStart >= 0) {
+                            const before = resultLines.slice(0, matchStart);
+                            const after = resultLines.slice(matchStart + findTrimmedLines.length);
+                            result = [...before, replaceText, ...after].join('\n');
+                            applied++;
+                        } else {
+                            failed++;
+                        }
+                    }
+                } else if (action === 'add_above' && result.includes(findText)) {
+                    result = result.replace(findText, replaceText + '\n' + findText);
+                    applied++;
+                } else if (action === 'add_below' && result.includes(findText)) {
+                    result = result.replace(findText, findText + '\n' + replaceText);
+                    applied++;
+                } else {
+                    failed++;
+                }
+            } else {
+                i++;
+            }
+        }
+
+        return { newCode: result, applied, failed };
+    }
+
     function highlightInCanvas(searchText: string) {
         const ta = codeTextareaRef.current;
         if (!ta || !searchText) return;
@@ -4377,9 +4466,9 @@ Project description: ${newProjectPrompt.trim()}`
                                                 const line = lines[i];
 
                                                 // Detect start of a Ctrl+F block
-                                                if (/^ctrl\+f:/i.test(line.trim())) {
-                                                    // Extract the FIND value (rest of this line, strip backticks/fences)
-                                                    const findVal = line.replace(/^ctrl\+f:\s*/i, '').replace(/```[\w]*/g, '').trim();
+                                                if (/^ctrl\+f(\s*\(line\s*~?\d+\))?:/i.test(line.trim())) {
+                                                    // Extract the FIND value (rest of this line, strip backticks/fences and line hint)
+                                                    const findVal = line.replace(/^ctrl\+f(\s*\(line\s*~?\d+\))?:\s*/i, '').replace(/```[\w]*/g, '').trim();
                                                     const findLines = findVal ? [findVal] : [];
                                                     i++;
 
@@ -4516,45 +4605,81 @@ Project description: ${newProjectPrompt.trim()}`
 
                                     </div>
 
-                                    {/* Apply to Editor button — show on completed assistant messages that contain code */}
+                                    {/* Apply to Editor button — Ctrl+F surgical apply or code block overwrite */}
                                     {!isUser && !isActiveStreaming && (() => {
-                                        const extracted = extractCodeBlocks(m.content ?? '');
-                                        if (!extracted) return null;
+                                        const content = m.content ?? '';
+                                        const hasCtrlF = /ctrl\+f/i.test(content);
+                                        const extracted = extractCodeBlocks(content);
+                                        if (!hasCtrlF && !extracted) return null;
                                         const blockId = m.id;
                                         const applied = appliedBlockId === blockId;
                                         return (
                                             <div style={{ marginTop: '6px', display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                                <button
-                                                    type="button"
-                                                    style={{
-                                                        padding: '4px 12px',
-                                                        fontSize: '11px',
-                                                        borderRadius: '6px',
-                                                        border: applied ? '1px solid rgba(34,197,94,0.5)' : '1px solid rgba(249,115,22,0.4)',
-                                                        background: applied ? 'rgba(34,197,94,0.1)' : 'rgba(249,115,22,0.08)',
-                                                        color: applied ? '#4ade80' : 'var(--accent)',
-                                                        cursor: 'pointer',
-                                                        fontFamily: 'DM Sans, sans-serif',
-                                                        fontWeight: 600,
-                                                        transition: 'all 0.2s',
-                                                    }}
-                                                    onClick={() => {
-                                                        const code = extractCodeBlocks(m.content ?? '');
-                                                        if (!code) return;
-                                                        setCodeText(code);
-                                                        addToHistory(code);
-                                                        setHasUnsavedChanges(true);
-                                                        if (!activeCodeId) {
-                                                            setUnsavedCode(code);
-                                                            setActiveCodeId(null);
-                                                        }
-                                                        setCodeOpen(true);
-                                                        setAppliedBlockId(blockId);
-                                                        setTimeout(() => setAppliedBlockId(null), 1500);
-                                                    }}
-                                                >
-                                                    {applied ? '✓ Applied' : '⬇ Apply to Editor'}
-                                                </button>
+                                                {hasCtrlF && codeText.trim() && (
+                                                    <button
+                                                        type="button"
+                                                        style={{
+                                                            padding: '4px 12px',
+                                                            fontSize: '11px',
+                                                            borderRadius: '6px',
+                                                            border: applied ? '1px solid rgba(34,197,94,0.5)' : '1px solid rgba(249,115,22,0.4)',
+                                                            background: applied ? 'rgba(34,197,94,0.1)' : 'rgba(249,115,22,0.08)',
+                                                            color: applied ? '#4ade80' : 'var(--accent)',
+                                                            cursor: 'pointer',
+                                                            fontFamily: 'DM Sans, sans-serif',
+                                                            fontWeight: 600,
+                                                            transition: 'all 0.2s',
+                                                        }}
+                                                        onClick={() => {
+                                                            const { newCode, applied: count, failed } = applyCtrlFToCode(content, codeText);
+                                                            if (count > 0) {
+                                                                setCodeText(newCode);
+                                                                addToHistory(newCode);
+                                                                setHasUnsavedChanges(true);
+                                                                if (giveAiAccessToCode) setAccessLockedCode(newCode);
+                                                                setCodeOpen(true);
+                                                                showToast(`Applied ${count} change${count !== 1 ? 's' : ''}${failed > 0 ? ` · ${failed} failed` : ''}`);
+                                                            } else {
+                                                                showToast(`No changes could be applied (${failed} failed — code not found)`, 'error');
+                                                            }
+                                                            setAppliedBlockId(blockId);
+                                                            setTimeout(() => setAppliedBlockId(null), 2000);
+                                                        }}
+                                                    >
+                                                        {applied ? '✓ Applied' : '⚡ Apply All Changes'}
+                                                    </button>
+                                                )}
+                                                {!hasCtrlF && extracted && (
+                                                    <button
+                                                        type="button"
+                                                        style={{
+                                                            padding: '4px 12px',
+                                                            fontSize: '11px',
+                                                            borderRadius: '6px',
+                                                            border: applied ? '1px solid rgba(34,197,94,0.5)' : '1px solid rgba(249,115,22,0.4)',
+                                                            background: applied ? 'rgba(34,197,94,0.1)' : 'rgba(249,115,22,0.08)',
+                                                            color: applied ? '#4ade80' : 'var(--accent)',
+                                                            cursor: 'pointer',
+                                                            fontFamily: 'DM Sans, sans-serif',
+                                                            fontWeight: 600,
+                                                            transition: 'all 0.2s',
+                                                        }}
+                                                        onClick={() => {
+                                                            setCodeText(extracted);
+                                                            addToHistory(extracted);
+                                                            setHasUnsavedChanges(true);
+                                                            if (!activeCodeId) {
+                                                                setUnsavedCode(extracted);
+                                                                setActiveCodeId(null);
+                                                            }
+                                                            setCodeOpen(true);
+                                                            setAppliedBlockId(blockId);
+                                                            setTimeout(() => setAppliedBlockId(null), 1500);
+                                                        }}
+                                                    >
+                                                        {applied ? '✓ Applied' : '⬇ Apply to Editor'}
+                                                    </button>
+                                                )}
                                                 {applied && (
                                                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                                         Hit Undo to revert
@@ -5089,29 +5214,27 @@ Project description: ${newProjectPrompt.trim()}`
                                                                 await readSseStream(res,
                                                                     (delta) => {
                                                                         streamed += delta;
-                                                                        if (mode === 'prose' || !hasAccess) {
-                                                                            // Prose mode or no access: show response directly, never touch code canvas
-                                                                            setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: streamed } : msg));
-                                                                            return;
-                                                                        }
-                                                                        const extracted = extractCodeBlocks(streamed);
-                                                                        if (extracted && !/ctrl\+f:/i.test(streamed)) {
-                                                                            // Safety: don't replace canvas if AI returned tiny garbage compared to original
-                                                                            const originalLen = codeText.length;
-                                                                            const isSuspiciouslySmall = originalLen > 500 && extracted.length < originalLen * 0.1;
-                                                                            const looksLikeMarkdown = /^#{1,4}\s/m.test(extracted) && !/function |const |let |var |import |export |class /.test(extracted);
-                                                                            if (!isSuspiciouslySmall && !looksLikeMarkdown) {
-                                                                                const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
-                                                                                setCodeText(merged); addToHistory(merged); setHasUnsavedChanges(true);
-                                                                                if (!activeCodeId) setUnsavedCode(merged);
-                                                                                if (giveAiAccessToCode) setAccessLockedCode(merged);
+                                                                        // Always show response in chat — never touch canvas mid-stream
+                                                                        const isCtrlF = /ctrl\+f/i.test(streamed);
+                                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed : stripCodeBlocks(streamed) } : msg));
+                                                                    },
+                                                                    (doneData) => {
+                                                                        const finalCid = doneData?.conversationId || cid;
+                                                                        if (finalCid) void refreshPluginRuns(finalCid);
+
+                                                                        // Item 7: Apply Ctrl+F blocks ONLY after stream completes
+                                                                        if (mode === 'ctrlf' && hasAccess && /ctrl\+f/i.test(streamed)) {
+                                                                            const { newCode, applied, failed } = applyCtrlFToCode(streamed, codeText);
+                                                                            if (applied > 0) {
+                                                                                setCodeText(newCode);
+                                                                                addToHistory(newCode);
+                                                                                setHasUnsavedChanges(true);
+                                                                                if (giveAiAccessToCode) setAccessLockedCode(newCode);
                                                                                 setCodeOpen(true);
+                                                                                setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: streamed + `\n\n✅ Applied ${applied} change${applied !== 1 ? 's' : ''}${failed > 0 ? ` · ⚠ ${failed} failed (code not found)` : ''}` } : msg));
                                                                             }
                                                                         }
-                                                                        const isCtrlF = /ctrl\+f:/i.test(streamed);
-                                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : extractCodeBlocks(streamed) ? '[Code updated → check Code panel]' : stripCodeBlocks(streamed) } : msg));
                                                                     },
-                                                                    (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
                                                                     undefined, undefined, controller.signal,
                                                                 );
                                                             } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); }
