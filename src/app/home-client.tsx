@@ -1017,6 +1017,71 @@ export default function HomeClient() {
         return { newCode: result, applied, failed };
     }
 
+    function applyCtrlFToCode(content: string, originalCode: string): { newCode: string; applied: number; failed: number } {
+        const lines = content.split('\n');
+        let result = originalCode;
+        let applied = 0;
+        let failed = 0;
+        let i = 0;
+        while (i < lines.length) {
+            const line = lines[i];
+            if (/^ctrl\+f(\s*\(line\s*~?\d+\))?:/i.test(line.trim())) {
+                const findVal = line.replace(/^ctrl\+f(\s*\(line\s*~?\d+\))?:\s*/i, '').replace(/```[\w]*/g, '').trim();
+                const findLines = findVal ? [findVal] : [];
+                i++;
+                while (i < lines.length && !/^replace with:/i.test(lines[i].trim()) && !/^ctrl\+f/i.test(lines[i].trim()) && !/^add (above|below):/i.test(lines[i].trim())) {
+                    const l = lines[i].replace(/```[\w]*/g, '').replace(/^```$/, '');
+                    if (l.trim() || findLines.length > 0) findLines.push(l);
+                    i++;
+                }
+                let action = 'replace';
+                if (i < lines.length && /^add above:/i.test(lines[i].trim())) action = 'add_above';
+                else if (i < lines.length && /^add below:/i.test(lines[i].trim())) action = 'add_below';
+                i++;
+                const replaceLines: string[] = [];
+                while (i < lines.length && !/^ctrl\+f/i.test(lines[i].trim())) {
+                    const l = lines[i].replace(/```[\w]*/g, '').replace(/^```$/, '');
+                    if (lines[i].trim() === '```' && replaceLines.length > 0) { i++; break; }
+                    if (l.trim() || replaceLines.length > 0) replaceLines.push(l);
+                    i++;
+                }
+                const findText = findLines.join('\n').trim();
+                const replaceText = replaceLines.join('\n').trim();
+                if (!findText) { failed++; continue; }
+                if (action === 'replace') {
+                    if (result.includes(findText)) {
+                        result = result.replace(findText, replaceText);
+                        applied++;
+                    } else {
+                        const findTrimmedLines = findText.split('\n').map(l => l.trim());
+                        const resultLines = result.split('\n');
+                        let matchStart = -1;
+                        for (let r = 0; r <= resultLines.length - findTrimmedLines.length; r++) {
+                            let match = true;
+                            for (let f = 0; f < findTrimmedLines.length; f++) {
+                                if (resultLines[r + f].trim() !== findTrimmedLines[f]) { match = false; break; }
+                            }
+                            if (match) { matchStart = r; break; }
+                        }
+                        if (matchStart >= 0) {
+                            const before = resultLines.slice(0, matchStart);
+                            const after = resultLines.slice(matchStart + findTrimmedLines.length);
+                            result = [...before, replaceText, ...after].join('\n');
+                            applied++;
+                        } else { failed++; }
+                    }
+                } else if (action === 'add_above' && result.includes(findText)) {
+                    result = result.replace(findText, replaceText + '\n' + findText);
+                    applied++;
+                } else if (action === 'add_below' && result.includes(findText)) {
+                    result = result.replace(findText, findText + '\n' + replaceText);
+                    applied++;
+                } else { failed++; }
+            } else { i++; }
+        }
+        return { newCode: result, applied, failed };
+    }
+
     function highlightInCanvas(searchText: string) {
         const ta = codeTextareaRef.current;
         if (!ta || !searchText) return;
@@ -5193,11 +5258,12 @@ Project description: ${newProjectPrompt.trim()}`
                                                             const domain = selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain;
                                                             const projectContext = buildProjectContext();
                                                             const hasAccess = giveAiAccessToCode && !!activeCodeId;
+                                                            const ctrlFInstructions = `\n\nRespond using ONLY this format for each change:\nCtrl+F (line ~LINE_NUMBER): <exact code to find>\nReplace with:\n<exact replacement code>\n\nBoth FIND and REPLACE must be raw code only. Never prose. Maximum 10 changes.`;
                                                             const fullPrompt = mode === 'prose'
                                                                 ? `${prompt}\n\nLanguage: ${domain}\n\n\`\`\`${domain}\n${codeText.slice(0, 30000)}\n\`\`\`${projectContext}`
                                                                 : hasAccess
                                                                     ? `${prompt}\n\nLanguage: ${domain}${projectContext}`
-                                                                    : `${prompt}\n\nLanguage: ${domain}\n\n\`\`\`${domain}\n${codeText.slice(0, 30000)}\n\`\`\`${projectContext}`;
+                                                                    : `${prompt}${ctrlFInstructions}\n\nLanguage: ${domain}\n\n\`\`\`${domain}\n${codeText.slice(0, 30000)}\n\`\`\`${projectContext}`;
                                                             try {
                                                                 let cid = activeId;
                                                                 if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
