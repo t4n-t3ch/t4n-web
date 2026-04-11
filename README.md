@@ -3,6 +3,8 @@
 This is the Next.js frontend for T4N.
 It connects to the T4N API (`t4n-code`) for chat, streaming, and plugins.
 
+If you're reviewing this project 👉 BUILDING_T4N.md
+
 ---
 
 # Run Locally (Windows)
