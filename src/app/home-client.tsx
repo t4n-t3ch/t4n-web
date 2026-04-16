@@ -2674,7 +2674,7 @@ Project description: ${newProjectPrompt.trim()}`
 
         const files = projectFiles[proj.id] ?? [];
         if (files.length > 0) {
-            parts.push(`PROJECT FILES: ${files.map(f => f.name).join(', ')}`);
+            parts.push(`PROJECT FILES:\n${files.map(f => `--- ${f.name} ---\n${f.content}`).join('\n\n')}`);
         }
 
         return `\n\n[PROJECT CONTEXT]\n${parts.join('\n')}\n[END PROJECT CONTEXT]`;
