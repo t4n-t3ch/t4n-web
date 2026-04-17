@@ -218,7 +218,8 @@ export default function HomeClient() {
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
-    const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins' | 'appearance' | 'billing' | 'contact' | 'howto'>('prompts');
+    const [changePasswordState, setChangePasswordState] = useState<{ newPassword: string; confirm: string; status: string | null; loading: boolean }>({ newPassword: '', confirm: '', status: null, loading: false });
+    const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins' | 'appearance' | 'billing' | 'contact' | 'howto' | 'account'>('prompts');
 
     const [, setPluginResult] = useState<unknown>(null);
     const [copiedBlockId, setCopiedBlockId] = useState<string | null>(null);
@@ -2209,6 +2210,13 @@ ${codeContext}` : ""}${projectContext}`
                                 const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
                                 if (error) setAuthError(error.message);
                             } else {
+                                const pwErrs: string[] = [];
+                                if (authPassword.length < 8) pwErrs.push('at least 8 characters');
+                                if (!/[A-Z]/.test(authPassword)) pwErrs.push('an uppercase letter');
+                                if (!/[a-z]/.test(authPassword)) pwErrs.push('a lowercase letter');
+                                if (!/[0-9]/.test(authPassword)) pwErrs.push('a number');
+                                if (!/[^A-Za-z0-9]/.test(authPassword)) pwErrs.push('a special character');
+                                if (pwErrs.length > 0) { setAuthError(`Password must contain: ${pwErrs.join(', ')}.`); return; }
                                 const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
                                 if (error) setAuthError(error.message);
                                 else setAuthError("✅ Check your email to confirm your account before signing in.");
@@ -2247,6 +2255,13 @@ ${codeContext}` : ""}${projectContext}`
                             });
                             if (error) setAuthError(error.message);
                         } else {
+                            const pwErrors: string[] = [];
+                            if (authPassword.length < 8) pwErrors.push('at least 8 characters');
+                            if (!/[A-Z]/.test(authPassword)) pwErrors.push('an uppercase letter');
+                            if (!/[a-z]/.test(authPassword)) pwErrors.push('a lowercase letter');
+                            if (!/[0-9]/.test(authPassword)) pwErrors.push('a number');
+                            if (!/[^A-Za-z0-9]/.test(authPassword)) pwErrors.push('a special character');
+                            if (pwErrors.length > 0) { setAuthError(`Password must contain: ${pwErrors.join(', ')}.`); return; }
                             const { error } = await supabase.auth.signUp({
                                 email: authEmail,
                                 password: authPassword
@@ -3977,7 +3992,7 @@ Project description: ${newProjectPrompt.trim()}`
                             </div>
 
                             <div className="flex" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                                {(['prompts', 'plugins', 'appearance', 'billing', 'contact', 'howto'] as const).map((tab) => (
+                                {(['prompts', 'plugins', 'appearance', 'billing', 'contact', 'howto', 'account'] as const).map((tab) => (
                                     <button
                                         key={tab}
                                         onClick={() => setActiveSettingsTab(tab)}
@@ -3999,7 +4014,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                 tab === 'appearance' ? 'Appearance' :
                                                     tab === 'billing' ? 'Subscription' :
                                                         tab === 'contact' ? 'Contact' :
-                                                            'How to Use'}
+                                                            tab === 'howto' ? 'How to Use' : 'Account'}
                                     </button>
                                 ))}
                             </div>
@@ -4335,6 +4350,74 @@ Project description: ${newProjectPrompt.trim()}`
                                         </div>
                                     </div>
                                 )}
+
+                                {activeSettingsTab === 'account' && (() => {
+    function validatePassword(pw: string): string[] {
+        const errors: string[] = [];
+        if (pw.length < 8) errors.push('At least 8 characters');
+        if (!/[A-Z]/.test(pw)) errors.push('Uppercase letter (A–Z)');
+        if (!/[a-z]/.test(pw)) errors.push('Lowercase letter (a–z)');
+        if (!/[0-9]/.test(pw)) errors.push('Number (0–9)');
+        if (!/[^A-Za-z0-9]/.test(pw)) errors.push('Special character (!@#$%)');
+        return errors;
+    }
+    const pwErrors = changePasswordState.newPassword ? validatePassword(changePasswordState.newPassword) : [];
+    const matchError = changePasswordState.confirm && changePasswordState.newPassword !== changePasswordState.confirm;
+    const isValid = pwErrors.length === 0 && !matchError && changePasswordState.newPassword.length > 0 && changePasswordState.confirm.length > 0;
+    const rules = [
+        { label: '8+ characters', test: /^.{8,}$/ },
+        { label: 'Uppercase (A–Z)', test: /[A-Z]/ },
+        { label: 'Lowercase (a–z)', test: /[a-z]/ },
+        { label: 'Number (0–9)', test: /[0-9]/ },
+        { label: 'Special character', test: /[^A-Za-z0-9]/ },
+    ];
+    return (
+        <div className="space-y-5">
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Change Password</p>
+            <div style={{ padding: '12px 14px', background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-subtle)', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                Signed in as <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{session?.user?.email}</span>
+            </div>
+            <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>New Password</label>
+                <input type="password" placeholder="Enter new password" value={changePasswordState.newPassword}
+                    onChange={e => setChangePasswordState(s => ({ ...s, newPassword: e.target.value, status: null }))}
+                    style={{ width: '100%', background: 'var(--bg-elevated)', border: `1px solid ${changePasswordState.newPassword && pwErrors.length === 0 ? 'rgba(34,197,94,0.5)' : changePasswordState.newPassword && pwErrors.length > 0 ? 'rgba(239,68,68,0.4)' : 'var(--border-default)'}`, borderRadius: '7px', padding: '9px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', outline: 'none' }} />
+            </div>
+            {changePasswordState.newPassword.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                    {rules.map(r => { const passed = r.test.test(changePasswordState.newPassword); return (
+                        <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: passed ? '#4ade80' : 'var(--text-muted)' }}>
+                            <span style={{ fontSize: '11px' }}>{passed ? '✓' : '○'}</span>{r.label}
+                        </div>
+                    ); })}
+                </div>
+            )}
+            <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>Confirm New Password</label>
+                <input type="password" placeholder="Repeat new password" value={changePasswordState.confirm}
+                    onChange={e => setChangePasswordState(s => ({ ...s, confirm: e.target.value, status: null }))}
+                    style={{ width: '100%', background: 'var(--bg-elevated)', border: `1px solid ${matchError ? 'rgba(239,68,68,0.4)' : changePasswordState.confirm && !matchError ? 'rgba(34,197,94,0.5)' : 'var(--border-default)'}`, borderRadius: '7px', padding: '9px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', outline: 'none' }} />
+                {matchError && <p style={{ fontSize: '11px', color: '#f87171', marginTop: '4px' }}>Passwords do not match</p>}
+            </div>
+            {changePasswordState.status && (
+                <div style={{ padding: '9px 12px', borderRadius: '7px', fontSize: '12px', background: changePasswordState.status.startsWith('✅') ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${changePasswordState.status.startsWith('✅') ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, color: changePasswordState.status.startsWith('✅') ? '#4ade80' : '#f87171' }}>
+                    {changePasswordState.status}
+                </div>
+            )}
+            <button type="button" disabled={!isValid || changePasswordState.loading}
+                style={{ padding: '9px 20px', fontSize: '13px', fontWeight: 600, borderRadius: '7px', border: 'none', background: isValid ? 'var(--accent)' : 'var(--bg-elevated)', color: isValid ? '#fff' : 'var(--text-muted)', cursor: isValid ? 'pointer' : 'not-allowed', fontFamily: 'DM Sans, sans-serif', opacity: changePasswordState.loading ? 0.7 : 1 }}
+                onClick={async () => {
+                    if (!isValid) return;
+                    setChangePasswordState(s => ({ ...s, loading: true, status: null }));
+                    const { error } = await supabase.auth.updateUser({ password: changePasswordState.newPassword });
+                    if (error) { setChangePasswordState(s => ({ ...s, loading: false, status: `⚠ ${error.message}` })); }
+                    else { setChangePasswordState({ newPassword: '', confirm: '', status: '✅ Password updated successfully!', loading: false }); }
+                }}>
+                {changePasswordState.loading ? 'Updating…' : 'Update Password'}
+            </button>
+        </div>
+    );
+})()}
 
                                 {activeSettingsTab === 'plugins' && (
                                     <div className="space-y-3">
