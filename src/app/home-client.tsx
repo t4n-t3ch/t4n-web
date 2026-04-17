@@ -5255,7 +5255,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                 onMouseLeave={() => setActionsDropdownOpen(false)}
                                             >
                                                 {([
-                                                    { label: '🔍 Explain', prompt: 'Explain what this code does in plain English. Be concise.', mode: 'prose' as const },
+                                                    { label: '🔍 Explain', prompt: 'Explain what this code does in plain English. Break it into sections. Be concise and clear.', mode: 'prose' as const },
                                                     { label: '🔧 Fix Errors', prompt: 'Find and fix any errors, bugs, or issues in this code. For each fix, show the exact original code line(s) and the exact corrected code line(s).', mode: 'ctrlf' as const },
                                                     { label: '✨ Improve', prompt: 'Find specific improvements for readability, performance, and best practices in this code. For each improvement, show the exact original code and the exact improved replacement code. Maximum 5 changes.', mode: 'ctrlf' as const },
                                                     { label: '📋 Add Comments', prompt: 'Add clear inline comments to the most important functions and sections in this code. For each comment, show the exact original line and the same line with a comment added above or inline. Maximum 8 changes.', mode: 'ctrlf' as const },
@@ -5277,11 +5277,12 @@ Project description: ${newProjectPrompt.trim()}`
                                                             const projectContext = buildProjectContext();
                                                             const hasAccess = giveAiAccessToCode && !!activeCodeId;
                                                             const ctrlFInstructions = `\n\nRespond using ONLY this format for each change:\nCtrl+F (line ~LINE_NUMBER): <exact code to find>\nReplace with:\n<exact replacement code>\n\nBoth FIND and REPLACE must be raw code only. Never prose. Maximum 10 changes.`;
+                                                            const cappedCode = codeText.slice(0, 8000);
                                                             const fullPrompt = mode === 'prose'
-                                                                ? `${prompt}\n\nLanguage: ${domain}\n\n\`\`\`${domain}\n${codeText.slice(0, 30000)}\n\`\`\`${projectContext}`
+                                                                ? `${prompt}\n\nLanguage: ${domain}\n\n\`\`\`${domain}\n${cappedCode}\n\`\`\`${projectContext}`
                                                                 : hasAccess
                                                                     ? `${prompt}\n\nLanguage: ${domain}${projectContext}`
-                                                                    : `${prompt}${ctrlFInstructions}\n\nLanguage: ${domain}\n\n\`\`\`${domain}\n${codeText.slice(0, 30000)}\n\`\`\`${projectContext}`;
+                                                                    : `${prompt}${ctrlFInstructions}\n\nLanguage: ${domain}\n\n\`\`\`${domain}\n${cappedCode}\n\`\`\`${projectContext}`;
                                                             try {
                                                                 let cid = activeId;
                                                                 if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
