@@ -1829,7 +1829,7 @@ ${codeContext}` : ""}${projectContext}`
                     } else if (extracted) {
                         messageToShow = "[Code generated → open the Code panel]";
                     } else {
-                        messageToShow = prose || stripCodeBlocks(streamed);
+                        messageToShow = prose || streamed;
                     }
 
                     setMessages((m) =>
@@ -2050,7 +2050,7 @@ ${codeContext}` : ""}${projectContext}`
                     } else if (extracted) {
                         messageToShow = "[Code generated → open the Code panel]";
                     } else {
-                        messageToShow = prose || stripCodeBlocks(streamed);
+                        messageToShow = prose || streamed;
                     }
 
                     setMessages((m) =>
