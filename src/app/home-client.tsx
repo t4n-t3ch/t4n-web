@@ -296,6 +296,7 @@ export default function HomeClient() {
     const [newFolderName, setNewFolderName] = useState('');
     const [renameConvModal, setRenameConvModal] = useState<{ id: string; current: string } | null>(null);
     const [renameConvValue, setRenameConvValue] = useState('');
+    const [giveAccessModal, setGiveAccessModal] = useState(false);
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
 
@@ -855,6 +856,47 @@ export default function HomeClient() {
 
         // Add empty state to history
         addToHistory("", { allowEmpty: true });
+    }
+
+    function renderMarkdown(text: string): React.ReactNode {
+        const lines = text.split('\n');
+        const nodes: React.ReactNode[] = [];
+        let key = 0;
+
+        const renderInline = (line: string): React.ReactNode => {
+            const parts: React.ReactNode[] = [];
+            const re = /(\*\*(.+?)\*\*|`([^`]+)`)/g;
+            let last = 0; let m: RegExpExecArray | null;
+            while ((m = re.exec(line)) !== null) {
+                if (m.index > last) parts.push(line.slice(last, m.index));
+                if (m[2]) parts.push(<strong key={key++} style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{m[2]}</strong>);
+                else if (m[3]) parts.push(<code key={key++} style={{ background: 'rgba(249,115,22,0.12)', color: 'var(--accent)', padding: '1px 5px', borderRadius: '4px', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace' }}>{m[3]}</code>);
+                last = m.index + m[0].length;
+            }
+            if (last < line.length) parts.push(line.slice(last));
+            return parts;
+        };
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (/^### (.+)/.test(line)) {
+                nodes.push(<div key={key++} style={{ fontWeight: 700, fontSize: '13px', color: 'var(--accent)', marginTop: '14px', marginBottom: '4px' }}>{line.replace(/^### /, '')}</div>);
+            } else if (/^## (.+)/.test(line)) {
+                nodes.push(<div key={key++} style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)', marginTop: '16px', marginBottom: '6px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '4px' }}>{line.replace(/^## /, '')}</div>);
+            } else if (/^# (.+)/.test(line)) {
+                nodes.push(<div key={key++} style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-primary)', marginTop: '16px', marginBottom: '8px' }}>{line.replace(/^# /, '')}</div>);
+            } else if (/^[-*] (.+)/.test(line)) {
+                nodes.push(<div key={key++} style={{ display: 'flex', gap: '8px', marginLeft: '8px', marginBottom: '3px', fontSize: '13px' }}><span style={{ color: 'var(--accent)', flexShrink: 0 }}>•</span><span>{renderInline(line.replace(/^[-*] /, ''))}</span></div>);
+            } else if (/^\d+\. (.+)/.test(line)) {
+                const num = line.match(/^(\d+)\./)?.[1];
+                nodes.push(<div key={key++} style={{ display: 'flex', gap: '8px', marginLeft: '8px', marginBottom: '3px', fontSize: '13px' }}><span style={{ color: 'var(--accent)', flexShrink: 0, minWidth: '16px' }}>{num}.</span><span>{renderInline(line.replace(/^\d+\. /, ''))}</span></div>);
+            } else if (line.trim() === '') {
+                nodes.push(<div key={key++} style={{ height: '6px' }} />);
+            } else {
+                nodes.push(<div key={key++} style={{ fontSize: '13px', lineHeight: '1.65', marginBottom: '1px' }}>{renderInline(line)}</div>);
+            }
+        }
+        return <>{nodes}</>;
     }
 
     function stripCodeBlocks(text: string) {
@@ -4648,7 +4690,7 @@ Project description: ${newProjectPrompt.trim()}`
                                             <div className="mb-1" style={{ fontSize: '10px', fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Stopped</div>
                                         )}
                                         {(() => {
-                                            if (!/ctrl\+f:/i.test(cleanText)) return cleanText;
+                                            if (!/ctrl\+f:/i.test(cleanText)) return renderMarkdown(cleanText);
 
                                             // Parse into prose and Ctrl+F instruction blocks
                                             const lines = cleanText.split('\n');
@@ -5255,20 +5297,10 @@ Project description: ${newProjectPrompt.trim()}`
                                             }
                                             onClick={() => {
                                                 if (!activeCodeId) return;
-
                                                 if (!giveAiAccessToCode) {
-                                                    const ok = confirm(
-                                                        "Give the AI access to the selected saved snippet?\n\nThis will include the snippet code in your next message so the AI can edit it.",
-                                                    );
-                                                    if (!ok) return;
-                                                    setGiveAiAccessToCode(true);
-                                                    // Lock the snippet id + code at the moment access is granted
-                                                    setAccessLockedSnippetId(activeCodeId);
-                                                    setAccessLockedCode(codeText);
+                                                    setGiveAccessModal(true);
                                                     return;
                                                 }
-
-                                                // turning off
                                                 setGiveAiAccessToCode(false);
                                                 setAccessLockedSnippetId(null);
                                                 setAccessLockedCode("");
@@ -6715,6 +6747,36 @@ Project description: ${newProjectPrompt.trim()}`
                                     </button>
                                 </>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Give AI Access Modal */}
+            {giveAccessModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                    onMouseDown={() => setGiveAccessModal(false)}>
+                    <div style={{ width: '360px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', padding: '24px' }}
+                        onMouseDown={e => e.stopPropagation()}>
+                        <div style={{ fontSize: '24px', marginBottom: '10px' }}>🔓</div>
+                        <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)', marginBottom: '8px' }}>Give AI access to snippet?</div>
+                        <div style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.6', marginBottom: '20px' }}>
+                            The AI will be able to read and edit your selected snippet. It will be included in your next message automatically.
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                            <button type="button" onClick={() => setGiveAccessModal(false)}
+                                style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                Cancel
+                            </button>
+                            <button type="button" onClick={() => {
+                                setGiveAccessModal(false);
+                                setGiveAiAccessToCode(true);
+                                setAccessLockedSnippetId(activeCodeId);
+                                setAccessLockedCode(codeText);
+                            }}
+                                style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                Give Access
+                            </button>
                         </div>
                     </div>
                 </div>
