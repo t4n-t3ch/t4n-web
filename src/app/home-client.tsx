@@ -292,6 +292,8 @@ export default function HomeClient() {
     const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({}); // folderId -> expanded
     const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
     const [renamingFolderValue, setRenamingFolderValue] = useState('');
+    const [newFolderModal, setNewFolderModal] = useState<{ projectId: string } | null>(null);
+    const [newFolderName, setNewFolderName] = useState('');
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
 
@@ -3880,10 +3882,8 @@ Project description: ${newProjectPrompt.trim()}`
                                                     <button type="button" title="New folder"
                                                         style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 5px', lineHeight: 1.4 }}
                                                         onClick={() => {
-                                                            const name = prompt('Folder name:');
-                                                            if (!name?.trim()) return;
-                                                            const folder: ProjectFolder = { id: crypto.randomUUID(), name: name.trim(), projectId: proj.id };
-                                                            setProjectFolders(prev => ({ ...prev, [proj.id]: [...(prev[proj.id] ?? []), folder] }));
+                                                            setNewFolderName('');
+                                                            setNewFolderModal({ projectId: proj.id });
                                                             setExpandedProjects(prev => ({ ...prev, [proj.id]: true }));
                                                         }}>📂+</button>
                                                     <button type="button" title="Add code file"
@@ -6717,6 +6717,48 @@ Project description: ${newProjectPrompt.trim()}`
                                     </button>
                                 </>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* New Folder Modal */}
+            {newFolderModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                    onMouseDown={() => { setNewFolderModal(null); setNewFolderName(''); }}>
+                    <div style={{ width: '300px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', padding: '20px' }}
+                        onMouseDown={e => e.stopPropagation()}>
+                        <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)', marginBottom: '12px' }}>📂 New Folder</div>
+                        <input
+                            autoFocus
+                            placeholder="Folder name…"
+                            value={newFolderName}
+                            onChange={e => setNewFolderName(e.target.value)}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter' && newFolderName.trim()) {
+                                    const folder: ProjectFolder = { id: crypto.randomUUID(), name: newFolderName.trim(), projectId: newFolderModal.projectId };
+                                    setProjectFolders(prev => ({ ...prev, [newFolderModal.projectId]: [...(prev[newFolderModal.projectId] ?? []), folder] }));
+                                    setNewFolderModal(null); setNewFolderName('');
+                                }
+                                if (e.key === 'Escape') { setNewFolderModal(null); setNewFolderName(''); }
+                            }}
+                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', marginBottom: '12px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }}
+                        />
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                            <button type="button" onClick={() => { setNewFolderModal(null); setNewFolderName(''); }}
+                                style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                Cancel
+                            </button>
+                            <button type="button" disabled={!newFolderName.trim()}
+                                onClick={() => {
+                                    if (!newFolderName.trim()) return;
+                                    const folder: ProjectFolder = { id: crypto.randomUUID(), name: newFolderName.trim(), projectId: newFolderModal.projectId };
+                                    setProjectFolders(prev => ({ ...prev, [newFolderModal.projectId]: [...(prev[newFolderModal.projectId] ?? []), folder] }));
+                                    setNewFolderModal(null); setNewFolderName('');
+                                }}
+                                style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', opacity: newFolderName.trim() ? 1 : 0.5 }}>
+                                Create
+                            </button>
                         </div>
                     </div>
                 </div>
