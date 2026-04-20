@@ -75,6 +75,13 @@ type ProjectFile = {
     file_type: string;
     size_bytes: number;
     created_at: string;
+    folder?: string | null;
+};
+
+type ProjectFolder = {
+    id: string;
+    name: string;
+    projectId: string;
 };
 
 type Conversation = {
@@ -281,6 +288,26 @@ export default function HomeClient() {
     const [inlineNewFileName, setInlineNewFileName] = useState('');
     const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
     const [renamingFileValue, setRenamingFileValue] = useState('');
+    const [projectFolders, setProjectFolders] = useState<Record<string, ProjectFolder[]>>({}); // projectId -> folders
+    const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({}); // folderId -> expanded
+    const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+    const [renamingFolderValue, setRenamingFolderValue] = useState('');
+    const [codeSearchOpen, setCodeSearchOpen] = useState(false);
+    const [codeSearchVal, setCodeSearchVal] = useState('');
+
+    // Global keyboard shortcuts
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            const meta = e.ctrlKey || e.metaKey;
+            if (!meta) return;
+            if (e.key === 'Enter' && !loading && input.trim()) { e.preventDefault(); void handleSend(); }
+            if (e.key === 's') { e.preventDefault(); if (activeCodeId && hasUnsavedChanges) { updateActiveSnippet(); setHasUnsavedChanges(false); } else if (hasUnsavedChanges && codeText.trim()) { promptSaveCurrentCode(); } }
+            if (e.key === '/') { e.preventDefault(); setCodeOpen(v => !v); }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading, input, activeCodeId, hasUnsavedChanges, codeText]);
 
     useEffect(() => {
         // Restore layout
@@ -1267,6 +1294,8 @@ export default function HomeClient() {
     }, [titles]);
 
 
+    const [dailyUsage, setDailyUsage] = useState<{ used: number; limit: number } | null>(null);
+
     const fetchUserPlan = async (accessToken: string, keepOnFailure = false) => {
         const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
         const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-key-123";
@@ -1280,7 +1309,11 @@ export default function HomeClient() {
                 });
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.plan) { setUserPlan(data.plan); return; }
+                    if (data.plan) {
+                        setUserPlan(data.plan);
+                        if (data.usage) setDailyUsage({ used: data.usage.events_used ?? 0, limit: data.usage.events_limit ?? 100 });
+                        return;
+                    }
                 }
             } catch { /* retry */ }
         }
@@ -3752,10 +3785,78 @@ Project description: ${newProjectPrompt.trim()}`
                             ) : (
                                 projects.map(proj => {
                                     const isExpanded = expandedProjects[proj.id] ?? false;
-                                    const files = projectFiles[proj.id] ?? [];
+                                    const allFiles = projectFiles[proj.id] ?? [];
+                                    const folders = projectFolders[proj.id] ?? [];
                                     const linkedConvIds = Object.entries(convProjects)
                                         .filter(([, pid]) => pid === proj.id)
                                         .map(([cid]) => cid);
+
+                                    // Files not in any folder
+                                    const rootFiles = allFiles.filter(f => !f.folder);
+
+                                    const getFileIcon = (name: string) => {
+                                        const ext = name.split('.').pop()?.toLowerCase() ?? '';
+                                        return ext === 'pine' || ext === 'pinescript' ? '🌲'
+                                            : ext === 'py' ? '🐍' : ext === 'cs' ? '🎮'
+                                                : ext === 'ts' || ext === 'tsx' ? '📘'
+                                                    : ext === 'js' || ext === 'jsx' ? '📙'
+                                                        : ext === 'json' ? '📋' : ext === 'md' ? '📝' : '📄';
+                                    };
+
+                                    const renderFile = (file: ProjectFile, indent: number) => {
+                                        const isActiveFile = activeFileId === file.id;
+                                        return (
+                                            <div
+                                                key={file.id}
+                                                style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: `3px 10px 3px ${indent}px`, cursor: 'pointer', fontSize: '11px', color: isActiveFile ? 'var(--accent)' : 'var(--text-muted)', background: isActiveFile ? 'var(--accent-glow)' : 'transparent', borderLeft: isActiveFile ? '2px solid var(--accent)' : '2px solid transparent' }}
+                                                onClick={() => {
+                                                    setActiveFileId(file.id);
+                                                    setCodeText(file.content);
+                                                    setUnsavedCode(file.content);
+                                                    setHasUnsavedChanges(false);
+                                                    setActiveCodeId(null);
+                                                    setCodeOpen(true);
+                                                    addToHistory(file.content);
+                                                }}
+                                            >
+                                                <span>{getFileIcon(file.name)}</span>
+                                                {renamingFileId === file.id ? (
+                                                    <input
+                                                        autoFocus
+                                                        value={renamingFileValue}
+                                                        onChange={e => setRenamingFileValue(e.target.value)}
+                                                        onBlur={async () => {
+                                                            if (renamingFileValue.trim() && renamingFileValue !== file.name) {
+                                                                const updated = { ...file, name: renamingFileValue.trim() };
+                                                                setProjectFiles(prev => ({ ...prev, [proj.id]: allFiles.map(f => f.id === file.id ? updated : f) }));
+                                                                try { await apiAddProjectFile(proj.id, { name: renamingFileValue.trim(), content: file.content, file_type: file.file_type }); } catch (e) { console.error(e); }
+                                                            }
+                                                            setRenamingFileId(null);
+                                                        }}
+                                                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setRenamingFileId(null); }}
+                                                        onClick={e => e.stopPropagation()}
+                                                        style={{ flex: 1, fontSize: '11px', background: 'var(--bg-elevated)', border: '1px solid var(--accent)', borderRadius: '3px', padding: '1px 5px', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}
+                                                    />
+                                                ) : (
+                                                    <span
+                                                        style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                                        onDoubleClick={e => { e.stopPropagation(); setRenamingFileId(file.id); setRenamingFileValue(file.name); }}
+                                                        title="Double-click to rename"
+                                                    >{file.name}</span>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '3px', cursor: 'pointer', fontSize: '9px', color: '#f87171', padding: '2px 5px', flexShrink: 0, fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
+                                                    title="Remove file"
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        await removeProjectFile(proj.id, file.id);
+                                                        if (activeFileId === file.id) setActiveFileId(null);
+                                                    }}
+                                                >✕</button>
+                                            </div>
+                                        );
+                                    };
 
                                     return (
                                         <div key={proj.id}>
@@ -3775,80 +3876,94 @@ Project description: ${newProjectPrompt.trim()}`
                                                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>
                                                     {proj.name}
                                                 </span>
-                                                {/* Always-visible + Add button */}
                                                 <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                                                    <button
-                                                        type="button"
-                                                        title="Add code file"
+                                                    <button type="button" title="New folder"
                                                         style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 5px', lineHeight: 1.4 }}
-                                                        onClick={() => { setNewFileName(''); setExplorerOverlay({ type: 'add-file', projectId: proj.id }); }}
-                                                    >📄+</button>
-                                                    <button
-                                                        type="button"
-                                                        title="Link a chat session"
+                                                        onClick={() => {
+                                                            const name = prompt('Folder name:');
+                                                            if (!name?.trim()) return;
+                                                            const folder: ProjectFolder = { id: crypto.randomUUID(), name: name.trim(), projectId: proj.id };
+                                                            setProjectFolders(prev => ({ ...prev, [proj.id]: [...(prev[proj.id] ?? []), folder] }));
+                                                            setExpandedProjects(prev => ({ ...prev, [proj.id]: true }));
+                                                        }}>📂+</button>
+                                                    <button type="button" title="Add code file"
                                                         style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 5px', lineHeight: 1.4 }}
-                                                        onClick={() => setExplorerOverlay({ type: 'link-chat', projectId: proj.id })}
-                                                    >💬+</button>
+                                                        onClick={() => { setNewFileName(''); setExplorerOverlay({ type: 'add-file', projectId: proj.id }); }}>📄+</button>
+                                                    <button type="button" title="Link a chat session"
+                                                        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 5px', lineHeight: 1.4 }}
+                                                        onClick={() => setExplorerOverlay({ type: 'link-chat', projectId: proj.id })}>💬+</button>
                                                 </div>
                                             </div>
 
                                             {/* Expanded content */}
                                             {isExpanded && (
                                                 <div>
-                                                    {/* ── Code Files sub-section ── */}
-                                                    <div style={{ padding: '4px 10px 2px 22px', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                                                        📄 Code Files
-                                                    </div>
-                                                    {files.length === 0 ? (
+                                                    {/* ── Folders ── */}
+                                                    {folders.map(folder => {
+                                                        const folderFiles = allFiles.filter(f => f.folder === folder.id);
+                                                        const isFolderExpanded = expandedFolders[folder.id] ?? true;
+                                                        return (
+                                                            <div key={folder.id}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px 3px 18px', cursor: 'pointer', fontSize: '11px', color: 'var(--text-secondary)', userSelect: 'none' }}
+                                                                    onClick={() => setExpandedFolders(prev => ({ ...prev, [folder.id]: !isFolderExpanded }))}>
+                                                                    <span style={{ fontSize: '9px', color: 'var(--text-muted)', width: '8px' }}>{isFolderExpanded ? '▼' : '▶'}</span>
+                                                                    <span>📂</span>
+                                                                    {renamingFolderId === folder.id ? (
+                                                                        <input
+                                                                            autoFocus
+                                                                            value={renamingFolderValue}
+                                                                            onChange={e => setRenamingFolderValue(e.target.value)}
+                                                                            onBlur={() => {
+                                                                                if (renamingFolderValue.trim()) {
+                                                                                    setProjectFolders(prev => ({ ...prev, [proj.id]: (prev[proj.id] ?? []).map(f => f.id === folder.id ? { ...f, name: renamingFolderValue.trim() } : f) }));
+                                                                                }
+                                                                                setRenamingFolderId(null);
+                                                                            }}
+                                                                            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setRenamingFolderId(null); }}
+                                                                            onClick={e => e.stopPropagation()}
+                                                                            style={{ flex: 1, fontSize: '11px', background: 'var(--bg-elevated)', border: '1px solid var(--accent)', borderRadius: '3px', padding: '1px 5px', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}
+                                                                        />
+                                                                    ) : (
+                                                                        <span style={{ flex: 1, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                                                            onDoubleClick={e => { e.stopPropagation(); setRenamingFolderId(folder.id); setRenamingFolderValue(folder.name); }}
+                                                                            title="Double-click to rename"
+                                                                        >{folder.name}</span>
+                                                                    )}
+                                                                    <div style={{ display: 'flex', gap: '2px' }} onClick={e => e.stopPropagation()}>
+                                                                        <button type="button" title="Add file to folder"
+                                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '1px 4px' }}
+                                                                            onClick={() => { setNewFileName(''); setExplorerOverlay({ type: 'add-file', projectId: proj.id }); }}>📄+</button>
+                                                                        <button type="button" title="Delete folder"
+                                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: '#f87171', padding: '1px 4px' }}
+                                                                            onClick={() => {
+                                                                                if (!confirm(`Delete folder "${folder.name}"? Files inside will move to root.`)) return;
+                                                                                setProjectFolders(prev => ({ ...prev, [proj.id]: (prev[proj.id] ?? []).filter(f => f.id !== folder.id) }));
+                                                                                setProjectFiles(prev => ({ ...prev, [proj.id]: allFiles.map(f => f.folder === folder.id ? { ...f, folder: null } : f) }));
+                                                                            }}>✕</button>
+                                                                    </div>
+                                                                </div>
+                                                                {isFolderExpanded && folderFiles.map(f => renderFile(f, 32))}
+                                                                {isFolderExpanded && folderFiles.length === 0 && (
+                                                                    <div style={{ padding: '2px 10px 2px 36px', fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Empty folder</div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+
+                                                    {/* ── Root Files (no folder) ── */}
+                                                    {rootFiles.length > 0 && (
+                                                        <div style={{ padding: '4px 10px 2px 22px', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                                            📄 Files
+                                                        </div>
+                                                    )}
+                                                    {rootFiles.map(f => renderFile(f, 24))}
+                                                    {allFiles.length === 0 && folders.length === 0 && (
                                                         <div style={{ padding: '2px 10px 4px 24px', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                                                             No files — click 📄+ to add
                                                         </div>
-                                                    ) : (
-                                                        files.map(file => {
-                                                            const isActiveFile = activeFileId === file.id;
-                                                            const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-                                                            const icon = ext === 'pine' || ext === 'pinescript' ? '🌲'
-                                                                : ext === 'py' ? '🐍'
-                                                                    : ext === 'cs' ? '🎮'
-                                                                        : ext === 'ts' || ext === 'tsx' ? '📘'
-                                                                            : ext === 'js' || ext === 'jsx' ? '📙'
-                                                                                : ext === 'json' ? '📋'
-                                                                                    : ext === 'md' ? '📝'
-                                                                                        : '📄';
-                                                            return (
-                                                                <div
-                                                                    key={file.id}
-                                                                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px 3px 24px', cursor: 'pointer', fontSize: '11px', color: isActiveFile ? 'var(--accent)' : 'var(--text-muted)', background: isActiveFile ? 'var(--accent-glow)' : 'transparent', borderLeft: isActiveFile ? '2px solid var(--accent)' : '2px solid transparent' }}
-                                                                    onClick={() => {
-                                                                        setActiveFileId(file.id);
-                                                                        setCodeText(file.content);
-                                                                        setUnsavedCode(file.content);
-                                                                        setHasUnsavedChanges(false);
-                                                                        setActiveCodeId(null);
-                                                                        setCodeOpen(true);
-                                                                        addToHistory(file.content);
-                                                                    }}
-                                                                >
-                                                                    <span>{icon}</span>
-                                                                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                                        {file.name}
-                                                                    </span>
-                                                                    <button
-                                                                        type="button"
-                                                                        style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '3px', cursor: 'pointer', fontSize: '9px', color: '#f87171', padding: '2px 5px', flexShrink: 0, fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
-                                                                        title="Remove file"
-                                                                        onClick={async (e) => {
-                                                                            e.stopPropagation();
-                                                                            await removeProjectFile(proj.id, file.id);
-                                                                            if (activeFileId === file.id) setActiveFileId(null);
-                                                                        }}
-                                                                    >remove</button>
-                                                                </div>
-                                                            );
-                                                        })
                                                     )}
 
-                                                    {/* ── Chat Sessions sub-section ── */}
+                                                    {/* ── Chat Sessions ── */}
                                                     <div style={{ padding: '6px 10px 2px 22px', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                                                         💬 Chat Sessions
                                                     </div>
@@ -3862,27 +3977,14 @@ Project description: ${newProjectPrompt.trim()}`
                                                             const label = titles[cid] ?? conv?.title ?? cid.slice(0, 8);
                                                             const isActive = activeId === cid;
                                                             return (
-                                                                <div
-                                                                    key={cid}
+                                                                <div key={cid}
                                                                     style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px 3px 24px', cursor: 'pointer', fontSize: '11px', color: isActive ? 'var(--accent)' : 'var(--text-muted)', background: isActive ? 'var(--accent-glow)' : 'transparent', borderLeft: isActive ? '2px solid var(--accent)' : '2px solid transparent' }}
-                                                                    onClick={() => {
-                                                                        // Just highlight — don't open
-                                                                        router.push(`/?c=${encodeURIComponent(cid)}`);
-                                                                    }}
-                                                                >
+                                                                    onClick={() => router.push(`/?c=${encodeURIComponent(cid)}`)}>
                                                                     <span>💬</span>
-                                                                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                                        {label}
-                                                                    </span>
-                                                                    <button
-                                                                        type="button"
+                                                                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                                                                    <button type="button"
                                                                         style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '3px', cursor: 'pointer', fontSize: '9px', color: '#f87171', padding: '2px 5px', flexShrink: 0, fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
-                                                                        title="Unlink chat"
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            assignToProject(cid, null);
-                                                                        }}
-                                                                    >unlink</button>
+                                                                        onClick={(e) => { e.stopPropagation(); assignToProject(cid, null); }}>unlink</button>
                                                                 </div>
                                                             );
                                                         })
@@ -3934,6 +4036,15 @@ Project description: ${newProjectPrompt.trim()}`
                     </button>
 
                     <div className="ml-auto flex items-center gap-2">
+                        {/* Usage counter */}
+                        {dailyUsage && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '20px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', fontSize: '11px', color: 'var(--text-muted)' }}>
+                                <div style={{ width: '48px', height: '4px', borderRadius: '2px', background: 'var(--border-default)', overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', borderRadius: '2px', width: `${Math.min(100, (dailyUsage.used / dailyUsage.limit) * 100)}%`, background: dailyUsage.used / dailyUsage.limit > 0.85 ? '#f87171' : dailyUsage.used / dailyUsage.limit > 0.6 ? '#fbbf24' : '#4ade80', transition: 'width 0.3s' }} />
+                                </div>
+                                <span>{dailyUsage.used}/{dailyUsage.limit}</span>
+                            </div>
+                        )}
                         {/* Plan badge */}
                         {userPlan === 'free' ? (
                             <button type="button"
@@ -4352,72 +4463,74 @@ Project description: ${newProjectPrompt.trim()}`
                                 )}
 
                                 {activeSettingsTab === 'account' && (() => {
-    function validatePassword(pw: string): string[] {
-        const errors: string[] = [];
-        if (pw.length < 8) errors.push('At least 8 characters');
-        if (!/[A-Z]/.test(pw)) errors.push('Uppercase letter (A–Z)');
-        if (!/[a-z]/.test(pw)) errors.push('Lowercase letter (a–z)');
-        if (!/[0-9]/.test(pw)) errors.push('Number (0–9)');
-        if (!/[^A-Za-z0-9]/.test(pw)) errors.push('Special character (!@#$%)');
-        return errors;
-    }
-    const pwErrors = changePasswordState.newPassword ? validatePassword(changePasswordState.newPassword) : [];
-    const matchError = changePasswordState.confirm && changePasswordState.newPassword !== changePasswordState.confirm;
-    const isValid = pwErrors.length === 0 && !matchError && changePasswordState.newPassword.length > 0 && changePasswordState.confirm.length > 0;
-    const rules = [
-        { label: '8+ characters', test: /^.{8,}$/ },
-        { label: 'Uppercase (A–Z)', test: /[A-Z]/ },
-        { label: 'Lowercase (a–z)', test: /[a-z]/ },
-        { label: 'Number (0–9)', test: /[0-9]/ },
-        { label: 'Special character', test: /[^A-Za-z0-9]/ },
-    ];
-    return (
-        <div className="space-y-5">
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Change Password</p>
-            <div style={{ padding: '12px 14px', background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-subtle)', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Signed in as <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{session?.user?.email}</span>
-            </div>
-            <div>
-                <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>New Password</label>
-                <input type="password" placeholder="Enter new password" value={changePasswordState.newPassword}
-                    onChange={e => setChangePasswordState(s => ({ ...s, newPassword: e.target.value, status: null }))}
-                    style={{ width: '100%', background: 'var(--bg-elevated)', border: `1px solid ${changePasswordState.newPassword && pwErrors.length === 0 ? 'rgba(34,197,94,0.5)' : changePasswordState.newPassword && pwErrors.length > 0 ? 'rgba(239,68,68,0.4)' : 'var(--border-default)'}`, borderRadius: '7px', padding: '9px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', outline: 'none' }} />
-            </div>
-            {changePasswordState.newPassword.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                    {rules.map(r => { const passed = r.test.test(changePasswordState.newPassword); return (
-                        <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: passed ? '#4ade80' : 'var(--text-muted)' }}>
-                            <span style={{ fontSize: '11px' }}>{passed ? '✓' : '○'}</span>{r.label}
-                        </div>
-                    ); })}
-                </div>
-            )}
-            <div>
-                <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>Confirm New Password</label>
-                <input type="password" placeholder="Repeat new password" value={changePasswordState.confirm}
-                    onChange={e => setChangePasswordState(s => ({ ...s, confirm: e.target.value, status: null }))}
-                    style={{ width: '100%', background: 'var(--bg-elevated)', border: `1px solid ${matchError ? 'rgba(239,68,68,0.4)' : changePasswordState.confirm && !matchError ? 'rgba(34,197,94,0.5)' : 'var(--border-default)'}`, borderRadius: '7px', padding: '9px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', outline: 'none' }} />
-                {matchError && <p style={{ fontSize: '11px', color: '#f87171', marginTop: '4px' }}>Passwords do not match</p>}
-            </div>
-            {changePasswordState.status && (
-                <div style={{ padding: '9px 12px', borderRadius: '7px', fontSize: '12px', background: changePasswordState.status.startsWith('✅') ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${changePasswordState.status.startsWith('✅') ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, color: changePasswordState.status.startsWith('✅') ? '#4ade80' : '#f87171' }}>
-                    {changePasswordState.status}
-                </div>
-            )}
-            <button type="button" disabled={!isValid || changePasswordState.loading}
-                style={{ padding: '9px 20px', fontSize: '13px', fontWeight: 600, borderRadius: '7px', border: 'none', background: isValid ? 'var(--accent)' : 'var(--bg-elevated)', color: isValid ? '#fff' : 'var(--text-muted)', cursor: isValid ? 'pointer' : 'not-allowed', fontFamily: 'DM Sans, sans-serif', opacity: changePasswordState.loading ? 0.7 : 1 }}
-                onClick={async () => {
-                    if (!isValid) return;
-                    setChangePasswordState(s => ({ ...s, loading: true, status: null }));
-                    const { error } = await supabase.auth.updateUser({ password: changePasswordState.newPassword });
-                    if (error) { setChangePasswordState(s => ({ ...s, loading: false, status: `⚠ ${error.message}` })); }
-                    else { setChangePasswordState({ newPassword: '', confirm: '', status: '✅ Password updated successfully!', loading: false }); }
-                }}>
-                {changePasswordState.loading ? 'Updating…' : 'Update Password'}
-            </button>
-        </div>
-    );
-})()}
+                                    function validatePassword(pw: string): string[] {
+                                        const errors: string[] = [];
+                                        if (pw.length < 8) errors.push('At least 8 characters');
+                                        if (!/[A-Z]/.test(pw)) errors.push('Uppercase letter (A–Z)');
+                                        if (!/[a-z]/.test(pw)) errors.push('Lowercase letter (a–z)');
+                                        if (!/[0-9]/.test(pw)) errors.push('Number (0–9)');
+                                        if (!/[^A-Za-z0-9]/.test(pw)) errors.push('Special character (!@#$%)');
+                                        return errors;
+                                    }
+                                    const pwErrors = changePasswordState.newPassword ? validatePassword(changePasswordState.newPassword) : [];
+                                    const matchError = changePasswordState.confirm && changePasswordState.newPassword !== changePasswordState.confirm;
+                                    const isValid = pwErrors.length === 0 && !matchError && changePasswordState.newPassword.length > 0 && changePasswordState.confirm.length > 0;
+                                    const rules = [
+                                        { label: '8+ characters', test: /^.{8,}$/ },
+                                        { label: 'Uppercase (A–Z)', test: /[A-Z]/ },
+                                        { label: 'Lowercase (a–z)', test: /[a-z]/ },
+                                        { label: 'Number (0–9)', test: /[0-9]/ },
+                                        { label: 'Special character', test: /[^A-Za-z0-9]/ },
+                                    ];
+                                    return (
+                                        <div className="space-y-5">
+                                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Change Password</p>
+                                            <div style={{ padding: '12px 14px', background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-subtle)', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                                                Signed in as <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{session?.user?.email}</span>
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>New Password</label>
+                                                <input type="password" placeholder="Enter new password" value={changePasswordState.newPassword}
+                                                    onChange={e => setChangePasswordState(s => ({ ...s, newPassword: e.target.value, status: null }))}
+                                                    style={{ width: '100%', background: 'var(--bg-elevated)', border: `1px solid ${changePasswordState.newPassword && pwErrors.length === 0 ? 'rgba(34,197,94,0.5)' : changePasswordState.newPassword && pwErrors.length > 0 ? 'rgba(239,68,68,0.4)' : 'var(--border-default)'}`, borderRadius: '7px', padding: '9px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', outline: 'none' }} />
+                                            </div>
+                                            {changePasswordState.newPassword.length > 0 && (
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                                                    {rules.map(r => {
+                                                        const passed = r.test.test(changePasswordState.newPassword); return (
+                                                            <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: passed ? '#4ade80' : 'var(--text-muted)' }}>
+                                                                <span style={{ fontSize: '11px' }}>{passed ? '✓' : '○'}</span>{r.label}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                            <div>
+                                                <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>Confirm New Password</label>
+                                                <input type="password" placeholder="Repeat new password" value={changePasswordState.confirm}
+                                                    onChange={e => setChangePasswordState(s => ({ ...s, confirm: e.target.value, status: null }))}
+                                                    style={{ width: '100%', background: 'var(--bg-elevated)', border: `1px solid ${matchError ? 'rgba(239,68,68,0.4)' : changePasswordState.confirm && !matchError ? 'rgba(34,197,94,0.5)' : 'var(--border-default)'}`, borderRadius: '7px', padding: '9px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', outline: 'none' }} />
+                                                {matchError && <p style={{ fontSize: '11px', color: '#f87171', marginTop: '4px' }}>Passwords do not match</p>}
+                                            </div>
+                                            {changePasswordState.status && (
+                                                <div style={{ padding: '9px 12px', borderRadius: '7px', fontSize: '12px', background: changePasswordState.status.startsWith('✅') ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${changePasswordState.status.startsWith('✅') ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, color: changePasswordState.status.startsWith('✅') ? '#4ade80' : '#f87171' }}>
+                                                    {changePasswordState.status}
+                                                </div>
+                                            )}
+                                            <button type="button" disabled={!isValid || changePasswordState.loading}
+                                                style={{ padding: '9px 20px', fontSize: '13px', fontWeight: 600, borderRadius: '7px', border: 'none', background: isValid ? 'var(--accent)' : 'var(--bg-elevated)', color: isValid ? '#fff' : 'var(--text-muted)', cursor: isValid ? 'pointer' : 'not-allowed', fontFamily: 'DM Sans, sans-serif', opacity: changePasswordState.loading ? 0.7 : 1 }}
+                                                onClick={async () => {
+                                                    if (!isValid) return;
+                                                    setChangePasswordState(s => ({ ...s, loading: true, status: null }));
+                                                    const { error } = await supabase.auth.updateUser({ password: changePasswordState.newPassword });
+                                                    if (error) { setChangePasswordState(s => ({ ...s, loading: false, status: `⚠ ${error.message}` })); }
+                                                    else { setChangePasswordState({ newPassword: '', confirm: '', status: '✅ Password updated successfully!', loading: false }); }
+                                                }}>
+                                                {changePasswordState.loading ? 'Updating…' : 'Update Password'}
+                                            </button>
+                                        </div>
+                                    );
+                                })()}
 
                                 {activeSettingsTab === 'plugins' && (
                                     <div className="space-y-3">
@@ -5527,109 +5640,109 @@ Project description: ${newProjectPrompt.trim()}`
 
                                     {convertDropdownOpen && ReactDOM.createPortal(
                                         <>
-                                        <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setConvertDropdownOpen(false)} />
-                                        <div
-                                            style={{ position: 'fixed', top: convertDropdownPos.top, right: convertDropdownPos.right, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
-                                            onMouseLeave={() => setConvertDropdownOpen(false)}
-                                        >
-            {(() => {
-                const allConversions: { from: string; to: string; lang: string; domains: string[] }[] = [
-                    { from: 'Pine Script', to: 'Python', lang: 'Python', domains: ['pinescript'] },
-                    { from: 'Pine Script', to: 'cTrader C#', lang: 'cTrader C#', domains: ['pinescript'] },
-                    { from: 'Pine Script', to: 'MQL5', lang: 'MQL5', domains: ['pinescript'] },
-                    { from: 'Pine Script', to: 'JavaScript', lang: 'JavaScript', domains: ['pinescript'] },
-                    { from: 'Pine Script', to: 'TypeScript', lang: 'TypeScript', domains: ['pinescript'] },
-                    { from: 'Python', to: 'Pine Script', lang: 'Pine Script v5', domains: ['python'] },
-                    { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['python'] },
-                    { from: 'Python', to: 'TypeScript', lang: 'TypeScript', domains: ['python'] },
-                    { from: 'Python', to: 'MQL5', lang: 'MQL5', domains: ['python'] },
-                    { from: 'cTrader C#', to: 'Pine Script', lang: 'Pine Script v5', domains: ['ctrader'] },
-                    { from: 'cTrader C#', to: 'Python', lang: 'Python', domains: ['ctrader'] },
-                    { from: 'cTrader C#', to: 'MQL5', lang: 'MQL5', domains: ['ctrader'] },
-                    { from: 'MQL5', to: 'Pine Script', lang: 'Pine Script v5', domains: ['mql5'] },
-                    { from: 'MQL5', to: 'Python', lang: 'Python', domains: ['mql5'] },
-                    { from: 'MQL5', to: 'cTrader C#', lang: 'cTrader C#', domains: ['mql5'] },
-                    { from: 'JavaScript', to: 'TypeScript', lang: 'TypeScript', domains: ['javascript'] },
-                    { from: 'JavaScript', to: 'Python', lang: 'Python', domains: ['javascript'] },
-                    { from: 'TypeScript', to: 'JavaScript', lang: 'JavaScript', domains: ['typescript', 'react'] },
-                    { from: 'TypeScript', to: 'Python', lang: 'Python', domains: ['typescript', 'react'] },
-                    { from: 'C#', to: 'Python', lang: 'Python', domains: ['unity'] },
-                    { from: 'C#', to: 'TypeScript', lang: 'TypeScript', domains: ['unity'] },
-                    { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['blender'] },
-                    { from: 'Code', to: 'Python', lang: 'Python', domains: ['generic'] },
-                    { from: 'Code', to: 'TypeScript', lang: 'TypeScript', domains: ['generic'] },
-                    { from: 'Code', to: 'JavaScript', lang: 'JavaScript', domains: ['generic'] },
-                ];
-                const resolvedDomain = selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain;
-                return allConversions.filter(c => c.domains.includes(resolvedDomain));
-            })().map(({ from, to, lang }) => (
-                <button
-                    key={`${from}-${to}`}
-                    type="button"
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        width: '100%',
-                        padding: '8px 14px',
-                        background: 'none',
-                        border: 'none',
-                        borderBottom: '1px solid var(--border-subtle)',
-                        cursor: 'pointer',
-                        fontFamily: 'DM Sans, sans-serif',
-                        transition: 'background 0.1s',
-                    }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                    onClick={async () => {
-                        setConvertDropdownOpen(false);
-                        if (!codeText.trim() || inlineActionBusy) return;
-                        setInlineActionBusy(true);
-                        setInlineActionLabel('🔄 Convert');
-                        const projectContext = buildProjectContext();
-                        const fullPrompt = `Convert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.${projectContext}`;
-                        try {
-                            let cid = activeId;
-                            if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
-                            setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
-                            const assistantId = globalThis.crypto.randomUUID();
-                            activeAssistantIdRef.current = assistantId;
-                            setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
-                            abortRef.current?.abort();
-                            const controller = new AbortController();
-                            abortRef.current = controller;
-                            setStreaming(true); setLoading(true);
-                            const res = await streamMessage(fullPrompt, cid, controller.signal, codeText);
-                            let streamed = '';
-                            await readSseStream(
-                                res,
-                                (delta) => {
-                                    streamed += delta;
-                                    const extracted = extractCodeBlocks(streamed);
-                                    if (extracted) {
-                                        setCodeText(extracted); addToHistory(extracted); setHasUnsavedChanges(true); setCodeOpen(true);
-                                        const domainMap: Record<string, string> = { 'Python': 'python', 'Pine Script': 'pinescript', 'Pine Script v5': 'pinescript', 'cTrader C#': 'ctrader', 'MQL5': 'mql5', 'JavaScript': 'javascript', 'TypeScript': 'typescript' };
-                                        if (domainMap[to]) setSelectedDomain(domainMap[to]);
-                                    }
-                                    setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: extractCodeBlocks(streamed) ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg));
-                                },
-                                (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
-                                undefined,
-                                undefined,
-                                controller.signal,
-                            );
-                        } catch (err) {
-                            setError(err instanceof Error ? err.message : 'Conversion failed');
-                        } finally {
-                            setInlineActionBusy(false); setInlineActionLabel(null); setStreaming(false); setLoading(false); activeAssistantIdRef.current = null; abortRef.current = null;
-                        }
-                    }}
-                >
-                    <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{from} → {to}</span>
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
-                </button>
-            ))}
-        </div>
+                                            <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setConvertDropdownOpen(false)} />
+                                            <div
+                                                style={{ position: 'fixed', top: convertDropdownPos.top, right: convertDropdownPos.right, zIndex: 99999, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', minWidth: '210px', overflow: 'auto', maxHeight: '60vh' }}
+                                                onMouseLeave={() => setConvertDropdownOpen(false)}
+                                            >
+                                                {(() => {
+                                                    const allConversions: { from: string; to: string; lang: string; domains: string[] }[] = [
+                                                        { from: 'Pine Script', to: 'Python', lang: 'Python', domains: ['pinescript'] },
+                                                        { from: 'Pine Script', to: 'cTrader C#', lang: 'cTrader C#', domains: ['pinescript'] },
+                                                        { from: 'Pine Script', to: 'MQL5', lang: 'MQL5', domains: ['pinescript'] },
+                                                        { from: 'Pine Script', to: 'JavaScript', lang: 'JavaScript', domains: ['pinescript'] },
+                                                        { from: 'Pine Script', to: 'TypeScript', lang: 'TypeScript', domains: ['pinescript'] },
+                                                        { from: 'Python', to: 'Pine Script', lang: 'Pine Script v5', domains: ['python'] },
+                                                        { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['python'] },
+                                                        { from: 'Python', to: 'TypeScript', lang: 'TypeScript', domains: ['python'] },
+                                                        { from: 'Python', to: 'MQL5', lang: 'MQL5', domains: ['python'] },
+                                                        { from: 'cTrader C#', to: 'Pine Script', lang: 'Pine Script v5', domains: ['ctrader'] },
+                                                        { from: 'cTrader C#', to: 'Python', lang: 'Python', domains: ['ctrader'] },
+                                                        { from: 'cTrader C#', to: 'MQL5', lang: 'MQL5', domains: ['ctrader'] },
+                                                        { from: 'MQL5', to: 'Pine Script', lang: 'Pine Script v5', domains: ['mql5'] },
+                                                        { from: 'MQL5', to: 'Python', lang: 'Python', domains: ['mql5'] },
+                                                        { from: 'MQL5', to: 'cTrader C#', lang: 'cTrader C#', domains: ['mql5'] },
+                                                        { from: 'JavaScript', to: 'TypeScript', lang: 'TypeScript', domains: ['javascript'] },
+                                                        { from: 'JavaScript', to: 'Python', lang: 'Python', domains: ['javascript'] },
+                                                        { from: 'TypeScript', to: 'JavaScript', lang: 'JavaScript', domains: ['typescript', 'react'] },
+                                                        { from: 'TypeScript', to: 'Python', lang: 'Python', domains: ['typescript', 'react'] },
+                                                        { from: 'C#', to: 'Python', lang: 'Python', domains: ['unity'] },
+                                                        { from: 'C#', to: 'TypeScript', lang: 'TypeScript', domains: ['unity'] },
+                                                        { from: 'Python', to: 'JavaScript', lang: 'JavaScript', domains: ['blender'] },
+                                                        { from: 'Code', to: 'Python', lang: 'Python', domains: ['generic'] },
+                                                        { from: 'Code', to: 'TypeScript', lang: 'TypeScript', domains: ['generic'] },
+                                                        { from: 'Code', to: 'JavaScript', lang: 'JavaScript', domains: ['generic'] },
+                                                    ];
+                                                    const resolvedDomain = selectedDomain === 'auto' ? detectLanguage(codeText) : selectedDomain;
+                                                    return allConversions.filter(c => c.domains.includes(resolvedDomain));
+                                                })().map(({ from, to, lang }) => (
+                                                    <button
+                                                        key={`${from}-${to}`}
+                                                        type="button"
+                                                        style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'space-between',
+                                                            width: '100%',
+                                                            padding: '8px 14px',
+                                                            background: 'none',
+                                                            border: 'none',
+                                                            borderBottom: '1px solid var(--border-subtle)',
+                                                            cursor: 'pointer',
+                                                            fontFamily: 'DM Sans, sans-serif',
+                                                            transition: 'background 0.1s',
+                                                        }}
+                                                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                        onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                        onClick={async () => {
+                                                            setConvertDropdownOpen(false);
+                                                            if (!codeText.trim() || inlineActionBusy) return;
+                                                            setInlineActionBusy(true);
+                                                            setInlineActionLabel('🔄 Convert');
+                                                            const projectContext = buildProjectContext();
+                                                            const fullPrompt = `Convert the following code from ${from} to ${lang}. Output the FULL converted file with no truncation. Preserve all logic exactly.${projectContext}`;
+                                                            try {
+                                                                let cid = activeId;
+                                                                if (!cid) { const newId = await startNewChat(); if (!newId) throw new Error('Failed to create conversation'); cid = newId; }
+                                                                setMessages(m => [...m, { id: globalThis.crypto.randomUUID(), role: 'user', content: `🔄 Convert ${from} → ${to}` }]);
+                                                                const assistantId = globalThis.crypto.randomUUID();
+                                                                activeAssistantIdRef.current = assistantId;
+                                                                setMessages(m => [...m, { id: assistantId, role: 'assistant', content: '' }]);
+                                                                abortRef.current?.abort();
+                                                                const controller = new AbortController();
+                                                                abortRef.current = controller;
+                                                                setStreaming(true); setLoading(true);
+                                                                const res = await streamMessage(fullPrompt, cid, controller.signal, codeText);
+                                                                let streamed = '';
+                                                                await readSseStream(
+                                                                    res,
+                                                                    (delta) => {
+                                                                        streamed += delta;
+                                                                        const extracted = extractCodeBlocks(streamed);
+                                                                        if (extracted) {
+                                                                            setCodeText(extracted); addToHistory(extracted); setHasUnsavedChanges(true); setCodeOpen(true);
+                                                                            const domainMap: Record<string, string> = { 'Python': 'python', 'Pine Script': 'pinescript', 'Pine Script v5': 'pinescript', 'cTrader C#': 'ctrader', 'MQL5': 'mql5', 'JavaScript': 'javascript', 'TypeScript': 'typescript' };
+                                                                            if (domainMap[to]) setSelectedDomain(domainMap[to]);
+                                                                        }
+                                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: extractCodeBlocks(streamed) ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg));
+                                                                    },
+                                                                    (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
+                                                                    undefined,
+                                                                    undefined,
+                                                                    controller.signal,
+                                                                );
+                                                            } catch (err) {
+                                                                setError(err instanceof Error ? err.message : 'Conversion failed');
+                                                            } finally {
+                                                                setInlineActionBusy(false); setInlineActionLabel(null); setStreaming(false); setLoading(false); activeAssistantIdRef.current = null; abortRef.current = null;
+                                                            }
+                                                        }}
+                                                    >
+                                                        <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{from} → {to}</span>
+                                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{lang}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </>,
                                         document.body
                                     )}
@@ -5722,52 +5835,76 @@ Project description: ${newProjectPrompt.trim()}`
                                         />
                                     </div>
                                 ) : (
-                                    <textarea
-                                        ref={codeTextareaRef}
-                                        className="w-full h-[55vh] whitespace-pre font-mono break-words overflow-auto"
-                                        style={{ background: '#0d0d10', color: '#e2e2e8', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '10px', fontSize: '12px', lineHeight: '1.7', fontFamily: 'JetBrains Mono, monospace', resize: 'none' }}
-                                        value={codeText}
-                                        placeholder="Paste code here, ask the AI, or type directly…"
-                                        onChange={(e) => {
-                                            const newValue = e.target.value;
-                                            setCodeText(newValue);
-                                            addToHistory(newValue);
-                                            runDiagnostics(newValue);
-                                            if (activeCodeId) {
-                                                setHasUnsavedChanges(true);
-                                            } else if (newValue.trim()) {
-                                                setUnsavedCode(newValue);
-                                                setHasUnsavedChanges(true);
-                                                setActiveCodeId(null);
-                                            }
-                                        }}
-                                        onPaste={(e) => {
-                                            const pastedText = e.clipboardData?.getData("text") ?? "";
-                                            setTimeout(() => {
-                                                if (pastedText.trim()) {
-                                                    setUnsavedCode(pastedText);
+                                    <>
+                                        {codeSearchOpen && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)' }}>
+                                                <input autoFocus placeholder="Find in code…" value={codeSearchVal} onChange={e => setCodeSearchVal(e.target.value)}
+                                                    onKeyDown={e => {
+                                                        if (e.key === 'Escape') { setCodeSearchOpen(false); setCodeSearchVal(''); }
+                                                        if (e.key === 'Enter' && codeSearchVal && codeTextareaRef.current) {
+                                                            const idx = codeText.indexOf(codeSearchVal, (codeTextareaRef.current.selectionEnd ?? 0) + 1);
+                                                            const start = idx === -1 ? codeText.indexOf(codeSearchVal) : idx;
+                                                            if (start !== -1) { codeTextareaRef.current.focus(); codeTextareaRef.current.setSelectionRange(start, start + codeSearchVal.length); const line = codeText.slice(0, start).split('\n').length; codeTextareaRef.current.scrollTop = Math.max(0, (line - 3) * 20); }
+                                                        }
+                                                    }}
+                                                    style={{ flex: 1, fontSize: '12px', background: 'var(--bg-primary)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '3px 8px', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }} />
+                                                <span style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{codeSearchVal ? (codeText.match(new RegExp(codeSearchVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) ?? []).length : 0} matches</span>
+                                                <button type="button" onClick={() => { setCodeSearchOpen(false); setCodeSearchVal(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '12px' }}>✕</button>
+                                            </div>
+                                        )}
+                                        <textarea
+                                            ref={codeTextareaRef}
+                                            className="w-full h-[55vh] whitespace-pre font-mono break-words overflow-auto"
+                                            style={{ background: '#0d0d10', color: '#e2e2e8', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '10px', fontSize: '12px', lineHeight: '1.7', fontFamily: 'JetBrains Mono, monospace', resize: 'none' }}
+                                            value={codeText}
+                                            placeholder="Paste code here, ask the AI, or type directly…"
+                                            onChange={(e) => {
+                                                const newValue = e.target.value;
+                                                setCodeText(newValue);
+                                                addToHistory(newValue);
+                                                runDiagnostics(newValue);
+                                                if (activeCodeId) {
+                                                    setHasUnsavedChanges(true);
+                                                } else if (newValue.trim()) {
+                                                    setUnsavedCode(newValue);
                                                     setHasUnsavedChanges(true);
                                                     setActiveCodeId(null);
-                                                    addToHistory(pastedText);
                                                 }
-                                            }, 0);
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Tab") {
-                                                e.preventDefault();
-                                                const el = e.currentTarget;
-                                                const start = el.selectionStart ?? 0;
-                                                const end = el.selectionEnd ?? 0;
-                                                const insert = "  ";
-                                                const next = codeText.slice(0, start) + insert + codeText.slice(end);
-                                                setCodeText(next);
-                                                addToHistory(next);
-                                                requestAnimationFrame(() => {
-                                                    el.selectionStart = el.selectionEnd = start + insert.length;
-                                                });
-                                            }
-                                        }}
-                                    />
+                                            }}
+                                            onPaste={(e) => {
+                                                const pastedText = e.clipboardData?.getData("text") ?? "";
+                                                setTimeout(() => {
+                                                    if (pastedText.trim()) {
+                                                        setUnsavedCode(pastedText);
+                                                        setHasUnsavedChanges(true);
+                                                        setActiveCodeId(null);
+                                                        addToHistory(pastedText);
+                                                    }
+                                                }, 0);
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Tab") {
+                                                    e.preventDefault();
+                                                    const el = e.currentTarget;
+                                                    const start = el.selectionStart ?? 0;
+                                                    const end = el.selectionEnd ?? 0;
+                                                    const insert = "  ";
+                                                    const next = codeText.slice(0, start) + insert + codeText.slice(end);
+                                                    setCodeText(next);
+                                                    addToHistory(next);
+                                                    requestAnimationFrame(() => {
+                                                        el.selectionStart = el.selectionEnd = start + insert.length;
+                                                    });
+                                                }
+                                                if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    setCodeSearchOpen(v => !v);
+                                                    if (!codeSearchOpen) setCodeSearchVal('');
+                                                }
+                                            }}
+                                        />
+                                    </>
                                 )}
 
                                 {showVersions && activeCodeId && (
