@@ -5301,7 +5301,8 @@ Project description: ${newProjectPrompt.trim()}`
                                                                         streamed += delta;
                                                                         // Always show response in chat — never touch canvas mid-stream
                                                                         const isCtrlF = /ctrl\+f/i.test(streamed);
-                                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed : stripCodeBlocks(streamed) } : msg));
+                                                                        const extracted = extractCodeBlocks(streamed);
+                                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed : extracted ? `[Code generated → open Code panel]\n\n${stripCodeBlocks(streamed)}` : streamed } : msg));
                                                                     },
                                                                     (doneData) => {
                                                                         const finalCid = doneData?.conversationId || cid;
