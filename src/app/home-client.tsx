@@ -294,6 +294,8 @@ export default function HomeClient() {
     const [renamingFolderValue, setRenamingFolderValue] = useState('');
     const [newFolderModal, setNewFolderModal] = useState<{ projectId: string } | null>(null);
     const [newFolderName, setNewFolderName] = useState('');
+    const [renameConvModal, setRenameConvModal] = useState<{ id: string; current: string } | null>(null);
+    const [renameConvValue, setRenameConvValue] = useState('');
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
 
@@ -1475,29 +1477,25 @@ export default function HomeClient() {
         }
     }
 
-    async function handleRenameConversation(conversationId: string) {
+    function handleRenameConversation(conversationId: string) {
+        const current =
+            conversations.find((c) => c.id === conversationId)?.title ??
+            titles[conversationId] ??
+            "";
+        setRenameConvValue(current);
+        setRenameConvModal({ id: conversationId, current });
+    }
+
+    async function commitRenameConversation() {
+        if (!renameConvModal) return;
+        const { id } = renameConvModal;
+        const title = renameConvValue.trim() || null;
+        setRenameConvModal(null);
+        setRenameConvValue('');
         try {
-            const current =
-                conversations.find((c) => c.id === conversationId)?.title ??
-                titles[conversationId] ??
-                "";
-
-            const nextRaw = prompt("Rename conversation:", current || "");
-            if (nextRaw === null) return; // user cancelled prompt
-
-            const next = nextRaw.trim();
-            const title = next ? next : null;
-
-            const ok = confirm(
-                `Are you sure you want to rename this conversation to:\n\n${title ?? "(no title)"}`
-            );
-            if (!ok) return;
-
-            const res = await renameConversation(conversationId, title);
+            const res = await renameConversation(id, title);
             if (!res.ok) throw new Error(res.error);
-
-            // update local cache + refresh list
-            setTitles((prev) => ({ ...prev, [conversationId]: title ?? "" }));
+            setTitles((prev) => ({ ...prev, [id]: title ?? "" }));
             await refreshConversations();
         } catch (err) {
             const msg = err instanceof Error ? err.message : "Rename failed";
@@ -6717,6 +6715,37 @@ Project description: ${newProjectPrompt.trim()}`
                                     </button>
                                 </>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Rename Conversation Modal */}
+            {renameConvModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                    onMouseDown={() => { setRenameConvModal(null); setRenameConvValue(''); }}>
+                    <div style={{ width: '320px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', padding: '20px' }}
+                        onMouseDown={e => e.stopPropagation()}>
+                        <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)', marginBottom: '12px' }}>✏️ Rename conversation</div>
+                        <input
+                            autoFocus
+                            value={renameConvValue}
+                            onChange={e => setRenameConvValue(e.target.value)}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter') void commitRenameConversation();
+                                if (e.key === 'Escape') { setRenameConvModal(null); setRenameConvValue(''); }
+                            }}
+                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', marginBottom: '12px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif' }}
+                        />
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                            <button type="button" onClick={() => { setRenameConvModal(null); setRenameConvValue(''); }}
+                                style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                Cancel
+                            </button>
+                            <button type="button" onClick={() => void commitRenameConversation()}
+                                style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                Save
+                            </button>
                         </div>
                     </div>
                 </div>
