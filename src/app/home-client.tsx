@@ -295,20 +295,6 @@ export default function HomeClient() {
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
 
-    // Global keyboard shortcuts
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            const meta = e.ctrlKey || e.metaKey;
-            if (!meta) return;
-            if (e.key === 'Enter' && !loading && input.trim()) { e.preventDefault(); void handleSend(); }
-            if (e.key === 's') { e.preventDefault(); if (activeCodeId && hasUnsavedChanges) { updateActiveSnippet(); setHasUnsavedChanges(false); } else if (hasUnsavedChanges && codeText.trim()) { promptSaveCurrentCode(); } }
-            if (e.key === '/') { e.preventDefault(); setCodeOpen(v => !v); }
-        };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loading, input, activeCodeId, hasUnsavedChanges, codeText]);
-
     useEffect(() => {
         // Restore layout
         try {
@@ -2195,6 +2181,20 @@ ${codeContext}` : ""}${projectContext}`
         }
 
     }
+
+    // Global keyboard shortcuts
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            const meta = e.ctrlKey || e.metaKey;
+            if (!meta) return;
+            if (e.key === 'Enter' && !loading && input.trim()) { e.preventDefault(); void handleSend(); }
+            if (e.key === 's') { e.preventDefault(); if (activeCodeId && hasUnsavedChanges) { updateActiveSnippet(); setHasUnsavedChanges(false); } else if (hasUnsavedChanges && codeText.trim()) { promptSaveCurrentCode(); } }
+            if (e.key === '/') { e.preventDefault(); setCodeOpen(v => !v); }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading, input, activeCodeId, hasUnsavedChanges, codeText]);
 
     if (authLoading) return (
         <div className="flex h-screen items-center justify-center" style={{ background: '#0f0f11' }}>
