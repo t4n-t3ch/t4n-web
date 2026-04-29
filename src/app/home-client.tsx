@@ -185,6 +185,10 @@ export default function HomeClient() {
     const [ocrBusy, setOcrBusy] = useState(false);
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [codeDescription, setCodeDescription] = useState<string>("");
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [descriptionGenerated, setDescriptionGenerated] = useState(false);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [lastEventType, setLastEventType] = useState<'generated' | 'updated' | 'streaming' | null>(null);
     const abortRef = useRef<AbortController | null>(null);
     const [streaming, setStreaming] = useState(false);
