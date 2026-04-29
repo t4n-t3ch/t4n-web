@@ -322,6 +322,7 @@ export async function streamMessage(
     existingCode?: string,
     displayMode?: 'description' | 'minimal',
     domain?: string,
+    incognito?: boolean,
 ) {
     const API_BASE = getApiBase();
     const API_KEY = getApiKey();
@@ -351,6 +352,7 @@ export async function streamMessage(
             existingCode,
             displayMode,
             domain,
+            ...(incognito ? { incognito: true } : {}),
         }),
     });
 

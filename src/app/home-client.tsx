@@ -20,7 +20,6 @@ import {
     renameConversation,
     assignConversationToProject,
     seedConversation,
-    sendMessage as apiSendMessage,
     deleteConversation,
     createBillingPortalSession,
     getSnippets,
@@ -185,8 +184,6 @@ export default function HomeClient() {
     const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
     const [ocrBusy, setOcrBusy] = useState(false);
 
-    const [codeDescription, setCodeDescription] = useState<string>("");
-    const [descriptionGenerated, setDescriptionGenerated] = useState(false);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [lastEventType, setLastEventType] = useState<'generated' | 'updated' | 'streaming' | null>(null);
     const abortRef = useRef<AbortController | null>(null);
@@ -222,6 +219,7 @@ export default function HomeClient() {
     }, [theme]);
 
     const [userPlan, setUserPlan] = useState<'free' | 'pro'>('free');
+    const [incognitoMode, setIncognitoMode] = useState(false);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -284,8 +282,6 @@ export default function HomeClient() {
         | null;
     const [explorerOverlay, setExplorerOverlay] = useState<ExplorerOverlay>(null);
     const [newFileName, setNewFileName] = useState('');
-    const [inlineNewFile, setInlineNewFile] = useState<{ projectId: string } | null>(null);
-    const [inlineNewFileName, setInlineNewFileName] = useState('');
     const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
     const [renamingFileValue, setRenamingFileValue] = useState('');
     const [projectFolders, setProjectFolders] = useState<Record<string, ProjectFolder[]>>({}); // projectId -> folders
@@ -2051,7 +2047,7 @@ ${payload.text}${codeContext ? `
 ${codeContext}` : ""}${projectContext}`
                 : `${payload.text}${projectContext}`;
 
-            const res = await streamMessage(finalText, payload.conversationId, controller.signal);
+            const res = await streamMessage(finalText, payload.conversationId, controller.signal, undefined, undefined, undefined, incognitoMode);
             let streamed = "";
             let sawDone = false;
 
@@ -4430,7 +4426,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                 ].map(({ type, example }) => (
                                                     <div key={type} style={{ background: 'var(--bg-elevated)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
                                                         <div style={{ fontWeight: 600, fontSize: '12px', color: 'var(--accent)', marginBottom: '4px' }}>{type}</div>
-                                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>"{example}"</div>
+                                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>&ldquo;{example}&rdquo;</div>
                                                     </div>
                                                 ))}
                                             </div>
@@ -4443,7 +4439,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                 <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.8' }}>
                                                     <li><span style={{ color: 'var(--accent)' }}>Be specific</span> — Clear prompts produce better code than broad ones</li>
                                                     <li><span style={{ color: 'var(--accent)' }}>Include constraints</span> — Mention anything the AI must preserve</li>
-                                                    <li><span style={{ color: 'var(--accent)' }}>Include the full error</span> — Paste actual error text, don't paraphrase</li>
+                                                    <li><span style={{ color: 'var(--accent)' }}>Include the full error</span> — Paste actual error text, don&apos;t paraphrase</li>
                                                     <li><span style={{ color: 'var(--accent)' }}>Mention output format</span> — Full file, updated function, explanation plus code</li>
                                                 </ul>
                                             </div>
@@ -4643,6 +4639,31 @@ Project description: ${newProjectPrompt.trim()}`
                                     <div className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--accent)', animationDelay: '300ms' }}></div>
                                 </div>
                                 <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>T4N is thinking…</span>
+                            </div>
+                        )}
+
+                        {incognitoMode && (
+                            <div style={{
+                                background: 'rgba(139,92,246,0.08)',
+                                border: '1px solid rgba(139,92,246,0.25)',
+                                borderRadius: '8px',
+                                padding: '8px 14px',
+                                fontSize: '12px',
+                                color: '#a78bfa',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                margin: '0 0 10px 0',
+                                flexShrink: 0,
+                            }}>
+                                <span>👻</span>
+                                <span><strong>Incognito mode active</strong> — messages are not saved to your history</span>
+                                <button
+                                    onClick={() => setIncognitoMode(false)}
+                                    style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#a78bfa', cursor: 'pointer', fontSize: '11px', opacity: 0.7, padding: '0 2px' }}
+                                >
+                                    ✕ Disable
+                                </button>
                             </div>
                         )}
 
@@ -5568,6 +5589,29 @@ Project description: ${newProjectPrompt.trim()}`
                                         </>
                                     )}
                                 </div>
+
+                                {/* Incognito Mode Toggle — Pro only */}
+                                <button
+                                    title={userPlan !== 'pro' ? 'Incognito Mode — Pro only' : incognitoMode ? 'Incognito ON — click to disable' : 'Incognito Mode — messages not saved'}
+                                    onClick={() => {
+                                        if (userPlan !== 'pro') { setShowUpgradeModal(true); return; }
+                                        setIncognitoMode(v => !v);
+                                    }}
+                                    style={{
+                                        background: incognitoMode ? 'rgba(139,92,246,0.2)' : 'transparent',
+                                        border: incognitoMode ? '1px solid rgba(139,92,246,0.5)' : '1px solid transparent',
+                                        borderRadius: '6px',
+                                        padding: '4px 8px',
+                                        cursor: 'pointer',
+                                        fontSize: '13px',
+                                        color: incognitoMode ? '#a78bfa' : 'var(--text-muted)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                    }}
+                                >
+                                    👻 {userPlan !== 'pro' && <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', fontWeight: 700 }}>PRO</span>}
+                                </button>
 
                                 {/* ── ⭐ Preset star button ── */}
                                 <button
