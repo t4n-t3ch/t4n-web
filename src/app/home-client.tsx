@@ -1326,7 +1326,26 @@ export default function HomeClient() {
     }, [titles]);
 
 
-    const [dailyUsage, setDailyUsage] = useState<{ used: number; limit: number } | null>(null);
+    const [dailyUsage, setDailyUsage] = useState<{ used: number; limit: number; resetAt?: string | null } | null>(null);
+    const [usageCountdown, setUsageCountdown] = useState<string | null>(null);
+
+    // Countdown timer — ticks every second while free user has usage data
+    useEffect(() => {
+        if (!dailyUsage?.resetAt || userPlan === 'pro') { setUsageCountdown(null); return; }
+        const WINDOW_MS = 12 * 60 * 60 * 1000;
+        const tick = () => {
+            const resetTime = new Date(dailyUsage.resetAt!).getTime() + WINDOW_MS;
+            const diff = resetTime - Date.now();
+            if (diff <= 0) { setUsageCountdown('Resetting…'); return; }
+            const h = Math.floor(diff / 3600000);
+            const m = Math.floor((diff % 3600000) / 60000);
+            const s = Math.floor((diff % 60000) / 1000);
+            setUsageCountdown(`${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`);
+        };
+        tick();
+        const id = setInterval(tick, 1000);
+        return () => clearInterval(id);
+    }, [dailyUsage?.resetAt, userPlan]);
 
     const fetchUserPlan = async (accessToken: string, keepOnFailure = false) => {
         const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
@@ -1343,7 +1362,7 @@ export default function HomeClient() {
                     const data = await res.json();
                     if (data.plan) {
                         setUserPlan(data.plan);
-                        if (data.usage) setDailyUsage({ used: data.usage.events_used ?? 0, limit: data.usage.events_limit ?? 100 });
+                        if (data.usage) setDailyUsage({ used: data.usage.events_used ?? 0, limit: data.usage.events_limit ?? 100, resetAt: data.usage.reset_at ?? null });
                         return;
                     }
                 }
@@ -4077,12 +4096,12 @@ Project description: ${newProjectPrompt.trim()}`
 
                     <div className="ml-auto flex items-center gap-2">
                         {/* Usage counter */}
-                        {dailyUsage && (
+                        {dailyUsage && userPlan === 'free' && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '20px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', fontSize: '11px', color: 'var(--text-muted)' }}>
                                 <div style={{ width: '48px', height: '4px', borderRadius: '2px', background: 'var(--border-default)', overflow: 'hidden' }}>
                                     <div style={{ height: '100%', borderRadius: '2px', width: `${Math.min(100, (dailyUsage.used / dailyUsage.limit) * 100)}%`, background: dailyUsage.used / dailyUsage.limit > 0.85 ? '#f87171' : dailyUsage.used / dailyUsage.limit > 0.6 ? '#fbbf24' : '#4ade80', transition: 'width 0.3s' }} />
                                 </div>
-                                <span>{dailyUsage.used}/{dailyUsage.limit}</span>
+                                <span>{dailyUsage.limit - dailyUsage.used}/{dailyUsage.limit} left</span>
                             </div>
                         )}
                         {/* Plan badge */}
@@ -6350,6 +6369,23 @@ Project description: ${newProjectPrompt.trim()}`
                     )}
                 </div>
 
+
+                {/* Usage countdown bar — free users only */}
+                {userPlan === 'free' && dailyUsage && (
+                    <div style={{ padding: '6px 14px', background: 'var(--bg-elevated)', borderTop: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                        <span>⏱</span>
+                        <span style={{ color: dailyUsage.used >= dailyUsage.limit ? '#f87171' : 'var(--text-muted)' }}>
+                            {dailyUsage.used >= dailyUsage.limit ? 'Limit reached · resets in ' : `${dailyUsage.limit - dailyUsage.used} message${dailyUsage.limit - dailyUsage.used !== 1 ? 's' : ''} left · resets in `}
+                        </span>
+                        <span style={{ fontWeight: 700, color: dailyUsage.used >= dailyUsage.limit ? '#f87171' : 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>
+                            {usageCountdown ?? '…'}
+                        </span>
+                        <button type="button" onClick={() => setShowUpgradeModal(true)}
+                            style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: '11px', borderRadius: '10px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.08)', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>
+                            Upgrade ↗
+                        </button>
+                    </div>
+                )}
 
                 {/* ALWAYS SHOW COMPOSER */}
                 <form
