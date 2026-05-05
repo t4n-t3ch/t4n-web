@@ -297,6 +297,12 @@ export default function HomeClient() {
     const [renameConvModal, setRenameConvModal] = useState<{ id: string; current: string } | null>(null);
     const [renameConvValue, setRenameConvValue] = useState('');
     const [giveAccessModal, setGiveAccessModal] = useState(false);
+const [bgProjectModal, setBgProjectModal] = useState(false);
+const [bgProjectGoal, setBgProjectGoal] = useState('');
+const [bgProjectDomain, setBgProjectDomain] = useState('Next.js TypeScript');
+const [bgProjectSteps, setBgProjectSteps] = useState(10);
+const [bgProjectLoading, setBgProjectLoading] = useState(false);
+const [bgProjectJobId, setBgProjectJobId] = useState<string | null>(null);
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
 
@@ -4094,6 +4100,12 @@ Project description: ${newProjectPrompt.trim()}`
                         ⚙ Settings
                     </button>
 
+                    <button type="button" className="btn-secondary" style={{ padding: '5px 12px', fontSize: '12px', background: 'rgba(139,92,246,0.1)', borderColor: 'rgba(139,92,246,0.4)', color: '#a78bfa' }}
+                        onClick={() => setBgProjectModal(true)}
+                        title="Run a large project overnight in the background">
+                        🏗️ Background
+                    </button>
+
                     <div className="ml-auto flex items-center gap-2">
                         {/* Usage counter */}
                         {dailyUsage && userPlan === 'free' && (
@@ -6836,7 +6848,109 @@ Project description: ${newProjectPrompt.trim()}`
                 </div>
             )}
 
-            {/* Give AI Access Modal */}
+            {/* Background Project Modal */}
+{bgProjectModal && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        onMouseDown={() => { if (!bgProjectLoading) setBgProjectModal(false); }}>
+        <div style={{ width: '500px', maxWidth: '95vw', borderRadius: '14px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden' }}
+            onMouseDown={e => e.stopPropagation()}>
+            <div style={{ padding: '20px', borderBottom: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontWeight: 700, fontSize: '16px', color: '#a78bfa', marginBottom: '4px' }}>🏗️ Background Project</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Submit a large project to run autonomously. Go to work — check results when you&apos;re back.</div>
+            </div>
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Project Goal</div>
+                    <textarea
+                        autoFocus
+                        style={{ width: '100%', minHeight: '100px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '10px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', lineHeight: '1.5' }}
+                        placeholder="e.g. Build a full RSI + MACD Pine Script strategy with alerts, backtesting, and risk management..."
+                        value={bgProjectGoal}
+                        onChange={e => setBgProjectGoal(e.target.value)}
+                    />
+                </div>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Domain / Language</div>
+                        <select
+                            value={bgProjectDomain}
+                            onChange={e => setBgProjectDomain(e.target.value)}
+                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif' }}>
+                            <option>Pine Script</option>
+                            <option>Python</option>
+                            <option>Next.js TypeScript</option>
+                            <option>React TypeScript</option>
+                            <option>Node.js TypeScript</option>
+                            <option>Unity C#</option>
+                            <option>MQL5</option>
+                            <option>cTrader C#</option>
+                            <option>Blender Python</option>
+                            <option>General</option>
+                        </select>
+                    </div>
+                    <div style={{ width: '100px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Max Steps</div>
+                        <input
+                            type="number"
+                            min={1} max={20}
+                            value={bgProjectSteps}
+                            onChange={e => setBgProjectSteps(Math.min(20, Math.max(1, Number(e.target.value))))}
+                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif' }}
+                        />
+                    </div>
+                </div>
+                {bgProjectJobId && (
+                    <div style={{ padding: '10px 14px', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '8px', fontSize: '12px', color: '#a78bfa' }}>
+                        ✅ Job submitted! ID: <code style={{ fontFamily: 'monospace' }}>{bgProjectJobId}</code><br />
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>Check your conversations when you&apos;re back — results will appear as messages.</span>
+                    </div>
+                )}
+            </div>
+            <div style={{ padding: '0 20px 20px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button type="button"
+                    disabled={bgProjectLoading}
+                    onClick={() => { setBgProjectModal(false); setBgProjectJobId(null); setBgProjectGoal(''); }}
+                    style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                    {bgProjectJobId ? 'Close' : 'Cancel'}
+                </button>
+                {!bgProjectJobId && (
+                    <button type="button"
+                        disabled={bgProjectLoading || !bgProjectGoal.trim()}
+                        onClick={async () => {
+                            if (!bgProjectGoal.trim() || !session) return;
+                            setBgProjectLoading(true);
+                            try {
+                                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                const token = session.access_token;
+                                const res = await fetch(`${API_BASE}/api/background-project`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
+                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps }),
+                                });
+                                const data = await res.json();
+                                if (data.jobId) {
+                                    setBgProjectJobId(data.jobId);
+                                    showToast('Background project started!', 'success');
+                                } else {
+                                    showToast(data.error || 'Failed to start project', 'error');
+                                }
+                            } catch (e) {
+                                showToast(e instanceof Error ? e.message : 'Failed', 'error');
+                            } finally {
+                                setBgProjectLoading(false);
+                            }
+                        }}
+                        style={{ padding: '8px 20px', fontSize: '13px', borderRadius: '6px', border: 'none', background: '#8b5cf6', color: '#fff', fontWeight: 700, cursor: bgProjectLoading || !bgProjectGoal.trim() ? 'not-allowed' : 'pointer', opacity: bgProjectLoading || !bgProjectGoal.trim() ? 0.6 : 1, fontFamily: 'DM Sans, sans-serif', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {bgProjectLoading ? <><span style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Starting...</> : '🏗️ Start Background Project'}
+                    </button>
+                )}
+            </div>
+        </div>
+    </div>
+)}
+
+{/* Give AI Access Modal */}
             {giveAccessModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
                     onMouseDown={() => setGiveAccessModal(false)}>
