@@ -22,10 +22,17 @@ export default function ResetPasswordPage() {
     const [ready, setReady] = useState(false);
 
     useEffect(() => {
-        // Supabase puts the session tokens in the URL hash on redirect
-        supabase.auth.onAuthStateChange((event) => {
+        // Handle both PKCE (code param) and implicit (hash) flows
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
             if (event === "PASSWORD_RECOVERY") setReady(true);
         });
+
+        // PKCE flow — exchange the code in the URL for a session
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) setReady(true);
+        });
+
+        return () => subscription.unsubscribe();
     }, []);
 
     const pwErrors = password ? validatePassword(password) : [];
