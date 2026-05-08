@@ -228,7 +228,7 @@ export default function HomeClient() {
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [changePasswordState, setChangePasswordState] = useState<{ newPassword: string; confirm: string; status: string | null; loading: boolean }>({ newPassword: '', confirm: '', status: null, loading: false });
-    const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins' | 'appearance' | 'billing' | 'contact' | 'howto' | 'account'>('prompts');
+    const [activeSettingsTab, setActiveSettingsTab] = useState<'prompts' | 'plugins' | 'appearance' | 'billing' | 'contact' | 'howto' | 'account' | 'bridge'>('prompts');
 
     const [, setPluginResult] = useState<unknown>(null);
     const [copiedBlockId, setCopiedBlockId] = useState<string | null>(null);
@@ -4178,7 +4178,7 @@ Project description: ${newProjectPrompt.trim()}`
                             </div>
 
                             <div className="flex" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                                {(['prompts', 'plugins', 'appearance', 'billing', 'contact', 'howto', 'account'] as const).map((tab) => (
+                                {(['prompts', 'plugins', 'appearance', 'billing', 'contact', 'howto', 'account', 'bridge'] as const).map((tab) => (
                                     <button
                                         key={tab}
                                         onClick={() => setActiveSettingsTab(tab)}
@@ -4200,7 +4200,8 @@ Project description: ${newProjectPrompt.trim()}`
                                                 tab === 'appearance' ? 'Appearance' :
                                                     tab === 'billing' ? 'Subscription' :
                                                         tab === 'contact' ? 'Contact' :
-                                                            tab === 'howto' ? 'How to Use' : 'Account'}
+                                                            tab === 'howto' ? 'How to Use' :
+                                                tab === 'bridge' ? '🌉 Bridge' : 'Account'}
                                     </button>
                                 ))}
                             </div>
@@ -4606,6 +4607,87 @@ Project description: ${newProjectPrompt.trim()}`
                                         </div>
                                     );
                                 })()}
+
+                                {activeSettingsTab === 'bridge' && (
+                                    <div className="space-y-4">
+                                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Local Bridge</p>
+                                        <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '8px' }}>
+                                            Connect your local machine to T4N. Background projects will write files directly to your computer and push to GitHub automatically.
+                                        </div>
+                                        {userPlan !== 'pro' ? (
+                                            <div style={{ padding: '16px', background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                                                🔒 Bridge access requires a Pro subscription.
+                                                <button type="button" onClick={() => { setSettingsOpen(false); setShowUpgradeModal(true); }}
+                                                    style={{ display: 'block', marginTop: '10px', padding: '8px 16px', background: 'var(--accent)', border: 'none', borderRadius: '6px', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '13px' }}>
+                                                    Upgrade to Pro
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', background: 'var(--bg-elevated)', borderRadius: '8px', border: `1px solid ${bridgeConnected ? 'rgba(34,197,94,0.4)' : 'var(--border-default)'}` }}>
+                                                    <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: bridgeConnected ? '#4ade80' : '#6b7280', boxShadow: bridgeConnected ? '0 0 6px #4ade80' : 'none' }} />
+                                                    <span style={{ fontSize: '13px', color: bridgeConnected ? '#4ade80' : 'var(--text-muted)', fontWeight: 600 }}>
+                                                        {bridgeConnected ? 'Bridge Connected' : 'Bridge Not Connected'}
+                                                    </span>
+                                                    <button type="button"
+                                                        onClick={async () => {
+                                                            if (!session) return;
+                                                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                                            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                                            const res = await fetch(`${API_BASE}/api/bridge/status`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}` } });
+                                                            const data = await res.json();
+                                                            setBridgeConnected(data.connected);
+                                                        }}
+                                                        style={{ marginLeft: 'auto', fontSize: '11px', padding: '3px 10px', borderRadius: '5px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                                        ↺ Check
+                                                    </button>
+                                                </div>
+                                                <div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>Your Bridge Token</div>
+                                                    {bridgeToken ? (
+                                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                            <code style={{ flex: 1, background: '#0d0d10', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 12px', fontSize: '11px', color: '#4ade80', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                {bridgeToken}
+                                                            </code>
+                                                            <button type="button" onClick={() => { navigator.clipboard.writeText(bridgeToken); showToast('Token copied!'); }}
+                                                                style={{ padding: '8px 14px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}>
+                                                                Copy
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <button type="button" disabled={bridgeLoading}
+                                                            onClick={async () => {
+                                                                if (!session) return;
+                                                                setBridgeLoading(true);
+                                                                try {
+                                                                    const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                                                    const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                                                    const res = await fetch(`${API_BASE}/api/bridge/token`, { method: 'POST', headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}` } });
+                                                                    const data = await res.json();
+                                                                    if (data.token) setBridgeToken(data.token);
+                                                                } catch { showToast('Failed to generate token', 'error'); }
+                                                                finally { setBridgeLoading(false); }
+                                                            }}
+                                                            style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: 'none', background: '#8b5cf6', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                                            {bridgeLoading ? 'Generating…' : '🔑 Generate Bridge Token'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-subtle)', padding: '14px' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '10px' }}>Setup Instructions</div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.8', fontFamily: 'monospace' }}>
+                                                        <div style={{ marginBottom: '4px' }}><span style={{ color: '#4ade80' }}># 1. Install the bridge</span></div>
+                                                        <div style={{ marginBottom: '8px' }}>npm install -g t4n-bridge</div>
+                                                        <div style={{ marginBottom: '4px' }}><span style={{ color: '#4ade80' }}># 2. Run setup wizard</span></div>
+                                                        <div style={{ marginBottom: '8px' }}>t4n-bridge setup</div>
+                                                        <div style={{ marginBottom: '4px' }}><span style={{ color: '#4ade80' }}># 3. Start the bridge</span></div>
+                                                        <div>t4n-bridge start</div>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
 
                                 {activeSettingsTab === 'plugins' && (
                                     <div className="space-y-3">
