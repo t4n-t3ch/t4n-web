@@ -297,6 +297,10 @@ export default function HomeClient() {
     const [renameConvModal, setRenameConvModal] = useState<{ id: string; current: string } | null>(null);
     const [renameConvValue, setRenameConvValue] = useState('');
     const [giveAccessModal, setGiveAccessModal] = useState(false);
+    const [bridgeToken, setBridgeToken] = useState<string | null>(null);
+    const [bridgeConnected, setBridgeConnected] = useState(false);
+    const [bridgeLoading, setBridgeLoading] = useState(false);
+    const [showBridgeModal, setShowBridgeModal] = useState(false);
 const [bgProjectModal, setBgProjectModal] = useState(false);
 const [bgProjectGoal, setBgProjectGoal] = useState('');
 const [bgProjectDomain, setBgProjectDomain] = useState('Next.js TypeScript');
