@@ -304,7 +304,7 @@ export default function HomeClient() {
 const [bgProjectModal, setBgProjectModal] = useState(false);
 const [bgProjectGoal, setBgProjectGoal] = useState('');
 const [bgProjectDomain, setBgProjectDomain] = useState('Next.js TypeScript');
-const [bgProjectSteps, setBgProjectSteps] = useState(10);
+const [bgProjectSteps, setBgProjectSteps] = useState(20);
 const [bgProjectLoading, setBgProjectLoading] = useState(false);
 const [bgProjectJobId, setBgProjectJobId] = useState<string | null>(null);
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
@@ -6978,9 +6978,9 @@ Project description: ${newProjectPrompt.trim()}`
                         <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Max Steps</div>
                         <input
                             type="number"
-                            min={1} max={20}
+                            min={1} max={100}
                             value={bgProjectSteps}
-                            onChange={e => setBgProjectSteps(Math.min(20, Math.max(1, Number(e.target.value))))}
+                            onChange={e => setBgProjectSteps(Math.min(100, Math.max(1, Number(e.target.value))))}
                             style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif' }}
                         />
                     </div>
