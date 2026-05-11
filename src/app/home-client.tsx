@@ -307,6 +307,8 @@ const [bgProjectDomain, setBgProjectDomain] = useState('Next.js TypeScript');
 const [bgProjectSteps, setBgProjectSteps] = useState(20);
 const [bgProjectLoading, setBgProjectLoading] = useState(false);
 const [bgProjectJobId, setBgProjectJobId] = useState<string | null>(null);
+const [bgProjectEditMode, setBgProjectEditMode] = useState(false);
+const [bgProjectEditProjectId, setBgProjectEditProjectId] = useState<string | null>(null);
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
 
@@ -6943,8 +6945,35 @@ Project description: ${newProjectPrompt.trim()}`
             <div style={{ padding: '20px', borderBottom: '1px solid var(--border-subtle)' }}>
                 <div style={{ fontWeight: 700, fontSize: '16px', color: '#a78bfa', marginBottom: '4px' }}>🏗️ Background Project</div>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Submit a large project to run autonomously. Go to work — check results when you&apos;re back.</div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                    <button type="button"
+                        onClick={() => { setBgProjectEditMode(false); setBgProjectEditProjectId(null); }}
+                        style={{ flex: 1, padding: '8px', borderRadius: '8px', border: `2px solid ${!bgProjectEditMode ? '#8b5cf6' : 'var(--border-default)'}`, background: !bgProjectEditMode ? 'rgba(139,92,246,0.1)' : 'var(--bg-elevated)', color: !bgProjectEditMode ? '#a78bfa' : 'var(--text-muted)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                        🆕 New Project
+                    </button>
+                    <button type="button"
+                        onClick={() => setBgProjectEditMode(true)}
+                        style={{ flex: 1, padding: '8px', borderRadius: '8px', border: `2px solid ${bgProjectEditMode ? '#f97316' : 'var(--border-default)'}`, background: bgProjectEditMode ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)', color: bgProjectEditMode ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                        ✏️ Continue / Edit
+                    </button>
+                </div>
             </div>
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {bgProjectEditMode && (
+                    <div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Select Project to Edit</div>
+                        <select
+                            value={bgProjectEditProjectId ?? ''}
+                            onChange={e => setBgProjectEditProjectId(e.target.value || null)}
+                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif', marginBottom: '4px' }}>
+                            <option value=''>Choose a project...</option>
+                            {projects.map(p => (
+                                <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
+                            ))}
+                        </select>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>The AI will read all existing files and continue building where it left off.</div>
+                    </div>
+                )}
                 <div>
                     <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Project Goal</div>
                     <textarea
@@ -7012,10 +7041,23 @@ Project description: ${newProjectPrompt.trim()}`
                                 if (!freshSession) { showToast('Not logged in', 'error'); setBgProjectLoading(false); return; }
                                 const token = freshSession.access_token;
                                 console.log('🏗️ Firing background project request...');
+                                let existingFiles: { name: string; content: string }[] = [];
+                                if (bgProjectEditMode && bgProjectEditProjectId) {
+                                    const filesRes = await fetch(`${API_BASE}/api/background-project/files/${bgProjectEditProjectId}`, {
+                                        headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
+                                    });
+                                    if (filesRes.ok) {
+                                        const filesData = await filesRes.json();
+                                        existingFiles = (filesData.files ?? []).map((f: { name: string; content: string }) => ({
+                                            name: f.name,
+                                            content: f.content.slice(0, 800),
+                                        }));
+                                    }
+                                }
                                 const res = await fetch(`${API_BASE}/api/background-project`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
-                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps }),
+                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: bgProjectEditMode, existingFiles }),
                                 });
                                 const data = await res.json();
                                 if (data.jobId) {
