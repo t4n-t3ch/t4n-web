@@ -309,6 +309,10 @@ const [bgProjectLoading, setBgProjectLoading] = useState(false);
 const [bgProjectJobId, setBgProjectJobId] = useState<string | null>(null);
 const [bgProjectEditMode, setBgProjectEditMode] = useState(false);
 const [bgProjectEditProjectId, setBgProjectEditProjectId] = useState<string | null>(null);
+const [bgProjectLocalFolder, setBgProjectLocalFolder] = useState('');
+const [bgProjectEditSource, setBgProjectEditSource] = useState<'db' | 'local'>('db');
+const [bgProjectLocalFilesLoading, setBgProjectLocalFilesLoading] = useState(false);
+const [bgProjectLocalFilesCount, setBgProjectLocalFilesCount] = useState<number | null>(null);
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
 
@@ -6960,18 +6964,85 @@ Project description: ${newProjectPrompt.trim()}`
             </div>
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {bgProjectEditMode && (
-                    <div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Select Project to Edit</div>
-                        <select
-                            value={bgProjectEditProjectId ?? ''}
-                            onChange={e => setBgProjectEditProjectId(e.target.value || null)}
-                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif', marginBottom: '4px' }}>
-                            <option value=''>Choose a project...</option>
-                            {projects.map(p => (
-                                <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
-                            ))}
-                        </select>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>The AI will read all existing files and continue building where it left off.</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {/* Source toggle */}
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                            <button type="button"
+                                onClick={() => setBgProjectEditSource('db')}
+                                style={{ flex: 1, padding: '6px', borderRadius: '6px', border: `1px solid ${bgProjectEditSource === 'db' ? '#f97316' : 'var(--border-default)'}`, background: bgProjectEditSource === 'db' ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)', color: bgProjectEditSource === 'db' ? '#f97316' : 'var(--text-muted)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                📁 From T4N Project
+                            </button>
+                            <button type="button"
+                                onClick={() => setBgProjectEditSource('local')}
+                                style={{ flex: 1, padding: '6px', borderRadius: '6px', border: `1px solid ${bgProjectEditSource === 'local' ? '#f97316' : 'var(--border-default)'}`, background: bgProjectEditSource === 'local' ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)', color: bgProjectEditSource === 'local' ? '#f97316' : 'var(--text-muted)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                💻 From Local Folder
+                            </button>
+                        </div>
+
+                        {/* DB project picker */}
+                        {bgProjectEditSource === 'db' && (
+                            <div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Select T4N Project</div>
+                                <select
+                                    value={bgProjectEditProjectId ?? ''}
+                                    onChange={e => setBgProjectEditProjectId(e.target.value || null)}
+                                    style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif' }}>
+                                    <option value=''>Choose a project...</option>
+                                    {projects.map(p => (
+                                        <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
+                                    ))}
+                                </select>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>AI reads all saved files from this T4N project and continues building.</div>
+                            </div>
+                        )}
+
+                        {/* Local folder picker */}
+                        {bgProjectEditSource === 'local' && (
+                            <div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Local Project Folder Path</div>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. C:\Users\gr33n\projects\t4n-academy-gamified"
+                                        value={bgProjectLocalFolder}
+                                        onChange={e => { setBgProjectLocalFolder(e.target.value); setBgProjectLocalFilesCount(null); }}
+                                        style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'monospace' }}
+                                    />
+                                    <button type="button"
+                                        onClick={async () => {
+                                            if (!bgProjectLocalFolder.trim()) return;
+                                            setBgProjectLocalFilesLoading(true);
+                                            setBgProjectLocalFilesCount(null);
+                                            try {
+                                                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                                const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                                const { data: { session: s } } = await supabase.auth.getSession();
+                                                if (!s) return;
+                                                const res = await fetch(`${API_BASE}/api/bridge/read-folder`, {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
+                                                    body: JSON.stringify({ folderPath: bgProjectLocalFolder }),
+                                                });
+                                                const data = await res.json();
+                                                if (data.fileCount) setBgProjectLocalFilesCount(data.fileCount);
+                                            } catch { } finally {
+                                                setBgProjectLocalFilesLoading(false);
+                                            }
+                                        }}
+                                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #f97316', background: 'rgba(249,115,22,0.1)', color: '#f97316', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}>
+                                        {bgProjectLocalFilesLoading ? '...' : '📂 Scan'}
+                                    </button>
+                                </div>
+                                {bgProjectLocalFilesCount !== null && (
+                                    <div style={{ fontSize: '11px', color: '#22c55e', marginTop: '4px' }}>
+                                        ✅ Found {bgProjectLocalFilesCount} files — AI will read these and continue building
+                                    </div>
+                                )}
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                    Paste the full path to your project folder. The bridge will scan it and pass files to the AI as context.
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
                 <div>
@@ -7042,16 +7113,28 @@ Project description: ${newProjectPrompt.trim()}`
                                 const token = freshSession.access_token;
                                 console.log('🏗️ Firing background project request...');
                                 let existingFiles: { name: string; content: string }[] = [];
-                                if (bgProjectEditMode && bgProjectEditProjectId) {
-                                    const filesRes = await fetch(`${API_BASE}/api/background-project/files/${bgProjectEditProjectId}`, {
-                                        headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
-                                    });
-                                    if (filesRes.ok) {
-                                        const filesData = await filesRes.json();
-                                        existingFiles = (filesData.files ?? []).map((f: { name: string; content: string }) => ({
-                                            name: f.name,
-                                            content: f.content.slice(0, 800),
-                                        }));
+                                if (bgProjectEditMode) {
+                                    if (bgProjectEditSource === 'db' && bgProjectEditProjectId) {
+                                        const filesRes = await fetch(`${API_BASE}/api/background-project/files/${bgProjectEditProjectId}`, {
+                                            headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
+                                        });
+                                        if (filesRes.ok) {
+                                            const filesData = await filesRes.json();
+                                            existingFiles = (filesData.files ?? []).map((f: { name: string; content: string }) => ({
+                                                name: f.name,
+                                                content: f.content.slice(0, 1000),
+                                            }));
+                                        }
+                                    } else if (bgProjectEditSource === 'local' && bgProjectLocalFolder.trim()) {
+                                        const filesRes = await fetch(`${API_BASE}/api/bridge/read-folder`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
+                                            body: JSON.stringify({ folderPath: bgProjectLocalFolder }),
+                                        });
+                                        if (filesRes.ok) {
+                                            const filesData = await filesRes.json();
+                                            existingFiles = filesData.files ?? [];
+                                        }
                                     }
                                 }
                                 const res = await fetch(`${API_BASE}/api/background-project`, {
