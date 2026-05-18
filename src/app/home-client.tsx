@@ -313,6 +313,9 @@ const [bgProjectLocalFolder, setBgProjectLocalFolder] = useState('');
 const [bgProjectEditSource, setBgProjectEditSource] = useState<'db' | 'local'>('db');
 const [bgProjectLocalFilesLoading, setBgProjectLocalFilesLoading] = useState(false);
 const [bgProjectLocalFilesCount, setBgProjectLocalFilesCount] = useState<number | null>(null);
+const [bgProjectQueue, setBgProjectQueue] = useState<{ position: number; projectGoal: string; domain: string; maxSteps: number }[]>([]);
+const [bgProjectQueueLoading, setBgProjectQueueLoading] = useState(false);
+const [bgProjectAddToQueue, setBgProjectAddToQueue] = useState(false);
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
 
@@ -7091,6 +7094,26 @@ Project description: ${newProjectPrompt.trim()}`
                         <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>Check your conversations when you&apos;re back — results will appear as messages.</span>
                     </div>
                 )}
+                {bgProjectQueue.length > 0 && (
+                    <div style={{ padding: '10px 14px', background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '8px', fontSize: '12px' }}>
+                        <div style={{ color: '#f97316', fontWeight: 600, marginBottom: '6px' }}>📋 Queue ({bgProjectQueue.length} waiting)</div>
+                        {bgProjectQueue.map((item, i) => (
+                            <div key={i} style={{ color: 'var(--text-muted)', fontSize: '11px', padding: '2px 0', borderBottom: i < bgProjectQueue.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
+                                <span style={{ color: '#f97316', fontWeight: 600 }}>#{item.position}</span> {item.projectGoal.slice(0, 60)}{item.projectGoal.length > 60 ? '...' : ''} <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>({item.domain}, {item.maxSteps} steps)</span>
+                            </div>
+                        ))}
+                        <button type="button" onClick={async () => {
+                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                            const { data: { session: s } } = await supabase.auth.getSession();
+                            if (!s) return;
+                            await fetch(`${API_BASE}/api/background-project/queue`, { method: 'DELETE', headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
+                            setBgProjectQueue([]);
+                        }} style={{ marginTop: '6px', padding: '4px 10px', fontSize: '11px', borderRadius: '4px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#f87171', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                            🗑 Clear queue
+                        </button>
+                    </div>
+                )}
             </div>
             <div style={{ padding: '0 20px 20px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                 <button type="button"
@@ -7099,6 +7122,42 @@ Project description: ${newProjectPrompt.trim()}`
                     style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
                     {bgProjectJobId ? 'Close' : 'Cancel'}
                 </button>
+                {!bgProjectJobId && (
+                    <button type="button"
+                        disabled={bgProjectQueueLoading || !bgProjectGoal.trim()}
+                        onClick={async () => {
+                            if (!bgProjectGoal.trim()) return;
+                            setBgProjectQueueLoading(true);
+                            try {
+                                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                const { data: { session: s } } = await supabase.auth.getSession();
+                                if (!s) { showToast('Not logged in', 'error'); return; }
+                                const res = await fetch(`${API_BASE}/api/background-project/queue`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
+                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: bgProjectEditMode, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '' }),
+                                });
+                                const data = await res.json();
+                                if (data.ok) {
+                                    showToast(`Added to queue at position ${data.position}`, 'success');
+                                    const qRes = await fetch(`${API_BASE}/api/background-project/queue`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
+                                    const qData = await qRes.json();
+                                    if (qData.queue) setBgProjectQueue(qData.queue);
+                                    setBgProjectGoal('');
+                                } else {
+                                    showToast(data.error || 'Failed to queue', 'error');
+                                }
+                            } catch (e) {
+                                showToast(e instanceof Error ? e.message : 'Failed', 'error');
+                            } finally {
+                                setBgProjectQueueLoading(false);
+                            }
+                        }}
+                        style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid #f97316', background: 'rgba(249,115,22,0.1)', color: '#f97316', fontWeight: 600, cursor: bgProjectQueueLoading || !bgProjectGoal.trim() ? 'not-allowed' : 'pointer', opacity: bgProjectQueueLoading || !bgProjectGoal.trim() ? 0.6 : 1, fontFamily: 'DM Sans, sans-serif' }}>
+                        {bgProjectQueueLoading ? '...' : '📋 Add to Queue'}
+                    </button>
+                )}
                 {!bgProjectJobId && (
                     <button type="button"
                         disabled={bgProjectLoading || !bgProjectGoal.trim()}
