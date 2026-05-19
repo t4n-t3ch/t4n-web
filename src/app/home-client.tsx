@@ -316,6 +316,7 @@ const [bgProjectLocalFilesCount, setBgProjectLocalFilesCount] = useState<number 
 const [bgProjectQueue, setBgProjectQueue] = useState<{ position: number; projectGoal: string; domain: string; maxSteps: number }[]>([]);
 const [bgProjectQueueLoading, setBgProjectQueueLoading] = useState(false);
 const [bgProjectAddToQueue, setBgProjectAddToQueue] = useState(false);
+const [bgProjectSelfFeed, setBgProjectSelfFeed] = useState(false);
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
 
@@ -7094,6 +7095,29 @@ Project description: ${newProjectPrompt.trim()}`
                         <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>Check your conversations when you&apos;re back — results will appear as messages.</span>
                     </div>
                 )}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: bgProjectSelfFeed ? 'rgba(139,92,246,0.08)' : 'var(--bg-elevated)', border: `1px solid ${bgProjectSelfFeed ? 'rgba(139,92,246,0.3)' : 'var(--border-default)'}`, borderRadius: '8px' }}>
+                    <div>
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: bgProjectSelfFeed ? '#a78bfa' : 'var(--text-primary)' }}>🤖 Autopilot (Self-feeding)</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>AI reviews each completed job and automatically queues the next improvement</div>
+                    </div>
+                    <button type="button" onClick={async () => {
+                        const newVal = !bgProjectSelfFeed;
+                        setBgProjectSelfFeed(newVal);
+                        try {
+                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                            const { data: { session: s } } = await supabase.auth.getSession();
+                            if (!s) return;
+                            await fetch(`${API_BASE}/api/background-project/selffeed`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
+                                body: JSON.stringify({ enabled: newVal }),
+                            });
+                        } catch { }
+                    }} style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '20px', border: `1px solid ${bgProjectSelfFeed ? '#8b5cf6' : 'var(--border-default)'}`, background: bgProjectSelfFeed ? '#8b5cf6' : 'var(--bg-secondary)', color: bgProjectSelfFeed ? '#fff' : 'var(--text-muted)', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}>
+                        {bgProjectSelfFeed ? '✅ ON' : 'OFF'}
+                    </button>
+                </div>
                 {bgProjectQueue.length > 0 && (
                     <div style={{ padding: '10px 14px', background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '8px', fontSize: '12px' }}>
                         <div style={{ color: '#f97316', fontWeight: 600, marginBottom: '6px' }}>📋 Queue ({bgProjectQueue.length} waiting)</div>
