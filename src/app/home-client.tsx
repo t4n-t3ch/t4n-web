@@ -318,7 +318,7 @@ export default function HomeClient() {
     const [bgProjectAddToQueue, setBgProjectAddToQueue] = useState(false);
     const [bgProjectSelfFeed, setBgProjectSelfFeed] = useState(false);
     const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
-    const [userCredits, setUserCredits] = useState<{ balance: number; lifetime_purchased: number; currency: string; transactions: any[] } | null>(null);
+    const [userCredits, setUserCredits] = useState<{ balance: number; lifetime_purchased: number; currency: string; transactions: { id: string; amount: number; type: string; description: string; created_at: string }[] } | null>(null);
     const [creditsLoading, setCreditsLoading] = useState(false);
     const [creditsPurchasing, setCreditsPurchasing] = useState<string | null>(null);
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
@@ -4400,7 +4400,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                     {userCredits.transactions.length > 0 && (
                                                         <div>
                                                             <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>RECENT TRANSACTIONS</div>
-                                                            {userCredits.transactions.slice(0, 5).map((t: any) => (
+                                                            {userCredits.transactions.slice(0, 5).map((t) => (
                                                                 <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', padding: '4px 0', borderBottom: '1px solid var(--border-subtle)' }}>
                                                                     <span>{t.description}</span>
                                                                     <span style={{ color: t.amount > 0 ? '#4ade80' : '#f87171', fontWeight: 600 }}>{t.amount > 0 ? '+' : ''}{t.amount}</span>
