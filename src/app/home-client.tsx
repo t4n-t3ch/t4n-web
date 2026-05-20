@@ -317,6 +317,7 @@ const [bgProjectQueue, setBgProjectQueue] = useState<{ position: number; project
 const [bgProjectQueueLoading, setBgProjectQueueLoading] = useState(false);
 const [bgProjectAddToQueue, setBgProjectAddToQueue] = useState(false);
 const [bgProjectSelfFeed, setBgProjectSelfFeed] = useState(false);
+const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
 
@@ -7118,6 +7119,47 @@ Project description: ${newProjectPrompt.trim()}`
                         {bgProjectSelfFeed ? '✅ ON' : 'OFF'}
                     </button>
                 </div>
+                {bgProjectSelfFeed && (
+                    <div style={{ padding: '10px 14px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', fontSize: '12px' }}>
+                        <div style={{ color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px' }}>🎯 Steer Autopilot (optional)</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>Manually inject the next feature prompt instead of letting AI decide</div>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                            <input
+                                type="text"
+                                placeholder="e.g. Add a cover letter generator..."
+                                value={bgProjectSteerPrompt || ''}
+                                onChange={e => setBgProjectSteerPrompt(e.target.value)}
+                                style={{ flex: 1, padding: '6px 10px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}
+                            />
+                            <button type="button" onClick={async () => {
+                                if (!bgProjectSteerPrompt?.trim()) return;
+                                try {
+                                    const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                    const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                    const { data: { session: s } } = await supabase.auth.getSession();
+                                    if (!s) return;
+                                    const res = await fetch(`${API_BASE}/api/background-project/queue`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
+                                        body: JSON.stringify({ projectGoal: bgProjectSteerPrompt, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: true, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '' }),
+                                    });
+                                    const data = await res.json();
+                                    if (data.ok) {
+                                        showToast('Steering prompt queued!', 'success');
+                                        setBgProjectSteerPrompt('');
+                                        const qRes = await fetch(`${API_BASE}/api/background-project/queue`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
+                                        const qData = await qRes.json();
+                                        if (qData.queue) setBgProjectQueue(qData.queue);
+                                    } else {
+                                        showToast(data.error || 'Failed', 'error');
+                                    }
+                                } catch { showToast('Failed to queue', 'error'); }
+                            }} style={{ padding: '6px 10px', fontSize: '11px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.1)', color: '#f97316', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}>
+                                ➕ Queue
+                            </button>
+                        </div>
+                    </div>
+                )}
                 {bgProjectQueue.length > 0 && (
                     <div style={{ padding: '10px 14px', background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '8px', fontSize: '12px' }}>
                         <div style={{ color: '#f97316', fontWeight: 600, marginBottom: '6px' }}>📋 Queue ({bgProjectQueue.length} waiting)</div>
@@ -7127,12 +7169,14 @@ Project description: ${newProjectPrompt.trim()}`
                             </div>
                         ))}
                         <button type="button" onClick={async () => {
+                            if (!window.confirm(`Clear all ${bgProjectQueue.length} queued jobs? This cannot be undone.`)) return;
                             const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
                             const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
                             const { data: { session: s } } = await supabase.auth.getSession();
                             if (!s) return;
                             await fetch(`${API_BASE}/api/background-project/queue`, { method: 'DELETE', headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
                             setBgProjectQueue([]);
+                            showToast('Queue cleared', 'success');
                         }} style={{ marginTop: '6px', padding: '4px 10px', fontSize: '11px', borderRadius: '4px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#f87171', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
                             🗑 Clear queue
                         </button>
