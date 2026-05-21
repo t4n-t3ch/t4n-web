@@ -7115,7 +7115,7 @@ Project description: ${newProjectPrompt.trim()}`
 {bgProjectModal && (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
         onMouseDown={() => { if (!bgProjectLoading) setBgProjectModal(false); }}>
-        <div style={{ width: '500px', maxWidth: '95vw', borderRadius: '14px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden' }}
+        <div style={{ width: '500px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', borderRadius: '14px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)' }}
             onMouseDown={e => e.stopPropagation()}>
             <div style={{ padding: '20px', borderBottom: '1px solid var(--border-subtle)' }}>
                 <div style={{ fontWeight: 700, fontSize: '16px', color: '#a78bfa', marginBottom: '4px' }}>🏗️ Background Project</div>
