@@ -301,26 +301,27 @@ export default function HomeClient() {
     const [bridgeConnected, setBridgeConnected] = useState(false);
     const [bridgeLoading, setBridgeLoading] = useState(false);
     const [showBridgeModal, setShowBridgeModal] = useState(false);
-    const [bgProjectModal, setBgProjectModal] = useState(false);
-    const [bgProjectGoal, setBgProjectGoal] = useState('');
-    const [bgProjectDomain, setBgProjectDomain] = useState('Next.js TypeScript');
-    const [bgProjectSteps, setBgProjectSteps] = useState(50);
-    const [bgProjectLoading, setBgProjectLoading] = useState(false);
-    const [bgProjectJobId, setBgProjectJobId] = useState<string | null>(null);
-    const [bgProjectEditMode, setBgProjectEditMode] = useState(false);
-    const [bgProjectEditProjectId, setBgProjectEditProjectId] = useState<string | null>(null);
-    const [bgProjectLocalFolder, setBgProjectLocalFolder] = useState('');
-    const [bgProjectEditSource, setBgProjectEditSource] = useState<'db' | 'local'>('db');
-    const [bgProjectLocalFilesLoading, setBgProjectLocalFilesLoading] = useState(false);
-    const [bgProjectLocalFilesCount, setBgProjectLocalFilesCount] = useState<number | null>(null);
-    const [bgProjectQueue, setBgProjectQueue] = useState<{ position: number; projectGoal: string; domain: string; maxSteps: number }[]>([]);
-    const [bgProjectQueueLoading, setBgProjectQueueLoading] = useState(false);
-    const [bgProjectAddToQueue, setBgProjectAddToQueue] = useState(false);
-    const [bgProjectSelfFeed, setBgProjectSelfFeed] = useState(false);
-    const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
-    const [userCredits, setUserCredits] = useState<{ balance: number; lifetime_purchased: number; currency: string; transactions: { id: string; amount: number; type: string; description: string; created_at: string }[] } | null>(null);
-    const [creditsLoading, setCreditsLoading] = useState(false);
-    const [creditsPurchasing, setCreditsPurchasing] = useState<string | null>(null);
+const [bgProjectModal, setBgProjectModal] = useState(false);
+const [bgProjectGoal, setBgProjectGoal] = useState('');
+const [bgProjectDomain, setBgProjectDomain] = useState('Next.js TypeScript');
+const [bgProjectSteps, setBgProjectSteps] = useState(50);
+const [bgProjectLoading, setBgProjectLoading] = useState(false);
+const [bgProjectJobId, setBgProjectJobId] = useState<string | null>(null);
+const [bgProjectEditMode, setBgProjectEditMode] = useState(false);
+const [bgProjectEditProjectId, setBgProjectEditProjectId] = useState<string | null>(null);
+const [bgProjectLocalFolder, setBgProjectLocalFolder] = useState('');
+const [bgProjectEditSource, setBgProjectEditSource] = useState<'db' | 'local'>('db');
+const [bgProjectLocalFilesLoading, setBgProjectLocalFilesLoading] = useState(false);
+const [bgProjectLocalFilesCount, setBgProjectLocalFilesCount] = useState<number | null>(null);
+const [bgProjectQueue, setBgProjectQueue] = useState<{ position: number; projectGoal: string; domain: string; maxSteps: number }[]>([]);
+const [bgProjectQueueLoading, setBgProjectQueueLoading] = useState(false);
+const [bgProjectAddToQueue, setBgProjectAddToQueue] = useState(false);
+const [bgProjectSelfFeed, setBgProjectSelfFeed] = useState(false);
+const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
+const [userCredits, setUserCredits] = useState<{ balance: number; lifetime_purchased: number; currency: string; transactions: { id: string; amount: number; type: string; description: string; created_at: string }[] } | null>(null);
+const [showPlansDropdown, setShowPlansDropdown] = useState(false);
+const [creditsLoading, setCreditsLoading] = useState(false);
+const [creditsPurchasing, setCreditsPurchasing] = useState<string | null>(null);
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
 
@@ -2911,11 +2912,41 @@ Project description: ${newProjectPrompt.trim()}`
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: '10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
                                 <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Plan</span>
                                 {userPlan === 'pro' ? (
-                                    <button type="button"
-                                        onClick={() => void openBillingPortal()}
-                                        style={{ padding: '4px 12px', fontSize: '11px', borderRadius: '20px', border: '1px solid rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)', color: '#4ade80', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                                        ✓ Pro · Manage
-                                    </button>
+                                    <div style={{ position: 'relative' }}>
+                                        <button type="button"
+                                            onClick={() => setShowPlansDropdown(v => !v)}
+                                            style={{ padding: '4px 12px', fontSize: '11px', borderRadius: '20px', border: '1px solid rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)', color: '#4ade80', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                            ✓ Pro · Manage ▾
+                                        </button>
+                                        {showPlansDropdown && (
+                                            <div onMouseLeave={() => setShowPlansDropdown(false)} style={{ position: 'absolute', bottom: '30px', right: 0, zIndex: 9999, width: '300px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '10px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+                                                <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Plans</div>
+                                                {([
+                                                    { name: 'Free', price: '£0/mo', color: '#6b7280', features: ['Limited chat messages', 'Code canvas', 'Snippets & version history', 'No background projects'] },
+                                                    { name: 'Pro', price: '£10.99/mo', color: '#f97316', features: ['Unlimited chat', '100 background credits/month', 'AI Code Review & Debug', 'Test generation', 'Pro Tools access'] },
+                                                    { name: 'Dev', price: '£17.99/mo', color: '#8b5cf6', features: ['Everything in Pro', '300 background credits/month', 'Priority queue', 'Early access'] },
+                                                ] as { name: string; price: string; color: string; features: string[] }[]).map(plan => (
+                                                    <div key={plan.name} style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                                            <span style={{ fontWeight: 700, fontSize: '12px', color: plan.color }}>{plan.name}</span>
+                                                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)' }}>{plan.price}</span>
+                                                        </div>
+                                                        <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                                                            {plan.features.map(f => (
+                                                                <li key={f} style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '1px 0', display: 'flex', gap: '5px' }}>
+                                                                    <span style={{ color: plan.color }}>✓</span>{f}
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                ))}
+                                                <div style={{ padding: '8px 14px', display: 'flex', gap: '8px' }}>
+                                                    <button type="button" onClick={() => { setShowPlansDropdown(false); void openBillingPortal(); }} style={{ flex: 1, padding: '6px', fontSize: '11px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>Manage Billing</button>
+                                                    <button type="button" onClick={() => { setShowPlansDropdown(false); setShowUpgradeModal(true); }} style={{ flex: 1, padding: '6px', fontSize: '11px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 700 }}>Change Plan</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 ) : (
                                     <button type="button"
                                         onClick={() => setShowUpgradeModal(true)}
@@ -4191,11 +4222,41 @@ Project description: ${newProjectPrompt.trim()}`
                                 Free → Upgrade Pro
                             </button>
                         ) : (
-                            <button type="button"
-                                onClick={() => void openBillingPortal()}
-                                style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '20px', border: '1px solid rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)', color: '#4ade80', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                                ✓ Pro · Manage
-                            </button>
+                            <div style={{ position: 'relative' }}>
+                                <button type="button"
+                                    onClick={() => setShowPlansDropdown(v => !v)}
+                                    style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '20px', border: '1px solid rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)', color: '#4ade80', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                    ✓ Pro · Manage ▾
+                                </button>
+                                {showPlansDropdown && (
+                                    <div onMouseLeave={() => setShowPlansDropdown(false)} style={{ position: 'absolute', top: '30px', right: 0, zIndex: 9999, width: '300px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '10px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+                                        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Plans</div>
+                                        {([
+                                            { name: 'Free', price: '£0/mo', color: '#6b7280', features: ['Limited chat messages', 'Code canvas', 'Snippets & version history', 'No background projects'] },
+                                            { name: 'Pro', price: '£10.99/mo', color: '#f97316', features: ['Unlimited chat', '100 background credits/month', 'AI Code Review & Debug', 'Test generation', 'Pro Tools access'] },
+                                            { name: 'Dev', price: '£17.99/mo', color: '#8b5cf6', features: ['Everything in Pro', '300 background credits/month', 'Priority queue', 'Early access'] },
+                                        ] as { name: string; price: string; color: string; features: string[] }[]).map(plan => (
+                                            <div key={plan.name} style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                                    <span style={{ fontWeight: 700, fontSize: '12px', color: plan.color }}>{plan.name}</span>
+                                                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)' }}>{plan.price}</span>
+                                                </div>
+                                                <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                                                    {plan.features.map(f => (
+                                                        <li key={f} style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '1px 0', display: 'flex', gap: '5px' }}>
+                                                            <span style={{ color: plan.color }}>✓</span>{f}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        ))}
+                                        <div style={{ padding: '8px 14px', display: 'flex', gap: '8px' }}>
+                                            <button type="button" onClick={() => { setShowPlansDropdown(false); void openBillingPortal(); }} style={{ flex: 1, padding: '6px', fontSize: '11px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>Manage Billing</button>
+                                            <button type="button" onClick={() => { setShowPlansDropdown(false); setShowUpgradeModal(true); }} style={{ flex: 1, padding: '6px', fontSize: '11px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 700 }}>Change Plan</button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         )}
                         <button type="button"
                             onClick={async () => {
@@ -4264,7 +4325,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                     tab === 'billing' ? 'Subscription' :
                                                         tab === 'contact' ? 'Contact' :
                                                             tab === 'howto' ? 'How to Use' :
-                                                                tab === 'bridge' ? '🌉 Bridge' : 'Account'}
+                                                tab === 'bridge' ? '🌉 Bridge' : 'Account'}
                                     </button>
                                 ))}
                             </div>
@@ -7051,352 +7112,352 @@ Project description: ${newProjectPrompt.trim()}`
             )}
 
             {/* Background Project Modal */}
-            {bgProjectModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-                    onMouseDown={() => { if (!bgProjectLoading) setBgProjectModal(false); }}>
-                    <div style={{ width: '500px', maxWidth: '95vw', borderRadius: '14px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden' }}
-                        onMouseDown={e => e.stopPropagation()}>
-                        <div style={{ padding: '20px', borderBottom: '1px solid var(--border-subtle)' }}>
-                            <div style={{ fontWeight: 700, fontSize: '16px', color: '#a78bfa', marginBottom: '4px' }}>🏗️ Background Project</div>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Submit a large project to run autonomously. Go to work — check results when you&apos;re back.</div>
-                            <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                                <button type="button"
-                                    onClick={() => { setBgProjectEditMode(false); setBgProjectEditProjectId(null); }}
-                                    style={{ flex: 1, padding: '8px', borderRadius: '8px', border: `2px solid ${!bgProjectEditMode ? '#8b5cf6' : 'var(--border-default)'}`, background: !bgProjectEditMode ? 'rgba(139,92,246,0.1)' : 'var(--bg-elevated)', color: !bgProjectEditMode ? '#a78bfa' : 'var(--text-muted)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                                    🆕 New Project
-                                </button>
-                                <button type="button"
-                                    onClick={() => setBgProjectEditMode(true)}
-                                    style={{ flex: 1, padding: '8px', borderRadius: '8px', border: `2px solid ${bgProjectEditMode ? '#f97316' : 'var(--border-default)'}`, background: bgProjectEditMode ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)', color: bgProjectEditMode ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                                    ✏️ Continue / Edit
-                                </button>
-                            </div>
+{bgProjectModal && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        onMouseDown={() => { if (!bgProjectLoading) setBgProjectModal(false); }}>
+        <div style={{ width: '500px', maxWidth: '95vw', borderRadius: '14px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden' }}
+            onMouseDown={e => e.stopPropagation()}>
+            <div style={{ padding: '20px', borderBottom: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontWeight: 700, fontSize: '16px', color: '#a78bfa', marginBottom: '4px' }}>🏗️ Background Project</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Submit a large project to run autonomously. Go to work — check results when you&apos;re back.</div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                    <button type="button"
+                        onClick={() => { setBgProjectEditMode(false); setBgProjectEditProjectId(null); }}
+                        style={{ flex: 1, padding: '8px', borderRadius: '8px', border: `2px solid ${!bgProjectEditMode ? '#8b5cf6' : 'var(--border-default)'}`, background: !bgProjectEditMode ? 'rgba(139,92,246,0.1)' : 'var(--bg-elevated)', color: !bgProjectEditMode ? '#a78bfa' : 'var(--text-muted)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                        🆕 New Project
+                    </button>
+                    <button type="button"
+                        onClick={() => setBgProjectEditMode(true)}
+                        style={{ flex: 1, padding: '8px', borderRadius: '8px', border: `2px solid ${bgProjectEditMode ? '#f97316' : 'var(--border-default)'}`, background: bgProjectEditMode ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)', color: bgProjectEditMode ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                        ✏️ Continue / Edit
+                    </button>
+                </div>
+            </div>
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {bgProjectEditMode && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {/* Source toggle */}
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                            <button type="button"
+                                onClick={() => setBgProjectEditSource('db')}
+                                style={{ flex: 1, padding: '6px', borderRadius: '6px', border: `1px solid ${bgProjectEditSource === 'db' ? '#f97316' : 'var(--border-default)'}`, background: bgProjectEditSource === 'db' ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)', color: bgProjectEditSource === 'db' ? '#f97316' : 'var(--text-muted)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                📁 From T4N Project
+                            </button>
+                            <button type="button"
+                                onClick={() => setBgProjectEditSource('local')}
+                                style={{ flex: 1, padding: '6px', borderRadius: '6px', border: `1px solid ${bgProjectEditSource === 'local' ? '#f97316' : 'var(--border-default)'}`, background: bgProjectEditSource === 'local' ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)', color: bgProjectEditSource === 'local' ? '#f97316' : 'var(--text-muted)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                💻 From Local Folder
+                            </button>
                         </div>
-                        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                            {bgProjectEditMode && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                    {/* Source toggle */}
-                                    <div style={{ display: 'flex', gap: '6px' }}>
-                                        <button type="button"
-                                            onClick={() => setBgProjectEditSource('db')}
-                                            style={{ flex: 1, padding: '6px', borderRadius: '6px', border: `1px solid ${bgProjectEditSource === 'db' ? '#f97316' : 'var(--border-default)'}`, background: bgProjectEditSource === 'db' ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)', color: bgProjectEditSource === 'db' ? '#f97316' : 'var(--text-muted)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                                            📁 From T4N Project
-                                        </button>
-                                        <button type="button"
-                                            onClick={() => setBgProjectEditSource('local')}
-                                            style={{ flex: 1, padding: '6px', borderRadius: '6px', border: `1px solid ${bgProjectEditSource === 'local' ? '#f97316' : 'var(--border-default)'}`, background: bgProjectEditSource === 'local' ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)', color: bgProjectEditSource === 'local' ? '#f97316' : 'var(--text-muted)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                                            💻 From Local Folder
-                                        </button>
-                                    </div>
 
-                                    {/* DB project picker */}
-                                    {bgProjectEditSource === 'db' && (
-                                        <div>
-                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Select T4N Project</div>
-                                            <select
-                                                value={bgProjectEditProjectId ?? ''}
-                                                onChange={e => setBgProjectEditProjectId(e.target.value || null)}
-                                                style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif' }}>
-                                                <option value=''>Choose a project...</option>
-                                                {projects.map(p => (
-                                                    <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
-                                                ))}
-                                            </select>
-                                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>AI reads all saved files from this T4N project and continues building.</div>
-                                        </div>
-                                    )}
-
-                                    {/* Local folder picker */}
-                                    {bgProjectEditSource === 'local' && (
-                                        <div>
-                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Local Project Folder Path</div>
-                                            <div style={{ display: 'flex', gap: '6px' }}>
-                                                <input
-                                                    type="text"
-                                                    placeholder="e.g. C:\Users\gr33n\projects\t4n-academy-gamified"
-                                                    value={bgProjectLocalFolder}
-                                                    onChange={e => { setBgProjectLocalFolder(e.target.value); setBgProjectLocalFilesCount(null); }}
-                                                    style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'monospace' }}
-                                                />
-                                                <button type="button"
-                                                    onClick={async () => {
-                                                        if (!bgProjectLocalFolder.trim()) return;
-                                                        setBgProjectLocalFilesLoading(true);
-                                                        setBgProjectLocalFilesCount(null);
-                                                        try {
-                                                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
-                                                            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
-                                                            const { data: { session: s } } = await supabase.auth.getSession();
-                                                            if (!s) return;
-                                                            const res = await fetch(`${API_BASE}/api/bridge/read-folder`, {
-                                                                method: 'POST',
-                                                                headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
-                                                                body: JSON.stringify({ folderPath: bgProjectLocalFolder }),
-                                                            });
-                                                            const data = await res.json();
-                                                            if (data.fileCount) setBgProjectLocalFilesCount(data.fileCount);
-                                                        } catch { } finally {
-                                                            setBgProjectLocalFilesLoading(false);
-                                                        }
-                                                    }}
-                                                    style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #f97316', background: 'rgba(249,115,22,0.1)', color: '#f97316', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}>
-                                                    {bgProjectLocalFilesLoading ? '...' : '📂 Scan'}
-                                                </button>
-                                            </div>
-                                            {bgProjectLocalFilesCount !== null && (
-                                                <div style={{ fontSize: '11px', color: '#22c55e', marginTop: '4px' }}>
-                                                    ✅ Found {bgProjectLocalFilesCount} files — AI will read these and continue building
-                                                </div>
-                                            )}
-                                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                                                Paste the full path to your project folder. The bridge will scan it and pass files to the AI as context.
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                        {/* DB project picker */}
+                        {bgProjectEditSource === 'db' && (
                             <div>
-                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Project Goal</div>
-                                <textarea
-                                    autoFocus
-                                    style={{ width: '100%', minHeight: '100px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '10px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', lineHeight: '1.5' }}
-                                    placeholder="e.g. Build a full RSI + MACD Pine Script strategy with alerts, backtesting, and risk management..."
-                                    value={bgProjectGoal}
-                                    onChange={e => setBgProjectGoal(e.target.value)}
-                                />
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Select T4N Project</div>
+                                <select
+                                    value={bgProjectEditProjectId ?? ''}
+                                    onChange={e => setBgProjectEditProjectId(e.target.value || null)}
+                                    style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif' }}>
+                                    <option value=''>Choose a project...</option>
+                                    {projects.map(p => (
+                                        <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
+                                    ))}
+                                </select>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>AI reads all saved files from this T4N project and continues building.</div>
                             </div>
-                            <div style={{ display: 'flex', gap: '12px' }}>
-                                <div style={{ flex: 1 }}>
-                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Domain / Language</div>
-                                    <select
-                                        value={bgProjectDomain}
-                                        onChange={e => setBgProjectDomain(e.target.value)}
-                                        style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif' }}>
-                                        <option>Pine Script</option>
-                                        <option>Python</option>
-                                        <option>Next.js TypeScript</option>
-                                        <option>React TypeScript</option>
-                                        <option>Node.js TypeScript</option>
-                                        <option>Unity C#</option>
-                                        <option>MQL5</option>
-                                        <option>cTrader C#</option>
-                                        <option>Blender Python</option>
-                                        <option>General</option>
-                                    </select>
-                                </div>
-                                <div style={{ width: '100px' }}>
-                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Max Steps</div>
+                        )}
+
+                        {/* Local folder picker */}
+                        {bgProjectEditSource === 'local' && (
+                            <div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Local Project Folder Path</div>
+                                <div style={{ display: 'flex', gap: '6px' }}>
                                     <input
-                                        type="number"
-                                        min={1} max={100}
-                                        value={bgProjectSteps}
-                                        onChange={e => setBgProjectSteps(Math.min(100, Math.max(1, Number(e.target.value))))}
-                                        style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif' }}
+                                        type="text"
+                                        placeholder="e.g. C:\Users\gr33n\projects\t4n-academy-gamified"
+                                        value={bgProjectLocalFolder}
+                                        onChange={e => { setBgProjectLocalFolder(e.target.value); setBgProjectLocalFilesCount(null); }}
+                                        style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'monospace' }}
                                     />
-                                </div>
-                            </div>
-                            {bgProjectJobId && (
-                                <div style={{ padding: '10px 14px', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '8px', fontSize: '12px', color: '#a78bfa' }}>
-                                    ✅ Job submitted! ID: <code style={{ fontFamily: 'monospace' }}>{bgProjectJobId}</code><br />
-                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>Check your conversations when you&apos;re back — results will appear as messages.</span>
-                                </div>
-                            )}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: bgProjectSelfFeed ? 'rgba(139,92,246,0.08)' : 'var(--bg-elevated)', border: `1px solid ${bgProjectSelfFeed ? 'rgba(139,92,246,0.3)' : 'var(--border-default)'}`, borderRadius: '8px' }}>
-                                <div>
-                                    <div style={{ fontSize: '12px', fontWeight: 600, color: bgProjectSelfFeed ? '#a78bfa' : 'var(--text-primary)' }}>🤖 Autopilot (Self-feeding)</div>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>AI reviews each completed job and automatically queues the next improvement</div>
-                                </div>
-                                <button type="button" onClick={async () => {
-                                    const newVal = !bgProjectSelfFeed;
-                                    setBgProjectSelfFeed(newVal);
-                                    try {
-                                        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
-                                        const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
-                                        const { data: { session: s } } = await supabase.auth.getSession();
-                                        if (!s) return;
-                                        await fetch(`${API_BASE}/api/background-project/selffeed`, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
-                                            body: JSON.stringify({ enabled: newVal }),
-                                        });
-                                    } catch { }
-                                }} style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '20px', border: `1px solid ${bgProjectSelfFeed ? '#8b5cf6' : 'var(--border-default)'}`, background: bgProjectSelfFeed ? '#8b5cf6' : 'var(--bg-secondary)', color: bgProjectSelfFeed ? '#fff' : 'var(--text-muted)', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}>
-                                    {bgProjectSelfFeed ? '✅ ON' : 'OFF'}
-                                </button>
-                            </div>
-                            {bgProjectSelfFeed && (
-                                <div style={{ padding: '10px 14px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', fontSize: '12px' }}>
-                                    <div style={{ color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px' }}>🎯 Steer Autopilot (optional)</div>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>Manually inject the next feature prompt instead of letting AI decide</div>
-                                    <div style={{ display: 'flex', gap: '6px' }}>
-                                        <input
-                                            type="text"
-                                            placeholder="e.g. Add a cover letter generator..."
-                                            value={bgProjectSteerPrompt || ''}
-                                            onChange={e => setBgProjectSteerPrompt(e.target.value)}
-                                            style={{ flex: 1, padding: '6px 10px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}
-                                        />
-                                        <button type="button" onClick={async () => {
-                                            if (!bgProjectSteerPrompt?.trim()) return;
+                                    <button type="button"
+                                        onClick={async () => {
+                                            if (!bgProjectLocalFolder.trim()) return;
+                                            setBgProjectLocalFilesLoading(true);
+                                            setBgProjectLocalFilesCount(null);
                                             try {
                                                 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
                                                 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
                                                 const { data: { session: s } } = await supabase.auth.getSession();
                                                 if (!s) return;
-                                                const res = await fetch(`${API_BASE}/api/background-project/queue`, {
+                                                const res = await fetch(`${API_BASE}/api/bridge/read-folder`, {
                                                     method: 'POST',
                                                     headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
-                                                    body: JSON.stringify({ projectGoal: bgProjectSteerPrompt, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: true, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '' }),
+                                                    body: JSON.stringify({ folderPath: bgProjectLocalFolder }),
                                                 });
                                                 const data = await res.json();
-                                                if (data.ok) {
-                                                    showToast('Steering prompt queued!', 'success');
-                                                    setBgProjectSteerPrompt('');
-                                                    const qRes = await fetch(`${API_BASE}/api/background-project/queue`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
-                                                    const qData = await qRes.json();
-                                                    if (qData.queue) setBgProjectQueue(qData.queue);
-                                                } else {
-                                                    showToast(data.error || 'Failed', 'error');
-                                                }
-                                            } catch { showToast('Failed to queue', 'error'); }
-                                        }} style={{ padding: '6px 10px', fontSize: '11px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.1)', color: '#f97316', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}>
-                                            ➕ Queue
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                            {bgProjectQueue.length > 0 && (
-                                <div style={{ padding: '10px 14px', background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '8px', fontSize: '12px' }}>
-                                    <div style={{ color: '#f97316', fontWeight: 600, marginBottom: '6px' }}>📋 Queue ({bgProjectQueue.length} waiting)</div>
-                                    {bgProjectQueue.map((item, i) => (
-                                        <div key={i} style={{ color: 'var(--text-muted)', fontSize: '11px', padding: '2px 0', borderBottom: i < bgProjectQueue.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
-                                            <span style={{ color: '#f97316', fontWeight: 600 }}>#{item.position}</span> {item.projectGoal.slice(0, 60)}{item.projectGoal.length > 60 ? '...' : ''} <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>({item.domain}, {item.maxSteps} steps)</span>
-                                        </div>
-                                    ))}
-                                    <button type="button" onClick={async () => {
-                                        if (!window.confirm(`Clear all ${bgProjectQueue.length} queued jobs? This cannot be undone.`)) return;
-                                        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
-                                        const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
-                                        const { data: { session: s } } = await supabase.auth.getSession();
-                                        if (!s) return;
-                                        await fetch(`${API_BASE}/api/background-project/queue`, { method: 'DELETE', headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
-                                        setBgProjectQueue([]);
-                                        showToast('Queue cleared', 'success');
-                                    }} style={{ marginTop: '6px', padding: '4px 10px', fontSize: '11px', borderRadius: '4px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#f87171', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                                        🗑 Clear queue
+                                                if (data.fileCount) setBgProjectLocalFilesCount(data.fileCount);
+                                            } catch { } finally {
+                                                setBgProjectLocalFilesLoading(false);
+                                            }
+                                        }}
+                                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #f97316', background: 'rgba(249,115,22,0.1)', color: '#f97316', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}>
+                                        {bgProjectLocalFilesLoading ? '...' : '📂 Scan'}
                                     </button>
                                 </div>
-                            )}
-                        </div>
-                        <div style={{ padding: '0 20px 20px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                            <button type="button"
-                                disabled={bgProjectLoading}
-                                onClick={() => { setBgProjectModal(false); setBgProjectJobId(null); setBgProjectGoal(''); }}
-                                style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                                {bgProjectJobId ? 'Close' : 'Cancel'}
-                            </button>
-                            {!bgProjectJobId && (
-                                <button type="button"
-                                    disabled={bgProjectQueueLoading || !bgProjectGoal.trim()}
-                                    onClick={async () => {
-                                        if (!bgProjectGoal.trim()) return;
-                                        setBgProjectQueueLoading(true);
-                                        try {
-                                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
-                                            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
-                                            const { data: { session: s } } = await supabase.auth.getSession();
-                                            if (!s) { showToast('Not logged in', 'error'); return; }
-                                            const res = await fetch(`${API_BASE}/api/background-project/queue`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
-                                                body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: bgProjectEditMode, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '' }),
-                                            });
-                                            const data = await res.json();
-                                            if (data.ok) {
-                                                showToast(`Added to queue at position ${data.position}`, 'success');
-                                                const qRes = await fetch(`${API_BASE}/api/background-project/queue`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
-                                                const qData = await qRes.json();
-                                                if (qData.queue) setBgProjectQueue(qData.queue);
-                                                setBgProjectGoal('');
-                                            } else {
-                                                showToast(data.error || 'Failed to queue', 'error');
-                                            }
-                                        } catch (e) {
-                                            showToast(e instanceof Error ? e.message : 'Failed', 'error');
-                                        } finally {
-                                            setBgProjectQueueLoading(false);
-                                        }
-                                    }}
-                                    style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid #f97316', background: 'rgba(249,115,22,0.1)', color: '#f97316', fontWeight: 600, cursor: bgProjectQueueLoading || !bgProjectGoal.trim() ? 'not-allowed' : 'pointer', opacity: bgProjectQueueLoading || !bgProjectGoal.trim() ? 0.6 : 1, fontFamily: 'DM Sans, sans-serif' }}>
-                                    {bgProjectQueueLoading ? '...' : '📋 Add to Queue'}
-                                </button>
-                            )}
-                            {!bgProjectJobId && (
-                                <button type="button"
-                                    disabled={bgProjectLoading || !bgProjectGoal.trim()}
-                                    onClick={async () => {
-                                        if (!bgProjectGoal.trim()) return;
-                                        setBgProjectLoading(true);
-                                        try {
-                                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
-                                            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
-                                            const { data: { session: freshSession } } = await supabase.auth.getSession();
-                                            if (!freshSession) { showToast('Not logged in', 'error'); setBgProjectLoading(false); return; }
-                                            const token = freshSession.access_token;
-                                            console.log('🏗️ Firing background project request...');
-                                            let existingFiles: { name: string; content: string }[] = [];
-                                            if (bgProjectEditMode) {
-                                                if (bgProjectEditSource === 'db' && bgProjectEditProjectId) {
-                                                    const filesRes = await fetch(`${API_BASE}/api/background-project/files/${bgProjectEditProjectId}`, {
-                                                        headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
-                                                    });
-                                                    if (filesRes.ok) {
-                                                        const filesData = await filesRes.json();
-                                                        existingFiles = (filesData.files ?? []).map((f: { name: string; content: string }) => ({
-                                                            name: f.name,
-                                                            content: f.content.slice(0, 1000),
-                                                        }));
-                                                    }
-                                                } else if (bgProjectEditSource === 'local' && bgProjectLocalFolder.trim()) {
-                                                    const filesRes = await fetch(`${API_BASE}/api/bridge/read-folder`, {
-                                                        method: 'POST',
-                                                        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
-                                                        body: JSON.stringify({ folderPath: bgProjectLocalFolder }),
-                                                    });
-                                                    if (filesRes.ok) {
-                                                        const filesData = await filesRes.json();
-                                                        existingFiles = filesData.files ?? [];
-                                                    }
-                                                }
-                                            }
-                                            const res = await fetch(`${API_BASE}/api/background-project`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
-                                                body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: bgProjectEditMode, existingFiles, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '' }),
-                                            });
-                                            const data = await res.json();
-                                            if (data.jobId) {
-                                                setBgProjectJobId(data.jobId);
-                                                showToast('Background project started!', 'success');
-                                            } else {
-                                                showToast(data.error || 'Failed to start project', 'error');
-                                            }
-                                        } catch (e) {
-                                            showToast(e instanceof Error ? e.message : 'Failed', 'error');
-                                        } finally {
-                                            setBgProjectLoading(false);
-                                        }
-                                    }}
-                                    style={{ padding: '8px 20px', fontSize: '13px', borderRadius: '6px', border: 'none', background: '#8b5cf6', color: '#fff', fontWeight: 700, cursor: bgProjectLoading || !bgProjectGoal.trim() ? 'not-allowed' : 'pointer', opacity: bgProjectLoading || !bgProjectGoal.trim() ? 0.6 : 1, fontFamily: 'DM Sans, sans-serif', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    {bgProjectLoading ? <><span style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Starting...</> : '🏗️ Start Background Project'}
-                                </button>
-                            )}
-                        </div>
+                                {bgProjectLocalFilesCount !== null && (
+                                    <div style={{ fontSize: '11px', color: '#22c55e', marginTop: '4px' }}>
+                                        ✅ Found {bgProjectLocalFilesCount} files — AI will read these and continue building
+                                    </div>
+                                )}
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                    Paste the full path to your project folder. The bridge will scan it and pass files to the AI as context.
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+                <div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Project Goal</div>
+                    <textarea
+                        autoFocus
+                        style={{ width: '100%', minHeight: '100px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '10px 12px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', lineHeight: '1.5' }}
+                        placeholder="e.g. Build a full RSI + MACD Pine Script strategy with alerts, backtesting, and risk management..."
+                        value={bgProjectGoal}
+                        onChange={e => setBgProjectGoal(e.target.value)}
+                    />
+                </div>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Domain / Language</div>
+                        <select
+                            value={bgProjectDomain}
+                            onChange={e => setBgProjectDomain(e.target.value)}
+                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif' }}>
+                            <option>Pine Script</option>
+                            <option>Python</option>
+                            <option>Next.js TypeScript</option>
+                            <option>React TypeScript</option>
+                            <option>Node.js TypeScript</option>
+                            <option>Unity C#</option>
+                            <option>MQL5</option>
+                            <option>cTrader C#</option>
+                            <option>Blender Python</option>
+                            <option>General</option>
+                        </select>
+                    </div>
+                    <div style={{ width: '100px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Max Steps</div>
+                        <input
+                            type="number"
+                            min={1} max={100}
+                            value={bgProjectSteps}
+                            onChange={e => setBgProjectSteps(Math.min(100, Math.max(1, Number(e.target.value))))}
+                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif' }}
+                        />
                     </div>
                 </div>
-            )}
+                {bgProjectJobId && (
+                    <div style={{ padding: '10px 14px', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '8px', fontSize: '12px', color: '#a78bfa' }}>
+                        ✅ Job submitted! ID: <code style={{ fontFamily: 'monospace' }}>{bgProjectJobId}</code><br />
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>Check your conversations when you&apos;re back — results will appear as messages.</span>
+                    </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: bgProjectSelfFeed ? 'rgba(139,92,246,0.08)' : 'var(--bg-elevated)', border: `1px solid ${bgProjectSelfFeed ? 'rgba(139,92,246,0.3)' : 'var(--border-default)'}`, borderRadius: '8px' }}>
+                    <div>
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: bgProjectSelfFeed ? '#a78bfa' : 'var(--text-primary)' }}>🤖 Autopilot (Self-feeding)</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>AI reviews each completed job and automatically queues the next improvement</div>
+                    </div>
+                    <button type="button" onClick={async () => {
+                        const newVal = !bgProjectSelfFeed;
+                        setBgProjectSelfFeed(newVal);
+                        try {
+                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                            const { data: { session: s } } = await supabase.auth.getSession();
+                            if (!s) return;
+                            await fetch(`${API_BASE}/api/background-project/selffeed`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
+                                body: JSON.stringify({ enabled: newVal }),
+                            });
+                        } catch { }
+                    }} style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '20px', border: `1px solid ${bgProjectSelfFeed ? '#8b5cf6' : 'var(--border-default)'}`, background: bgProjectSelfFeed ? '#8b5cf6' : 'var(--bg-secondary)', color: bgProjectSelfFeed ? '#fff' : 'var(--text-muted)', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}>
+                        {bgProjectSelfFeed ? '✅ ON' : 'OFF'}
+                    </button>
+                </div>
+                {bgProjectSelfFeed && (
+                    <div style={{ padding: '10px 14px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', fontSize: '12px' }}>
+                        <div style={{ color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px' }}>🎯 Steer Autopilot (optional)</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>Manually inject the next feature prompt instead of letting AI decide</div>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                            <input
+                                type="text"
+                                placeholder="e.g. Add a cover letter generator..."
+                                value={bgProjectSteerPrompt || ''}
+                                onChange={e => setBgProjectSteerPrompt(e.target.value)}
+                                style={{ flex: 1, padding: '6px 10px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}
+                            />
+                            <button type="button" onClick={async () => {
+                                if (!bgProjectSteerPrompt?.trim()) return;
+                                try {
+                                    const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                    const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                    const { data: { session: s } } = await supabase.auth.getSession();
+                                    if (!s) return;
+                                    const res = await fetch(`${API_BASE}/api/background-project/queue`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
+                                        body: JSON.stringify({ projectGoal: bgProjectSteerPrompt, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: true, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '' }),
+                                    });
+                                    const data = await res.json();
+                                    if (data.ok) {
+                                        showToast('Steering prompt queued!', 'success');
+                                        setBgProjectSteerPrompt('');
+                                        const qRes = await fetch(`${API_BASE}/api/background-project/queue`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
+                                        const qData = await qRes.json();
+                                        if (qData.queue) setBgProjectQueue(qData.queue);
+                                    } else {
+                                        showToast(data.error || 'Failed', 'error');
+                                    }
+                                } catch { showToast('Failed to queue', 'error'); }
+                            }} style={{ padding: '6px 10px', fontSize: '11px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.1)', color: '#f97316', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}>
+                                ➕ Queue
+                            </button>
+                        </div>
+                    </div>
+                )}
+                {bgProjectQueue.length > 0 && (
+                    <div style={{ padding: '10px 14px', background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '8px', fontSize: '12px' }}>
+                        <div style={{ color: '#f97316', fontWeight: 600, marginBottom: '6px' }}>📋 Queue ({bgProjectQueue.length} waiting)</div>
+                        {bgProjectQueue.map((item, i) => (
+                            <div key={i} style={{ color: 'var(--text-muted)', fontSize: '11px', padding: '2px 0', borderBottom: i < bgProjectQueue.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
+                                <span style={{ color: '#f97316', fontWeight: 600 }}>#{item.position}</span> {item.projectGoal.slice(0, 60)}{item.projectGoal.length > 60 ? '...' : ''} <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>({item.domain}, {item.maxSteps} steps)</span>
+                            </div>
+                        ))}
+                        <button type="button" onClick={async () => {
+                            if (!window.confirm(`Clear all ${bgProjectQueue.length} queued jobs? This cannot be undone.`)) return;
+                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                            const { data: { session: s } } = await supabase.auth.getSession();
+                            if (!s) return;
+                            await fetch(`${API_BASE}/api/background-project/queue`, { method: 'DELETE', headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
+                            setBgProjectQueue([]);
+                            showToast('Queue cleared', 'success');
+                        }} style={{ marginTop: '6px', padding: '4px 10px', fontSize: '11px', borderRadius: '4px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#f87171', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                            🗑 Clear queue
+                        </button>
+                    </div>
+                )}
+            </div>
+            <div style={{ padding: '0 20px 20px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button type="button"
+                    disabled={bgProjectLoading}
+                    onClick={() => { setBgProjectModal(false); setBgProjectJobId(null); setBgProjectGoal(''); }}
+                    style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                    {bgProjectJobId ? 'Close' : 'Cancel'}
+                </button>
+                {!bgProjectJobId && (
+                    <button type="button"
+                        disabled={bgProjectQueueLoading || !bgProjectGoal.trim()}
+                        onClick={async () => {
+                            if (!bgProjectGoal.trim()) return;
+                            setBgProjectQueueLoading(true);
+                            try {
+                                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                const { data: { session: s } } = await supabase.auth.getSession();
+                                if (!s) { showToast('Not logged in', 'error'); return; }
+                                const res = await fetch(`${API_BASE}/api/background-project/queue`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
+                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: bgProjectEditMode, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '' }),
+                                });
+                                const data = await res.json();
+                                if (data.ok) {
+                                    showToast(`Added to queue at position ${data.position}`, 'success');
+                                    const qRes = await fetch(`${API_BASE}/api/background-project/queue`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
+                                    const qData = await qRes.json();
+                                    if (qData.queue) setBgProjectQueue(qData.queue);
+                                    setBgProjectGoal('');
+                                } else {
+                                    showToast(data.error || 'Failed to queue', 'error');
+                                }
+                            } catch (e) {
+                                showToast(e instanceof Error ? e.message : 'Failed', 'error');
+                            } finally {
+                                setBgProjectQueueLoading(false);
+                            }
+                        }}
+                        style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid #f97316', background: 'rgba(249,115,22,0.1)', color: '#f97316', fontWeight: 600, cursor: bgProjectQueueLoading || !bgProjectGoal.trim() ? 'not-allowed' : 'pointer', opacity: bgProjectQueueLoading || !bgProjectGoal.trim() ? 0.6 : 1, fontFamily: 'DM Sans, sans-serif' }}>
+                        {bgProjectQueueLoading ? '...' : '📋 Add to Queue'}
+                    </button>
+                )}
+                {!bgProjectJobId && (
+                    <button type="button"
+                        disabled={bgProjectLoading || !bgProjectGoal.trim()}
+                        onClick={async () => {
+                            if (!bgProjectGoal.trim()) return;
+                            setBgProjectLoading(true);
+                            try {
+                                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                const { data: { session: freshSession } } = await supabase.auth.getSession();
+                                if (!freshSession) { showToast('Not logged in', 'error'); setBgProjectLoading(false); return; }
+                                const token = freshSession.access_token;
+                                console.log('🏗️ Firing background project request...');
+                                let existingFiles: { name: string; content: string }[] = [];
+                                if (bgProjectEditMode) {
+                                    if (bgProjectEditSource === 'db' && bgProjectEditProjectId) {
+                                        const filesRes = await fetch(`${API_BASE}/api/background-project/files/${bgProjectEditProjectId}`, {
+                                            headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
+                                        });
+                                        if (filesRes.ok) {
+                                            const filesData = await filesRes.json();
+                                            existingFiles = (filesData.files ?? []).map((f: { name: string; content: string }) => ({
+                                                name: f.name,
+                                                content: f.content.slice(0, 1000),
+                                            }));
+                                        }
+                                    } else if (bgProjectEditSource === 'local' && bgProjectLocalFolder.trim()) {
+                                        const filesRes = await fetch(`${API_BASE}/api/bridge/read-folder`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
+                                            body: JSON.stringify({ folderPath: bgProjectLocalFolder }),
+                                        });
+                                        if (filesRes.ok) {
+                                            const filesData = await filesRes.json();
+                                            existingFiles = filesData.files ?? [];
+                                        }
+                                    }
+                                }
+                                const res = await fetch(`${API_BASE}/api/background-project`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
+                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: bgProjectEditMode, existingFiles, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '' }),
+                                });
+                                const data = await res.json();
+                                if (data.jobId) {
+                                    setBgProjectJobId(data.jobId);
+                                    showToast('Background project started!', 'success');
+                                } else {
+                                    showToast(data.error || 'Failed to start project', 'error');
+                                }
+                            } catch (e) {
+                                showToast(e instanceof Error ? e.message : 'Failed', 'error');
+                            } finally {
+                                setBgProjectLoading(false);
+                            }
+                        }}
+                        style={{ padding: '8px 20px', fontSize: '13px', borderRadius: '6px', border: 'none', background: '#8b5cf6', color: '#fff', fontWeight: 700, cursor: bgProjectLoading || !bgProjectGoal.trim() ? 'not-allowed' : 'pointer', opacity: bgProjectLoading || !bgProjectGoal.trim() ? 0.6 : 1, fontFamily: 'DM Sans, sans-serif', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {bgProjectLoading ? <><span style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Starting...</> : '🏗️ Start Background Project'}
+                    </button>
+                )}
+            </div>
+        </div>
+    </div>
+)}
 
-            {/* Give AI Access Modal */}
+{/* Give AI Access Modal */}
             {giveAccessModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
                     onMouseDown={() => setGiveAccessModal(false)}>
