@@ -1246,6 +1246,33 @@ const [creditsPurchasing, setCreditsPurchasing] = useState<string | null>(null);
         return msg;
     }
 
+    // Poll for background project completion and fire browser notification
+    useEffect(() => {
+        if (!bgProjectJobId || !session) return;
+        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+        const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch(`${API_BASE}/api/background-project/status/${bgProjectJobId}`, {
+                    headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}` },
+                });
+                const data = await res.json();
+                if (data.status === 'completed' || data.status === 'failed') {
+                    clearInterval(interval);
+                    const msg = data.status === 'completed'
+                        ? `✅ Background project complete! ${data.stepsCompleted ?? ''} steps done.`
+                        : `❌ Background project failed: ${data.error ?? 'Unknown error'}`;
+                    showToast(msg, data.status === 'completed' ? 'success' : 'error');
+                    if ('Notification' in window && Notification.permission === 'granted') {
+                        new Notification('T4N Background Project', { body: msg, icon: '/t4n-logo.png' });
+                    }
+                    setBgProjectJobId(null);
+                }
+            } catch { /* ignore poll errors */ }
+        }, 15000); // poll every 15s
+        return () => clearInterval(interval);
+    }, [bgProjectJobId, session]);
+
     async function loadCredits() {
         if (!session) return;
         setCreditsLoading(true);
@@ -7439,6 +7466,10 @@ Project description: ${newProjectPrompt.trim()}`
                                 if (data.jobId) {
                                     setBgProjectJobId(data.jobId);
                                     showToast('Background project started!', 'success');
+                                    // Request browser notification permission
+                                    if ('Notification' in window && Notification.permission === 'default') {
+                                        Notification.requestPermission();
+                                    }
                                 } else {
                                     showToast(data.error || 'Failed to start project', 'error');
                                 }
