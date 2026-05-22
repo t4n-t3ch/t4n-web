@@ -318,6 +318,7 @@ const [bgProjectQueueLoading, setBgProjectQueueLoading] = useState(false);
 const [bgProjectAddToQueue, setBgProjectAddToQueue] = useState(false);
 const [bgProjectSelfFeed, setBgProjectSelfFeed] = useState(false);
 const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
+const [bgProjectPausedCredits, setBgProjectPausedCredits] = useState<{ step: number; maxSteps: number; balance: number } | null>(null);
 const [userCredits, setUserCredits] = useState<{ balance: number; lifetime_purchased: number; currency: string; transactions: { id: string; amount: number; type: string; description: string; created_at: string }[] } | null>(null);
 const [showPlansDropdown, setShowPlansDropdown] = useState(false);
 const [creditsLoading, setCreditsLoading] = useState(false);
@@ -1257,12 +1258,25 @@ const [creditsPurchasing, setCreditsPurchasing] = useState<string | null>(null);
                     headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}` },
                 });
                 const data = await res.json();
-                if (data.status === 'completed' || data.status === 'failed') {
+
+                // Job paused waiting for credits — show banner, keep polling
+                if (data.status === 'paused_credits') {
+                    setBgProjectPausedCredits({ step: data.step, maxSteps: data.maxSteps, balance: data.balance ?? 0 });
+                    return;
+                }
+
+                // Job resumed after top-up — clear the banner
+                if (data.status === 'running' || data.status === 'queued_next') {
+                    setBgProjectPausedCredits(null);
+                }
+
+                if (data.status === 'done' || data.status === 'failed') {
                     clearInterval(interval);
-                    const msg = data.status === 'completed'
-                        ? `✅ Background project complete! ${data.stepsCompleted ?? ''} steps done.`
+                    setBgProjectPausedCredits(null);
+                    const msg = data.status === 'done'
+                        ? `✅ Background project complete! ${data.step ?? ''} steps done.`
                         : `❌ Background project failed: ${data.error ?? 'Unknown error'}`;
-                    showToast(msg, data.status === 'completed' ? 'success' : 'error');
+                    showToast(msg, data.status === 'done' ? 'success' : 'error');
                     if ('Notification' in window && Notification.permission === 'granted') {
                         new Notification('T4N Background Project', { body: msg, icon: '/t4n-logo.png' });
                     }
@@ -7515,6 +7529,46 @@ Project description: ${newProjectPrompt.trim()}`
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Background Project — Credits Paused Banner */}
+            {bgProjectPausedCredits && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, zIndex: 99998,
+                    background: 'linear-gradient(135deg, rgba(249,115,22,0.15), rgba(239,68,68,0.1))',
+                    border: '1px solid rgba(249,115,22,0.4)',
+                    borderTop: 'none', borderLeft: 'none', borderRight: 'none',
+                    padding: '10px 20px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16,
+                    backdropFilter: 'blur(8px)',
+                }}>
+                    <span style={{ fontSize: 18 }}>⏸️</span>
+                    <span style={{ fontSize: 13, color: '#fb923c', fontWeight: 600 }}>
+                        Job paused at step {bgProjectPausedCredits.step}/{bgProjectPausedCredits.maxSteps} — only {bgProjectPausedCredits.balance} credits left
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        Top up and it resumes automatically
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => { setSettingsOpen(true); setActiveSettingsTab('billing'); }}
+                        style={{
+                            padding: '5px 14px', fontSize: 12, fontWeight: 600,
+                            background: 'var(--accent)', color: '#fff',
+                            border: 'none', borderRadius: 6, cursor: 'pointer',
+                            fontFamily: 'DM Sans, sans-serif',
+                        }}
+                    >
+                        Top Up Credits
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setBgProjectPausedCredits(null)}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}
+                    >
+                        ✕
+                    </button>
                 </div>
             )}
 
