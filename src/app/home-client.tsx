@@ -318,6 +318,7 @@ const [bgProjectQueueLoading, setBgProjectQueueLoading] = useState(false);
 const [bgProjectAddToQueue, setBgProjectAddToQueue] = useState(false);
 const [bgProjectSelfFeed, setBgProjectSelfFeed] = useState(false);
 const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
+const [bgProjectTab, setBgProjectTab] = useState<'submit' | 'monitor'>('submit');
 const [bgProjectPausedCredits, setBgProjectPausedCredits] = useState<{ step: number; maxSteps: number; balance: number } | null>(null);
 const [userCredits, setUserCredits] = useState<{ balance: number; lifetime_purchased: number; currency: string; transactions: { id: string; amount: number; type: string; description: string; created_at: string }[] } | null>(null);
 const [showPlansDropdown, setShowPlansDropdown] = useState(false);
@@ -7159,23 +7160,174 @@ Project description: ${newProjectPrompt.trim()}`
         <div style={{ width: '500px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', borderRadius: '14px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)' }}
             onMouseDown={e => e.stopPropagation()}>
             <div style={{ padding: '20px', borderBottom: '1px solid var(--border-subtle)' }}>
-                <div style={{ fontWeight: 700, fontSize: '16px', color: '#a78bfa', marginBottom: '4px' }}>🏗️ Background Project</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Submit a large project to run autonomously. Go to work — check results when you&apos;re back.</div>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 700, fontSize: '16px', color: '#a78bfa' }}>🏗️ Background Project</div>
+                    {bgProjectJobId && (
+                        <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '12px', background: bgProjectPausedCredits ? 'rgba(249,115,22,0.2)' : 'rgba(139,92,246,0.2)', color: bgProjectPausedCredits ? '#fb923c' : '#a78bfa', fontWeight: 600 }}>
+                            {bgProjectPausedCredits ? '⏸️ Paused' : '⚡ Running'}
+                        </span>
+                    )}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>Submit a large project to run autonomously. Go to work — check results when you&apos;re back.</div>
+                {/* Main tabs */}
+                <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-elevated)', padding: '3px', borderRadius: '8px' }}>
                     <button type="button"
-                        onClick={() => { setBgProjectEditMode(false); setBgProjectEditProjectId(null); }}
-                        style={{ flex: 1, padding: '8px', borderRadius: '8px', border: `2px solid ${!bgProjectEditMode ? '#8b5cf6' : 'var(--border-default)'}`, background: !bgProjectEditMode ? 'rgba(139,92,246,0.1)' : 'var(--bg-elevated)', color: !bgProjectEditMode ? '#a78bfa' : 'var(--text-muted)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                        🆕 New Project
+                        onClick={() => setBgProjectTab('submit')}
+                        style={{ flex: 1, padding: '6px', borderRadius: '6px', border: 'none', background: bgProjectTab === 'submit' ? 'var(--bg-secondary)' : 'transparent', color: bgProjectTab === 'submit' ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', boxShadow: bgProjectTab === 'submit' ? '0 1px 4px rgba(0,0,0,0.3)' : 'none' }}>
+                        ➕ Submit Job
                     </button>
                     <button type="button"
-                        onClick={() => setBgProjectEditMode(true)}
-                        style={{ flex: 1, padding: '8px', borderRadius: '8px', border: `2px solid ${bgProjectEditMode ? '#f97316' : 'var(--border-default)'}`, background: bgProjectEditMode ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)', color: bgProjectEditMode ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                        ✏️ Continue / Edit
+                        onClick={async () => {
+                            setBgProjectTab('monitor');
+                            // Refresh queue on open
+                            try {
+                                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                const { data: { session: s } } = await supabase.auth.getSession();
+                                if (!s) return;
+                                const qRes = await fetch(`${API_BASE}/api/background-project/queue`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
+                                const qData = await qRes.json();
+                                if (qData.queue) setBgProjectQueue(qData.queue);
+                            } catch { }
+                        }}
+                        style={{ flex: 1, padding: '6px', borderRadius: '6px', border: 'none', background: bgProjectTab === 'monitor' ? 'var(--bg-secondary)' : 'transparent', color: bgProjectTab === 'monitor' ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', boxShadow: bgProjectTab === 'monitor' ? '0 1px 4px rgba(0,0,0,0.3)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                        📊 Monitor {bgProjectJobId && <span style={{ width: 7, height: 7, borderRadius: '50%', background: bgProjectPausedCredits ? '#f97316' : '#22c55e', display: 'inline-block', animation: bgProjectPausedCredits ? 'none' : 'pulse 1.5s infinite' }} />}
                     </button>
                 </div>
+                {/* Sub-tabs for submit mode only */}
+                {bgProjectTab === 'submit' && (
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                        <button type="button"
+                            onClick={() => { setBgProjectEditMode(false); setBgProjectEditProjectId(null); }}
+                            style={{ flex: 1, padding: '7px', borderRadius: '7px', border: `2px solid ${!bgProjectEditMode ? '#8b5cf6' : 'var(--border-default)'}`, background: !bgProjectEditMode ? 'rgba(139,92,246,0.1)' : 'var(--bg-elevated)', color: !bgProjectEditMode ? '#a78bfa' : 'var(--text-muted)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                            🆕 New Project
+                        </button>
+                        <button type="button"
+                            onClick={() => setBgProjectEditMode(true)}
+                            style={{ flex: 1, padding: '7px', borderRadius: '7px', border: `2px solid ${bgProjectEditMode ? '#f97316' : 'var(--border-default)'}`, background: bgProjectEditMode ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)', color: bgProjectEditMode ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                            ✏️ Continue / Edit
+                        </button>
+                    </div>
+                )}
             </div>
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {bgProjectEditMode && (
+                {/* ── MONITOR TAB ── */}
+                {bgProjectTab === 'monitor' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {/* Active job status */}
+                        <div style={{ padding: '14px', background: bgProjectPausedCredits ? 'rgba(249,115,22,0.08)' : bgProjectJobId ? 'rgba(139,92,246,0.08)' : 'var(--bg-elevated)', border: `1px solid ${bgProjectPausedCredits ? 'rgba(249,115,22,0.3)' : bgProjectJobId ? 'rgba(139,92,246,0.3)' : 'var(--border-default)'}`, borderRadius: '10px' }}>
+                            <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)', marginBottom: '8px' }}>🔴 Active Job</div>
+                            {bgProjectJobId ? (
+                                <>
+                                    {bgProjectPausedCredits ? (
+                                        <>
+                                            <div style={{ fontSize: '12px', color: '#fb923c', marginBottom: '6px' }}>⏸️ Paused at step {bgProjectPausedCredits.step}/{bgProjectPausedCredits.maxSteps} — {bgProjectPausedCredits.balance} credits remaining</div>
+                                            <div style={{ height: '6px', background: 'var(--bg-elevated)', borderRadius: '3px', marginBottom: '10px' }}>
+                                                <div style={{ height: '100%', width: `${Math.round((bgProjectPausedCredits.step / bgProjectPausedCredits.maxSteps) * 100)}%`, background: '#f97316', borderRadius: '3px' }} />
+                                            </div>
+                                            <button type="button" onClick={() => { setBgProjectModal(false); setSettingsOpen(true); setActiveSettingsTab('billing'); }}
+                                                style={{ width: '100%', padding: '7px', fontSize: '12px', borderRadius: '6px', border: 'none', background: '#f97316', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                                Top Up Credits to Resume
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div style={{ fontSize: '12px', color: '#a78bfa', marginBottom: '6px' }}>⚡ Running — steps completing automatically</div>
+                                            <div style={{ height: '6px', background: 'var(--bg-elevated)', borderRadius: '3px', marginBottom: '6px', overflow: 'hidden' }}>
+                                                <div style={{ height: '100%', width: '100%', background: 'linear-gradient(90deg, #8b5cf6, #a78bfa, #8b5cf6)', backgroundSize: '200%', animation: 'shimmer 1.5s infinite', borderRadius: '3px' }} />
+                                            </div>
+                                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>Job: {bgProjectJobId.slice(0, 16)}…</div>
+                                        </>
+                                    )}
+                                </>
+                            ) : (
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No active job. Submit one on the Submit tab.</div>
+                            )}
+                        </div>
+                        {/* Queue */}
+                        <div style={{ padding: '14px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '10px' }}>
+                            <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)', marginBottom: '8px' }}>📋 Queue {bgProjectQueue.length > 0 && <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '10px', background: 'rgba(249,115,22,0.15)', color: '#f97316', marginLeft: '4px' }}>{bgProjectQueue.length}</span>}</div>
+                            {bgProjectQueue.length === 0 ? (
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No jobs queued.</div>
+                            ) : (
+                                bgProjectQueue.map((item, i) => (
+                                    <div key={i} style={{ padding: '8px 0', borderBottom: i < bgProjectQueue.length - 1 ? '1px solid var(--border-subtle)' : 'none', fontSize: '12px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                                            <span style={{ color: '#f97316', fontWeight: 600 }}>#{item.position}</span>
+                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{item.domain} · {item.maxSteps} steps</span>
+                                        </div>
+                                        <div style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{item.projectGoal.slice(0, 80)}{item.projectGoal.length > 80 ? '…' : ''}</div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        {/* Add to queue */}
+                        <div style={{ padding: '14px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '10px' }}>
+                            <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)', marginBottom: '8px' }}>➕ Add Next Prompt to Queue</div>
+                            <textarea
+                                placeholder="e.g. Add a cover letter generator that uses the CV and job description..."
+                                value={bgProjectSteerPrompt || ''}
+                                onChange={e => setBgProjectSteerPrompt(e.target.value)}
+                                style={{ width: '100%', minHeight: '72px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.5 }}
+                            />
+                            <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                                <select value={bgProjectDomain} onChange={e => setBgProjectDomain(e.target.value)}
+                                    style={{ flex: 1, background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '6px 8px', color: 'var(--text-primary)', fontSize: '11px', fontFamily: 'DM Sans, sans-serif' }}>
+                                    <option>Next.js TypeScript</option><option>Pine Script</option><option>Python</option><option>React TypeScript</option><option>Node.js TypeScript</option><option>Unity C#</option><option>MQL5</option><option>General</option>
+                                </select>
+                                <input type="number" min={1} max={50} value={bgProjectSteps} onChange={e => setBgProjectSteps(Math.min(50, Math.max(1, Number(e.target.value))))}
+                                    style={{ width: '64px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '6px 8px', color: 'var(--text-primary)', fontSize: '11px', fontFamily: 'DM Sans, sans-serif' }} />
+                                <button type="button" disabled={!bgProjectSteerPrompt?.trim()}
+                                    onClick={async () => {
+                                        if (!bgProjectSteerPrompt?.trim()) return;
+                                        try {
+                                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                            const { data: { session: s } } = await supabase.auth.getSession();
+                                            if (!s) return;
+                                            const res = await fetch(`${API_BASE}/api/background-project/queue`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
+                                                body: JSON.stringify({ projectGoal: bgProjectSteerPrompt, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: true, localFolderPath: bgProjectLocalFolder }),
+                                            });
+                                            const data = await res.json();
+                                            if (data.ok) {
+                                                showToast(`Queued at position ${data.position}`, 'success');
+                                                setBgProjectSteerPrompt('');
+                                                const qRes = await fetch(`${API_BASE}/api/background-project/queue`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
+                                                const qData = await qRes.json();
+                                                if (qData.queue) setBgProjectQueue(qData.queue);
+                                            } else { showToast(data.error || 'Failed', 'error'); }
+                                        } catch { showToast('Failed to queue', 'error'); }
+                                    }}
+                                    style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '6px', border: 'none', background: bgProjectSteerPrompt?.trim() ? '#8b5cf6' : 'var(--bg-secondary)', color: bgProjectSteerPrompt?.trim() ? '#fff' : 'var(--text-muted)', fontWeight: 600, cursor: bgProjectSteerPrompt?.trim() ? 'pointer' : 'not-allowed', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}>
+                                    ➕ Queue
+                                </button>
+                            </div>
+                        </div>
+                        {/* Autopilot toggle */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: bgProjectSelfFeed ? 'rgba(139,92,246,0.08)' : 'var(--bg-elevated)', border: `1px solid ${bgProjectSelfFeed ? 'rgba(139,92,246,0.3)' : 'var(--border-default)'}`, borderRadius: '8px' }}>
+                            <div>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: bgProjectSelfFeed ? '#a78bfa' : 'var(--text-primary)' }}>🤖 Autopilot</div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>AI auto-queues next improvement after each job</div>
+                            </div>
+                            <button type="button" onClick={async () => {
+                                const newVal = !bgProjectSelfFeed;
+                                setBgProjectSelfFeed(newVal);
+                                try {
+                                    const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                    const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                    const { data: { session: s } } = await supabase.auth.getSession();
+                                    if (!s) return;
+                                    await fetch(`${API_BASE}/api/background-project/selffeed`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` }, body: JSON.stringify({ enabled: newVal }) });
+                                } catch { }
+                            }} style={{ padding: '5px 12px', fontSize: '12px', borderRadius: '20px', border: `1px solid ${bgProjectSelfFeed ? '#8b5cf6' : 'var(--border-default)'}`, background: bgProjectSelfFeed ? '#8b5cf6' : 'var(--bg-secondary)', color: bgProjectSelfFeed ? '#fff' : 'var(--text-muted)', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                {bgProjectSelfFeed ? '✅ ON' : 'OFF'}
+                            </button>
+                        </div>
+                    </div>
+                )}
+                {bgProjectTab === 'submit' && bgProjectEditMode && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {/* Source toggle */}
                         <div style={{ display: 'flex', gap: '6px' }}>
@@ -7257,7 +7409,7 @@ Project description: ${newProjectPrompt.trim()}`
                         )}
                     </div>
                 )}
-                <div>
+                {bgProjectTab === 'submit' && <><div>
                     <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Project Goal</div>
                     <textarea
                         autoFocus
@@ -7418,6 +7570,7 @@ Project description: ${newProjectPrompt.trim()}`
                         </button>
                     </div>
                 )}
+                </>}
             </div>
             <div style={{ padding: '0 20px 20px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                 <button type="button"
@@ -7426,7 +7579,7 @@ Project description: ${newProjectPrompt.trim()}`
                     style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
                     {bgProjectJobId ? 'Close' : 'Cancel'}
                 </button>
-                {!bgProjectJobId && (
+                {bgProjectTab === 'submit' && !bgProjectJobId && (
                     <button type="button"
                         disabled={bgProjectQueueLoading || !bgProjectGoal.trim()}
                         onClick={async () => {
@@ -7462,7 +7615,7 @@ Project description: ${newProjectPrompt.trim()}`
                         {bgProjectQueueLoading ? '...' : '📋 Add to Queue'}
                     </button>
                 )}
-                {!bgProjectJobId && (
+                {bgProjectTab === 'submit' && !bgProjectJobId && (
                     <button type="button"
                         disabled={bgProjectLoading || !bgProjectGoal.trim()}
                         onClick={async () => {
