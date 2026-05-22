@@ -142,7 +142,7 @@ function useToast() {
                     {toast.type === 'success' ? '✓ ' : toast.type === 'error' ? '⚠ ' : 'ℹ '}{toast.message}
                 </div>
             ))}
-            <style>{`@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+            <style>{`@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } } @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } } @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
         </div>
     );
     return { showToast, ToastContainer };
@@ -7298,9 +7298,38 @@ Project description: ${newProjectPrompt.trim()}`
                     </div>
                 </div>
                 {bgProjectJobId && (
-                    <div style={{ padding: '10px 14px', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '8px', fontSize: '12px', color: '#a78bfa' }}>
-                        ✅ Job submitted! ID: <code style={{ fontFamily: 'monospace' }}>{bgProjectJobId}</code><br />
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>Check your conversations when you&apos;re back — results will appear as messages.</span>
+                    <div style={{ padding: '12px 14px', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '8px', fontSize: '12px', color: '#a78bfa' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                            <span style={{ fontWeight: 600 }}>🏗️ Job running</span>
+                            <code style={{ fontFamily: 'monospace', fontSize: '10px', color: 'var(--text-muted)' }}>{bgProjectJobId.slice(0, 8)}…</code>
+                        </div>
+                        {bgProjectPausedCredits ? (
+                            <div style={{ marginBottom: '8px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                    <span style={{ color: '#fb923c', fontWeight: 600 }}>⏸️ Paused — insufficient credits</span>
+                                    <span style={{ color: 'var(--text-muted)' }}>{bgProjectPausedCredits.step}/{bgProjectPausedCredits.maxSteps}</span>
+                                </div>
+                                <div style={{ height: '6px', background: 'var(--bg-elevated)', borderRadius: '3px', overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', width: `${Math.round((bgProjectPausedCredits.step / bgProjectPausedCredits.maxSteps) * 100)}%`, background: '#f97316', borderRadius: '3px', transition: 'width 0.4s ease' }} />
+                                </div>
+                                <button type="button"
+                                    onClick={() => { setBgProjectModal(false); setSettingsOpen(true); setActiveSettingsTab('billing'); }}
+                                    style={{ marginTop: '8px', width: '100%', padding: '6px', fontSize: '12px', borderRadius: '6px', border: 'none', background: '#f97316', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                    Top Up Credits to Resume
+                                </button>
+                            </div>
+                        ) : (
+                            <div style={{ marginBottom: '6px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                                    <span>Running…</span>
+                                    <span style={{ animation: 'pulse 1.5s ease-in-out infinite' }}>⚡ Live</span>
+                                </div>
+                                <div style={{ height: '6px', background: 'var(--bg-elevated)', borderRadius: '3px', overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', width: '100%', background: 'linear-gradient(90deg, #8b5cf6 0%, #a78bfa 50%, #8b5cf6 100%)', backgroundSize: '200% 100%', borderRadius: '3px', animation: 'shimmer 1.5s infinite' }} />
+                                </div>
+                            </div>
+                        )}
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Results appear in your conversations automatically.</span>
                     </div>
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: bgProjectSelfFeed ? 'rgba(139,92,246,0.08)' : 'var(--bg-elevated)', border: `1px solid ${bgProjectSelfFeed ? 'rgba(139,92,246,0.3)' : 'var(--border-default)'}`, borderRadius: '8px' }}>
