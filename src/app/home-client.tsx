@@ -320,6 +320,11 @@ const [bgProjectSelfFeed, setBgProjectSelfFeed] = useState(false);
 const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
 const [bgProjectTab, setBgProjectTab] = useState<'submit' | 'monitor'>('submit');
 const [bgProjectPausedCredits, setBgProjectPausedCredits] = useState<{ step: number; maxSteps: number; balance: number } | null>(null);
+const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
+
+    function showConfirm(message: string, onConfirm: () => void) {
+        setConfirmModal({ message, onConfirm });
+    }
 const [userCredits, setUserCredits] = useState<{ balance: number; lifetime_purchased: number; currency: string; transactions: { id: string; amount: number; type: string; description: string; created_at: string }[] } | null>(null);
 const [showPlansDropdown, setShowPlansDropdown] = useState(false);
 const [creditsLoading, setCreditsLoading] = useState(false);
@@ -663,18 +668,18 @@ const [creditsPurchasing, setCreditsPurchasing] = useState<string | null>(null);
     }
 
     async function deleteSnippet(id: string) {
-        if (!confirm("Delete this snippet?")) return;
-
-        try {
-            const res = await apiDeleteSnippet(id);
-            if (res.ok) {
-                setSavedCodes((p) => p.filter((x) => x.id !== id));
-                setActiveCodeId((cur) => (cur === id ? null : cur));
-                setGiveAiAccessToCode(false);
+        showConfirm("Delete this snippet?", async () => {
+            try {
+                const res = await apiDeleteSnippet(id);
+                if (res.ok) {
+                    setSavedCodes((p) => p.filter((x) => x.id !== id));
+                    setActiveCodeId((cur) => (cur === id ? null : cur));
+                    setGiveAiAccessToCode(false);
+                }
+            } catch (error) {
+                console.error("Failed to delete snippet:", error);
             }
-        } catch (error) {
-            console.error("Failed to delete snippet:", error);
-        }
+        });
     }
 
 
@@ -869,7 +874,13 @@ const [creditsPurchasing, setCreditsPurchasing] = useState<string | null>(null);
     }
 
     function handleNewCode() {
-        if (codeText.trim() && !confirm("Create new code? Unsaved changes will be lost.")) {
+        if (codeText.trim()) {
+            showConfirm("Create new code? Unsaved changes will be lost.", () => {
+                setCodeText('');
+                setActiveCodeId(null);
+                setActiveFileId(null);
+                setHasUnsavedChanges(false);
+            });
             return;
         }
 
@@ -7556,15 +7567,16 @@ Project description: ${newProjectPrompt.trim()}`
                                 <span style={{ color: '#f97316', fontWeight: 600 }}>#{item.position}</span> {item.projectGoal.slice(0, 60)}{item.projectGoal.length > 60 ? '...' : ''} <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>({item.domain}, {item.maxSteps} steps)</span>
                             </div>
                         ))}
-                        <button type="button" onClick={async () => {
-                            if (!window.confirm(`Clear all ${bgProjectQueue.length} queued jobs? This cannot be undone.`)) return;
-                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
-                            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
-                            const { data: { session: s } } = await supabase.auth.getSession();
-                            if (!s) return;
-                            await fetch(`${API_BASE}/api/background-project/queue`, { method: 'DELETE', headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
-                            setBgProjectQueue([]);
-                            showToast('Queue cleared', 'success');
+                        <button type="button" onClick={() => {
+                            showConfirm(`Clear all ${bgProjectQueue.length} queued jobs? This cannot be undone.`, async () => {
+                                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                const { data: { session: s } } = await supabase.auth.getSession();
+                                if (!s) return;
+                                await fetch(`${API_BASE}/api/background-project/queue`, { method: 'DELETE', headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
+                                setBgProjectQueue([]);
+                                showToast('Queue cleared', 'success');
+                            });
                         }} style={{ marginTop: '6px', padding: '4px 10px', fontSize: '11px', borderRadius: '4px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#f87171', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
                             🗑 Clear queue
                         </button>
