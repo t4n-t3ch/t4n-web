@@ -1993,9 +1993,11 @@ ${codeContext}` : ""}${projectContext}`
                     streamed += delta;
 
                     const extracted = extractCodeBlocks(streamed);
+                    const isProjectAnalysis = streamed.includes('Project Analysis') || streamed.includes('Architecture Overview') || streamed.includes('applied to current code');
 
                     // If we detect code, push it to the code canvas and OPEN the code panel.
-                    if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                    // Never touch the code panel for project analysis responses
+                    if (extracted && !/ctrl\+f:/i.test(streamed) && !isProjectAnalysis) {
                         const merged = (giveAiAccessToCode && accessLockedCode.trim())
                             ? mergePatchWithExisting(accessLockedCode, extracted)
                             : extracted;
@@ -2207,8 +2209,9 @@ ${codeContext}` : ""}${projectContext}`
                     streamed += delta;
 
                     const extracted = extractCodeBlocks(streamed);
+                    const isProjectAnalysis2 = streamed.includes('Project Analysis') || streamed.includes('Architecture Overview') || streamed.includes('applied to current code');
 
-                    if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                    if (extracted && !/ctrl\+f:/i.test(streamed) && !isProjectAnalysis2) {
                         const merged = (giveAiAccessToCode && accessLockedCode.trim())
                             ? mergePatchWithExisting(accessLockedCode, extracted)
                             : extracted;
@@ -3057,13 +3060,15 @@ Project description: ${newProjectPrompt.trim()}`
                         </div>
 
                         {/* Snippet selector */}
-                        <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', flexShrink: 0 }}>
+                        <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', flexShrink: 0, position: 'relative' }}>
                             <select
                                 style={{ width: '100%', fontSize: '13px', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}
                                 value={activeFileId ? "" : (activeCodeId ?? (hasUnsavedChanges ? UNSAVED_ID : ''))}
                                 onChange={async e => {
                                     const id = e.target.value || null;
                                     if (id === UNSAVED_ID) { setActiveCodeId(null); setCodeText(unsavedCode); return; }
+                                    // Save current unsaved work before switching
+                                    if (!activeCodeId && codeText.trim()) { setUnsavedCode(codeText); }
                                     setActiveCodeId(id);
                                     setActiveFileId(null);
                                     setHasUnsavedChanges(false);
@@ -3074,6 +3079,16 @@ Project description: ${newProjectPrompt.trim()}`
                                 {hasUnsavedChanges && <option value={UNSAVED_ID}>📝 Unsaved (new)</option>}
                                 {savedCodes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
+                            {activeCodeId && (
+                                <button type="button"
+                                    onClick={() => showConfirm(`Delete "${savedCodes.find(s => s.id === activeCodeId)?.name || 'this snippet'}"? This cannot be undone.`, async () => {
+                                        await deleteSnippet(activeCodeId);
+                                    })}
+                                    style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '14px', padding: '2px 4px', borderRadius: '4px' }}
+                                    title="Delete snippet">
+                                    🗑
+                                </button>
+                            )}
                         </div>
 
                         {/* Desktop features banner + Actions quick access */}
