@@ -329,6 +329,7 @@ const [userCredits, setUserCredits] = useState<{ balance: number; lifetime_purch
 const [showPlansDropdown, setShowPlansDropdown] = useState(false);
 const [creditsLoading, setCreditsLoading] = useState(false);
 const [creditsPurchasing, setCreditsPurchasing] = useState<string | null>(null);
+const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number; pack: string }>({ enabled: false, threshold: 50, pack: 'starter' });
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
 
@@ -1305,11 +1306,14 @@ const [creditsPurchasing, setCreditsPurchasing] = useState<string | null>(null);
         try {
             const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
             const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
-            const res = await fetch(`${API_BASE}/api/credits`, {
-                headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}` },
-            });
-            const data = await res.json();
+            const [credRes, renewRes] = await Promise.all([
+                fetch(`${API_BASE}/api/credits`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}` } }),
+                fetch(`${API_BASE}/api/credits/autorenew`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}` } }),
+            ]);
+            const data = await credRes.json();
             if (data.ok) setUserCredits(data);
+            const renewData = await renewRes.json();
+            if (renewData.ok) setAutoRenew({ enabled: renewData.enabled, threshold: renewData.threshold, pack: renewData.pack });
         } catch { } finally {
             setCreditsLoading(false);
         }
@@ -4540,6 +4544,62 @@ Project description: ${newProjectPrompt.trim()}`
                                                 </>
                                             )}
                                         </div>
+                                        {/* Auto-renew */}
+                                        <div style={{ marginTop: '12px', padding: '14px', background: autoRenew.enabled ? 'rgba(139,92,246,0.08)' : 'var(--bg-elevated)', border: `1px solid ${autoRenew.enabled ? 'rgba(139,92,246,0.3)' : 'var(--border-default)'}`, borderRadius: '10px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: autoRenew.enabled ? '12px' : '0' }}>
+                                                <div>
+                                                    <div style={{ fontSize: '12px', fontWeight: 600, color: autoRenew.enabled ? '#a78bfa' : 'var(--text-primary)' }}>🔄 Auto Top-Up</div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Automatically buy credits when balance runs low</div>
+                                                </div>
+                                                <button type="button" onClick={async () => {
+                                                    const newVal = { ...autoRenew, enabled: !autoRenew.enabled };
+                                                    setAutoRenew(newVal);
+                                                    try {
+                                                        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                                        const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                                        const { data: { session: s } } = await supabase.auth.getSession();
+                                                        if (!s) return;
+                                                        await fetch(`${API_BASE}/api/credits/autorenew`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` }, body: JSON.stringify(newVal) });
+                                                    } catch { }
+                                                }} style={{ padding: '5px 12px', fontSize: '12px', borderRadius: '20px', border: `1px solid ${autoRenew.enabled ? '#8b5cf6' : 'var(--border-default)'}`, background: autoRenew.enabled ? '#8b5cf6' : 'var(--bg-secondary)', color: autoRenew.enabled ? '#fff' : 'var(--text-muted)', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                                    {autoRenew.enabled ? '✅ ON' : 'OFF'}
+                                                </button>
+                                            </div>
+                                            {autoRenew.enabled && (
+                                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>When below</div>
+                                                    <input type="number" min={12} max={500} value={autoRenew.threshold}
+                                                        onChange={async e => {
+                                                            const newVal = { ...autoRenew, threshold: Number(e.target.value) };
+                                                            setAutoRenew(newVal);
+                                                            try {
+                                                                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                                                const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                                                const { data: { session: s } } = await supabase.auth.getSession();
+                                                                if (!s) return;
+                                                                await fetch(`${API_BASE}/api/credits/autorenew`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` }, body: JSON.stringify(newVal) });
+                                                            } catch { }
+                                                        }}
+                                                        style={{ width: '60px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '4px 8px', color: 'var(--text-primary)', fontSize: '11px', fontFamily: 'DM Sans, sans-serif' }} />
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>credits, buy</div>
+                                                    <select value={autoRenew.pack} onChange={async e => {
+                                                        const newVal = { ...autoRenew, pack: e.target.value };
+                                                        setAutoRenew(newVal);
+                                                        try {
+                                                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                                            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                                            const { data: { session: s } } = await supabase.auth.getSession();
+                                                            if (!s) return;
+                                                            await fetch(`${API_BASE}/api/credits/autorenew`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` }, body: JSON.stringify(newVal) });
+                                                        } catch { }
+                                                    }} style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '4px 8px', color: 'var(--text-primary)', fontSize: '11px', fontFamily: 'DM Sans, sans-serif' }}>
+                                                        <option value="starter">Starter (500 credits)</option>
+                                                        <option value="builder">Builder (1,800 credits)</option>
+                                                        <option value="pro_pack">Pro Pack (4,000 credits)</option>
+                                                    </select>
+                                                </div>
+                                            )}
+                                        </div>
                                         <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                             Credits are used for background project steps. 12 credits per step. Credits never expire.
                                         </p>
@@ -7267,7 +7327,34 @@ Project description: ${newProjectPrompt.trim()}`
                                     )}
                                 </>
                             ) : (
-                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No active job. Submit one on the Submit tab.</div>
+                                <>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: bgProjectQueue.length > 0 ? '10px' : '0' }}>No active job running.</div>
+                                {bgProjectQueue.length > 0 && (
+                                    <button type="button" onClick={async () => {
+                                        try {
+                                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                            const { data: { session: s } } = await supabase.auth.getSession();
+                                            if (!s) return;
+                                            const res = await fetch(`${API_BASE}/api/background-project/queue/start`, {
+                                                method: 'POST',
+                                                headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
+                                            });
+                                            const data = await res.json();
+                                            if (data.ok) {
+                                                setBgProjectJobId(data.jobId);
+                                                showToast('Started next queued job!', 'success');
+                                                // Refresh queue display
+                                                const qRes = await fetch(`${API_BASE}/api/background-project/queue`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
+                                                const qData = await qRes.json();
+                                                if (qData.queue) setBgProjectQueue(qData.queue);
+                                            } else { showToast(data.error || 'Failed to start', 'error'); }
+                                        } catch { showToast('Failed to start queue', 'error'); }
+                                    }} style={{ width: '100%', padding: '8px', fontSize: '12px', borderRadius: '6px', border: 'none', background: '#8b5cf6', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                        ▶️ Start Next Queued Job ({bgProjectQueue.length} waiting)
+                                    </button>
+                                )}
+                                </>
                             )}
                         </div>
                         {/* Queue */}
