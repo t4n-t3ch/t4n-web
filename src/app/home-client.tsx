@@ -121,9 +121,9 @@ interface Toast { id: number; message: string; type: ToastType; }
 
 function useToast() {
     const [toasts, setToasts] = useState<Toast[]>([]);
-    let nextId = 0;
+    const nextIdRef = useRef(0);
     const showToast = (message: string, type: ToastType = 'success') => {
-        const id = ++nextId;
+        const id = ++nextIdRef.current;
         setToasts(t => [...t, { id, message, type }]);
         setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3000);
     };
@@ -5995,7 +5995,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                                             setCodeOpen(true);
                                                                         }
                                                                         const isCtrlF = /ctrl\+f:/i.test(streamed);
-                                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : (extracted && !isAnalysisTool) ? `[${label} → check Code panel]` : stripCodeBlocks(streamed) } : msg));
+                                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : (extracted && !isAnalysisTool) ? `[${label} → check Code panel]` : isAnalysisTool ? streamed : stripCodeBlocks(streamed) } : msg));
                                                                     },
                                                                     (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
                                                                     undefined, undefined, controller.signal,
