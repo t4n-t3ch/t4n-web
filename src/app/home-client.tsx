@@ -2461,7 +2461,7 @@ ${codeContext}` : ""}${projectContext}`
                                 if (!authEmail.trim()) { setAuthError("Enter your email above first."); return; }
                                 setAuthError(null);
                                 const { error } = await supabase.auth.resetPasswordForEmail(authEmail.trim(), {
-                                    redirectTo: `${window.location.origin}/reset-password`,
+                                    redirectTo: `https://t4ncode.dev/reset-password`,
                                 });
                                 if (error) setAuthError(error.message);
                                 else setAuthError("✅ Password reset email sent — check your inbox.");
@@ -3023,7 +3023,7 @@ Project description: ${newProjectPrompt.trim()}`
                                     ⚙️ Settings
                                 </button>
                                 <button type="button"
-                                    onClick={async () => { if (confirm('Sign out?')) await supabase.auth.signOut(); }}
+                                    onClick={() => showConfirm('Sign out?', async () => { await supabase.auth.signOut(); })}
                                     style={{ flex: 1, padding: '10px', borderRadius: '10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                                     Sign out
                                 </button>
@@ -3366,7 +3366,7 @@ Project description: ${newProjectPrompt.trim()}`
                                             Manage Billing
                                         </button>
                                     )}
-                                    <button type="button" onClick={async () => { if (confirm('Sign out?')) await supabase.auth.signOut(); }} style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-muted)', fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                    <button type="button" onClick={() => showConfirm('Sign out?', async () => { await supabase.auth.signOut(); })} style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-muted)', fontSize: '13px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
                                         Sign out
                                     </button>
                                 </div>
@@ -4331,11 +4331,7 @@ Project description: ${newProjectPrompt.trim()}`
                             </div>
                         )}
                         <button type="button"
-                            onClick={async () => {
-                                if (confirm("Sign out?")) {
-                                    await supabase.auth.signOut();
-                                }
-                            }}
+                            onClick={() => showConfirm("Sign out?", async () => { await supabase.auth.signOut(); })}
                             style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
                             Sign out
                         </button>
@@ -5985,12 +5981,13 @@ Project description: ${newProjectPrompt.trim()}`
                                                                 abortRef.current = controller;
                                                                 setStreaming(true); setLoading(true);
                                                                 const res = await streamMessage(finalPrompt, cid, controller.signal, codeText);
+                                                                const isAnalysisTool = label.includes('Analysis') || label.includes('Review') || label.includes('Debug') || label.includes('DevOps') || label.includes('Ask Project');
                                                                 let streamed = '';
                                                                 await readSseStream(res,
                                                                     (delta) => {
                                                                         streamed += delta;
                                                                         const extracted = extractCodeBlocks(streamed);
-                                                                        if (extracted && !/ctrl\+f:/i.test(streamed)) {
+                                                                        if (extracted && !/ctrl\+f:/i.test(streamed) && !isAnalysisTool) {
                                                                             const merged = (giveAiAccessToCode && accessLockedCode.trim()) ? mergePatchWithExisting(accessLockedCode, extracted) : extracted;
                                                                             setCodeText(merged); addToHistory(merged); setHasUnsavedChanges(true);
                                                                             if (!activeCodeId) setUnsavedCode(merged);
@@ -5998,7 +5995,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                                             setCodeOpen(true);
                                                                         }
                                                                         const isCtrlF = /ctrl\+f:/i.test(streamed);
-                                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : extractCodeBlocks(streamed) ? `[${label} → check Code panel]` : stripCodeBlocks(streamed) } : msg));
+                                                                        setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: isCtrlF ? streamed.replace(/```[\w+-]*\n[\s\S]*?```\n?/g, '').replace(/\n{3,}/g, '\n\n').trim() : (extracted && !isAnalysisTool) ? `[${label} → check Code panel]` : stripCodeBlocks(streamed) } : msg));
                                                                     },
                                                                     (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
                                                                     undefined, undefined, controller.signal,
