@@ -7804,7 +7804,28 @@ Project description: ${newProjectPrompt.trim()}`
     </div>
 )}
 
-{/* Give AI Access Modal */}
+{/* Confirm Modal */}
+            {confirmModal && (
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 p-4"
+                    onMouseDown={() => setConfirmModal(null)}>
+                    <div style={{ width: '340px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', padding: '24px' }}
+                        onMouseDown={e => e.stopPropagation()}>
+                        <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '20px' }}>{confirmModal.message}</div>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                            <button type="button" onClick={() => setConfirmModal(null)}
+                                style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-default)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                Cancel
+                            </button>
+                            <button type="button" onClick={() => { confirmModal.onConfirm(); setConfirmModal(null); }}
+                                style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                Confirm
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Give AI Access Modal */}
             {giveAccessModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
                     onMouseDown={() => setGiveAccessModal(false)}>
