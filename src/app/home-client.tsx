@@ -7300,7 +7300,13 @@ Project description: ${newProjectPrompt.trim()}`
                         {/* Active job status */}
                         <div style={{ padding: '14px', background: bgProjectPausedCredits ? 'rgba(249,115,22,0.08)' : bgProjectJobId ? 'rgba(139,92,246,0.08)' : 'var(--bg-elevated)', border: `1px solid ${bgProjectPausedCredits ? 'rgba(249,115,22,0.3)' : bgProjectJobId ? 'rgba(139,92,246,0.3)' : 'var(--border-default)'}`, borderRadius: '10px' }}>
                             <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)', marginBottom: '8px' }}>🔴 Active Job</div>
-                            {bgProjectJobId ? (
+                        {!bridgeConnected && bgProjectJobId && (
+                            <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', fontSize: '12px', color: '#f87171', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span>⚠️</span>
+                                <span>Bridge not connected — files won't be written to your machine. <button type="button" onClick={() => { setBgProjectModal(false); setSettingsOpen(true); setActiveSettingsTab('bridge'); }} style={{ color: '#f97316', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '12px', textDecoration: 'underline', padding: 0 }}>Connect Bridge →</button></span>
+                            </div>
+                        )}
+                        {bgProjectJobId ? (
                                 <>
                                     {bgProjectPausedCredits ? (
                                         <>
@@ -7731,6 +7737,9 @@ Project description: ${newProjectPrompt.trim()}`
                         disabled={bgProjectLoading || !bgProjectGoal.trim()}
                         onClick={async () => {
                             if (!bgProjectGoal.trim()) return;
+                            if (!bridgeConnected) {
+                                showToast('⚠️ Bridge not connected — files won\'t be written locally. Connect bridge in Settings → Bridge first.', 'error');
+                            }
                             setBgProjectLoading(true);
                             try {
                                 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
