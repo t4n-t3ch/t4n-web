@@ -7303,7 +7303,7 @@ Project description: ${newProjectPrompt.trim()}`
                         {!bridgeConnected && bgProjectJobId && (
                             <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', fontSize: '12px', color: '#f87171', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span>⚠️</span>
-                                <span>Bridge not connected — files won't be written to your machine. <button type="button" onClick={() => { setBgProjectModal(false); setSettingsOpen(true); setActiveSettingsTab('bridge'); }} style={{ color: '#f97316', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '12px', textDecoration: 'underline', padding: 0 }}>Connect Bridge →</button></span>
+                                <span>Bridge not connected — files won&apos;t be written to your machine. <button type="button" onClick={() => { setBgProjectModal(false); setSettingsOpen(true); setActiveSettingsTab('bridge'); }} style={{ color: '#f97316', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '12px', textDecoration: 'underline', padding: 0 }}>Connect Bridge →</button></span>
                             </div>
                         )}
                         {bgProjectJobId ? (
