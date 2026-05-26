@@ -6231,7 +6231,8 @@ Project description: ${newProjectPrompt.trim()}`
                                                                         if (convertedCode) {
                                                                             const sourceName = savedCodes.find(s => s.id === activeCodeId)?.name ?? 'snippet';
                                                                             const newName = `${sourceName} (${to})`;
-                                                                            void createSnippet({ name: newName, language: domainMap[to] ?? 'generic', code: convertedCode, source: 'ai_generated' }).then(res => {
+                                                                            const langMap: Record<string, string> = { 'Python': 'python', 'Pine Script': 'pinescript', 'Pine Script v5': 'pinescript', 'cTrader C#': 'ctrader', 'MQL5': 'mql5', 'JavaScript': 'javascript', 'TypeScript': 'typescript' };
+                                                                            void createSnippet({ name: newName, language: langMap[to] ?? 'generic', code: convertedCode, source: 'ai_generated' }).then(res => {
                                                                                 if (res.ok) {
                                                                                     void getSnippets().then(r => { if (r.ok) setSavedCodes(r.data.snippets); });
                                                                                     setActiveCodeId(res.data.id);
