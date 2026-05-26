@@ -5981,7 +5981,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                                 abortRef.current = controller;
                                                                 setStreaming(true); setLoading(true);
                                                                 const isAnalysisTool = label.includes('Analysis') || label.includes('Review') || label.includes('Debug') || label.includes('DevOps') || label.includes('Ask Project');
-                                                                const res = await streamMessage(finalPrompt, cid, controller.signal, isAnalysisTool ? undefined : codeText);
+                                                                const res = await streamMessage(finalPrompt, cid, controller.signal, codeText);
                                                                 let streamed = '';
                                                                 await readSseStream(res,
                                                                     (delta) => {
