@@ -5980,8 +5980,8 @@ Project description: ${newProjectPrompt.trim()}`
                                                                 const controller = new AbortController();
                                                                 abortRef.current = controller;
                                                                 setStreaming(true); setLoading(true);
-                                                                const res = await streamMessage(finalPrompt, cid, controller.signal, codeText);
                                                                 const isAnalysisTool = label.includes('Analysis') || label.includes('Review') || label.includes('Debug') || label.includes('DevOps') || label.includes('Ask Project');
+                                                                const res = await streamMessage(finalPrompt, cid, controller.signal, isAnalysisTool ? undefined : codeText);
                                                                 let streamed = '';
                                                                 await readSseStream(res,
                                                                     (delta) => {
@@ -6223,7 +6223,24 @@ Project description: ${newProjectPrompt.trim()}`
                                                                         }
                                                                         setMessages(m => m.map(msg => msg.id === assistantId ? { ...msg, content: extractCodeBlocks(streamed) ? `[Converted ${from} → ${to} → open Code panel]` : stripCodeBlocks(streamed) } : msg));
                                                                     },
-                                                                    (doneData) => { const finalCid = doneData?.conversationId || cid; if (finalCid) void refreshPluginRuns(finalCid); },
+                                                                    (doneData) => {
+                                                                        const finalCid = doneData?.conversationId || cid;
+                                                                        if (finalCid) void refreshPluginRuns(finalCid);
+                                                                        // Auto-save converted code as a new snippet
+                                                                        const convertedCode = extractCodeBlocks(streamed);
+                                                                        if (convertedCode) {
+                                                                            const sourceName = savedCodes.find(s => s.id === activeCodeId)?.name ?? 'snippet';
+                                                                            const newName = `${sourceName} (${to})`;
+                                                                            void createSnippet({ name: newName, language: domainMap[to] ?? 'generic', code: convertedCode, source: 'ai_generated' }).then(res => {
+                                                                                if (res.ok) {
+                                                                                    void getSnippets().then(r => { if (r.ok) setSavedCodes(r.data.snippets); });
+                                                                                    setActiveCodeId(res.data.id);
+                                                                                    setHasUnsavedChanges(false);
+                                                                                    showToast(`Saved as "${newName}"`, 'success');
+                                                                                }
+                                                                            });
+                                                                        }
+                                                                    },
                                                                     undefined,
                                                                     undefined,
                                                                     controller.signal,
