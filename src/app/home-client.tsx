@@ -1065,8 +1065,8 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
                     i++;
                 }
 
-                const findText = findLines.join('\n').trim();
-                const replaceText = replaceLines.join('\n').trim();
+                const findText = findLines.join('\n').trim().replace(/^`|`$/g, '');
+                const replaceText = replaceLines.join('\n').trim().replace(/^`|`$/g, '');
 
                 if (!findText) { failed++; continue; }
 
@@ -5195,60 +5195,82 @@ Project description: ${newProjectPrompt.trim()}`
                                                             <div style={{ borderRadius: '6px 6px 0 0', overflow: 'hidden', border: '1px solid rgba(249,115,22,0.35)', borderBottom: 'none' }}>
                                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 10px', background: 'rgba(249,115,22,0.1)' }}>
                                                                     <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>FIND</span>
-                                                                    <button type="button"
-                                                                        style={{
-                                                                            fontSize: '10px',
-                                                                            padding: '2px 8px',
-                                                                            borderRadius: '4px',
-                                                                            border: copiedBlockId === `find-${blockId}` ? '1px solid #f97316' : '1px solid rgba(249,115,22,0.3)',
-                                                                            background: copiedBlockId === `find-${blockId}` ? '#f97316' : 'transparent',
-                                                                            color: copiedBlockId === `find-${blockId}` ? '#fff' : 'var(--accent)',
-                                                                            fontWeight: copiedBlockId === `find-${blockId}` ? 'bold' : 'normal',
-                                                                            cursor: 'pointer',
-                                                                            transition: 'all 0.2s',
-                                                                            boxShadow: copiedBlockId === `find-${blockId}` ? '0 0 10px rgba(249,115,22,0.5)' : 'none'
-                                                                        }}
-                                                                        onClick={async () => {
-                                                                            try {
-                                                                                await navigator.clipboard.writeText(findText);
-                                                                                setCopiedBlockId(`find-${blockId}`);
-                                                                                setTimeout(() => setCopiedBlockId(null), 1500);
-                                                                                highlightInCanvas(findText);
-                                                                            } catch { }
-                                                                        }}>
-                                                                        {copiedBlockId === `find-${blockId}` ? '✓ Copied!' : 'Copy'}
-                                                                    </button>
+                                                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                                                        <button type="button"
+                                                                            style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.3)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer' }}
+                                                                            onClick={() => highlightInCanvas(findText)}
+                                                                            title="Jump to this code in the editor">
+                                                                            ↗ Go to
+                                                                        </button>
+                                                                        <button type="button"
+                                                                            style={{
+                                                                                fontSize: '10px', padding: '2px 8px', borderRadius: '4px',
+                                                                                border: copiedBlockId === `find-${blockId}` ? '1px solid #f97316' : '1px solid rgba(249,115,22,0.3)',
+                                                                                background: copiedBlockId === `find-${blockId}` ? '#f97316' : 'transparent',
+                                                                                color: copiedBlockId === `find-${blockId}` ? '#fff' : 'var(--accent)',
+                                                                                cursor: 'pointer', transition: 'all 0.2s',
+                                                                            }}
+                                                                            onClick={async () => {
+                                                                                try {
+                                                                                    await navigator.clipboard.writeText(findText);
+                                                                                    setCopiedBlockId(`find-${blockId}`);
+                                                                                    setTimeout(() => setCopiedBlockId(null), 1500);
+                                                                                } catch { }
+                                                                            }}>
+                                                                            {copiedBlockId === `find-${blockId}` ? '✓ Copied!' : 'Copy'}
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
-                                                                <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{findText}</pre>
+                                                                {/* Issue 1: strip wrapping backticks from findText display */}
+                                                                <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{findText.replace(/^`|`$/g, '')}</pre>
                                                             </div>
                                                             {/* REPLACE/ADD box */}
                                                             <div style={{ borderRadius: '0 0 6px 6px', overflow: 'hidden', border: '1px solid rgba(99,102,241,0.35)' }}>
                                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 10px', background: 'rgba(99,102,241,0.1)' }}>
                                                                     <span style={{ fontSize: '10px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{actionLabel}</span>
-                                                                    <button type="button"
-                                                                        style={{
-                                                                            fontSize: '10px',
-                                                                            padding: '2px 8px',
-                                                                            borderRadius: '4px',
-                                                                            border: copiedBlockId === `replace-${blockId}` ? '1px solid #818cf8' : '1px solid rgba(99,102,241,0.3)',
-                                                                            background: copiedBlockId === `replace-${blockId}` ? '#818cf8' : 'transparent',
-                                                                            color: copiedBlockId === `replace-${blockId}` ? '#fff' : '#818cf8',
-                                                                            fontWeight: copiedBlockId === `replace-${blockId}` ? 'bold' : 'normal',
-                                                                            cursor: 'pointer',
-                                                                            transition: 'all 0.2s',
-                                                                            boxShadow: copiedBlockId === `replace-${blockId}` ? '0 0 10px rgba(99,102,241,0.5)' : 'none'
-                                                                        }}
-                                                                        onClick={async () => {
-                                                                            try {
-                                                                                await navigator.clipboard.writeText(replaceText);
-                                                                                setCopiedBlockId(`replace-${blockId}`);
-                                                                                setTimeout(() => setCopiedBlockId(null), 1500);
-                                                                            } catch { }
-                                                                        }}>
-                                                                        {copiedBlockId === `replace-${blockId}` ? '✓ Copied!' : 'Copy'}
-                                                                    </button>
+                                                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                                                        {/* Issue 5: per-block apply button */}
+                                                                        <button type="button"
+                                                                            style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(99,102,241,0.5)', background: 'rgba(99,102,241,0.15)', color: '#a5b4fc', cursor: 'pointer' }}
+                                                                            onClick={() => {
+                                                                                const cleanFind = findText.replace(/^`|`$/g, '').trim();
+                                                                                const cleanReplace = replaceText.trim();
+                                                                                if (!cleanFind) return;
+                                                                                if (codeText.includes(cleanFind)) {
+                                                                                    const newCode = codeText.replace(cleanFind, cleanReplace);
+                                                                                    setCodeText(newCode);
+                                                                                    addToHistory(newCode);
+                                                                                    setHasUnsavedChanges(true);
+                                                                                    if (giveAiAccessToCode) setAccessLockedCode(newCode);
+                                                                                    setCodeOpen(true);
+                                                                                    showToast('✓ Change applied', 'success');
+                                                                                } else {
+                                                                                    showToast('⚠ Code not found — try Go to first', 'error');
+                                                                                }
+                                                                            }}>
+                                                                            ⚡ Apply
+                                                                        </button>
+                                                                        <button type="button"
+                                                                            style={{
+                                                                                fontSize: '10px', padding: '2px 8px', borderRadius: '4px',
+                                                                                border: copiedBlockId === `replace-${blockId}` ? '1px solid #818cf8' : '1px solid rgba(99,102,241,0.3)',
+                                                                                background: copiedBlockId === `replace-${blockId}` ? '#818cf8' : 'transparent',
+                                                                                color: copiedBlockId === `replace-${blockId}` ? '#fff' : '#818cf8',
+                                                                                cursor: 'pointer', transition: 'all 0.2s',
+                                                                            }}
+                                                                            onClick={async () => {
+                                                                                try {
+                                                                                    await navigator.clipboard.writeText(replaceText);
+                                                                                    setCopiedBlockId(`replace-${blockId}`);
+                                                                                    setTimeout(() => setCopiedBlockId(null), 1500);
+                                                                                } catch { }
+                                                                            }}>
+                                                                            {copiedBlockId === `replace-${blockId}` ? '✓ Copied!' : 'Copy'}
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
-                                                                <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{replaceText || '(empty — delete the found line)'}</pre>
+                                                                {/* Issue 4: only show code in replace, strip prose like "---" */}
+                                                                <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{replaceText && replaceText !== '---' && replaceText !== '...' ? replaceText : replaceText ? replaceText : '(empty — deletes the found line)'}</pre>
                                                             </div>
                                                         </div>
                                                     );
