@@ -1,6 +1,7 @@
 import { ThemeProvider } from '@/components/branding/ThemeProvider';
 import Footer from '@/components/Footer';
 import type { Metadata } from "next";
+// @ts-expect-error CSS import
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,6 +26,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* eslint-disable-next-line @next/next/no-before-interactive-script-outside-document */}
         <script async src="https://www.googletagmanager.com/gtag/js?id=G-0EKZZ8SGRR" />
         <script dangerouslySetInnerHTML={{ __html: `
           window.dataLayer = window.dataLayer || [];
