@@ -332,6 +332,7 @@ const [creditsPurchasing, setCreditsPurchasing] = useState<string | null>(null);
 const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number; pack: string }>({ enabled: false, threshold: 50, pack: 'starter' });
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
+    const [droppedFolder, setDroppedFolder] = useState<{ name: string; fileCount: number; content: string } | null>(null);
 
     useEffect(() => {
         // Restore layout
@@ -2113,7 +2114,9 @@ ${codeContext}` : ""}${projectContext}`
 
         // What the user sees vs what the API receives
         const uiText = text;
-        const apiText = `${text}${screenshotContext}`.trim();
+        const folderContext = droppedFolder ? `\n\n${droppedFolder.content}` : '';
+        const apiText = `${text}${screenshotContext}${folderContext}`.trim();
+        if (droppedFolder) setDroppedFolder(null);
 
         // Determine if user intent requires code-mode (edit existing code OR request code)
         const hasExistingCode = giveAiAccessToCode && !!codeText.trim(); // This is correct - requires access
@@ -5863,11 +5866,10 @@ Project description: ${newProjectPrompt.trim()}`
                                                 onMouseLeave={() => setActionsDropdownOpen(false)}
                                             >
                                                 {([
-                                                    { label: '🔍 Explain', prompt: 'Explain what this code does in plain English. Break it into sections. Be concise and clear.', mode: 'prose' as const },
-                                                    { label: '🔧 Fix Errors', prompt: 'Find and fix any errors, bugs, or issues in this code. For each fix, show the exact original code line(s) and the exact corrected code line(s).', mode: 'ctrlf' as const },
-                                                    { label: '✨ Improve', prompt: 'Find specific improvements for readability, performance, and best practices in this code. For each improvement, show the exact original code and the exact improved replacement code. Maximum 5 changes.', mode: 'ctrlf' as const },
-                                                    { label: '📋 Add Comments', prompt: 'Add clear inline comments to the most important functions and sections in this code. For each comment, show the exact original line and the same line with a comment added above or inline. Maximum 8 changes.', mode: 'ctrlf' as const },
-                                                    { label: '⚡ Optimise', prompt: 'Identify the top 5 specific performance issues in this code. For each one, show the exact original code and the exact optimised replacement code. Focus on: unnecessary re-renders, redundant computations, missing memoization, and inefficient loops.', mode: 'ctrlf' as const },
+                                                    { label: '🔧 Fix Errors', prompt: `Find and fix errors in this code. Output ONLY Ctrl+F blocks — nothing else. No headings, no prose, no dashes between blocks. Every FIND must be the exact verbatim code copied from the file. Every REPLACE must be code only.\n\nFormat:\nCtrl+F: <exact verbatim code from file>\nReplace with:\n<corrected code>\n\nRepeat for each fix. Maximum 8 fixes.`, mode: 'ctrlf' as const },
+                                                                    { label: '✨ Improve', prompt: `Improve this code. Output ONLY Ctrl+F blocks — nothing else. No headings, no prose, no dashes between blocks. Every FIND must be the exact verbatim code copied from the file. Every REPLACE must be code only.\n\nFormat:\nCtrl+F: <exact verbatim code from file>\nReplace with:\n<improved code>\n\nRepeat for each improvement. Maximum 5 improvements.`, mode: 'ctrlf' as const },
+                                                                    { label: '📋 Add Comments', prompt: `Add comments to this code. Output ONLY Ctrl+F blocks — nothing else. No headings, no prose, no dashes between blocks. Every FIND must be the exact verbatim code copied from the file. Every REPLACE must be the same code with a comment added.\n\nFormat:\nCtrl+F: <exact verbatim code from file>\nReplace with:\n<same code with comment above it>\n\nMaximum 8 changes.`, mode: 'ctrlf' as const },
+                                                                    { label: '⚡ Optimise', prompt: `Optimise this code. Output ONLY Ctrl+F blocks — nothing else. No headings, no prose, no dashes between blocks. Every FIND must be the exact verbatim code copied from the file. Every REPLACE must be code only.\n\nFormat:\nCtrl+F: <exact verbatim code from file>\nReplace with:\n<optimised code>\n\nMaximum 5 optimisations.`, mode: 'ctrlf' as const },
                                                 ] as const).map(({ label, prompt, mode }) => (
                                                     <button
                                                         key={label}
@@ -6837,6 +6839,15 @@ Project description: ${newProjectPrompt.trim()}`
                     }}
                 >
                     <div className="flex-1 flex flex-col gap-2">
+                        {droppedFolder && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '8px', fontSize: '12px', color: '#a78bfa' }}>
+                                <span>📁</span>
+                                <span style={{ fontWeight: 600 }}>{droppedFolder.name}</span>
+                                <span style={{ color: 'var(--text-muted)' }}>{droppedFolder.fileCount} files attached</span>
+                                <button type="button" onClick={() => setDroppedFolder(null)}
+                                    style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '13px', padding: '0 2px' }}>✕</button>
+                            </div>
+                        )}
                         {attachments.length > 0 && (
                             <div className="flex items-center gap-2 flex-wrap">
                                 {attachments.map((a) => (
@@ -6888,7 +6899,7 @@ Project description: ${newProjectPrompt.trim()}`
                                 const entry = folderItem.webkitGetAsEntry?.();
                                 if (!entry?.isDirectory) return;
                                 showToast('Reading folder files…', 'info');
-                                const CODE_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.pine', '.cs', '.mq5', '.json', '.md', '.sql', '.sh', '.yaml', '.yml', '.env', '.txt']);
+                                const CODE_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.pine', '.cs', '.mq5', '.json', '.md', '.sql', '.sh', '.yaml', '.yml', '.txt']);
                                 const MAX_FILES = 50;
                                 const MAX_CHARS_PER_FILE = 50000;
                                 const MAX_TOTAL_CHARS = 150000;
@@ -6919,9 +6930,8 @@ Project description: ${newProjectPrompt.trim()}`
                                 }
                                 await readDir(entry as FileSystemDirectoryEntry, entry.name);
                                 if (results.length === 0) { showToast('No code files found in folder', 'error'); return; }
-                                const context = results.map(f => `--- ${f.name} ---\n${f.content}`).join('\n\n');
-                                const summary = `[FOLDER CONTEXT: ${entry.name} — ${results.length} files, ~${Math.round(totalChars / 1000)}k chars]\n\n${context}`;
-                                setInput(prev => prev ? `${prev}\n\n${summary}` : summary);
+                                const context = `[FOLDER CONTEXT: ${entry.name} — ${results.length} files]\n\n` + results.map(f => `--- ${f.name} ---\n${f.content}`).join('\n\n');
+                                setDroppedFolder({ name: entry.name, fileCount: results.length, content: context });
                                 showToast(`Read ${results.length} files from ${entry.name}`, 'success');
                             }}
                             onPaste={(e) => {
