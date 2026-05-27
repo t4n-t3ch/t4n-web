@@ -6875,9 +6875,55 @@ Project description: ${newProjectPrompt.trim()}`
                             ref={inputRef}
                             className="w-full"
                             style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '10px 14px', color: 'var(--text-primary)', fontSize: '13px' }}
-                            placeholder="Message T4N…"
+                            placeholder="Message T4N… or drop a folder to read all files"
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            onDrop={async (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const items = Array.from(e.dataTransfer.items);
+                                const folderItem = items.find(i => i.kind === 'file');
+                                if (!folderItem) return;
+                                const entry = folderItem.webkitGetAsEntry?.();
+                                if (!entry?.isDirectory) return;
+                                showToast('Reading folder files…', 'info');
+                                const CODE_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.pine', '.cs', '.mq5', '.json', '.md', '.sql', '.sh', '.yaml', '.yml', '.env', '.txt']);
+                                const MAX_FILES = 50;
+                                const MAX_CHARS_PER_FILE = 50000;
+                                const MAX_TOTAL_CHARS = 150000;
+                                const results: { name: string; content: string }[] = [];
+                                let totalChars = 0;
+                                async function readDir(dirEntry: FileSystemDirectoryEntry, path: string) {
+                                    if (results.length >= MAX_FILES || totalChars >= MAX_TOTAL_CHARS) return;
+                                    const reader = dirEntry.createReader();
+                                    const entries: FileSystemEntry[] = await new Promise(res => reader.readEntries(res));
+                                    for (const ent of entries) {
+                                        if (results.length >= MAX_FILES || totalChars >= MAX_TOTAL_CHARS) break;
+                                        if (ent.isFile) {
+                                            const ext = '.' + ent.name.split('.').pop()?.toLowerCase();
+                                            if (!CODE_EXTS.has(ext)) continue;
+                                            if (ent.name.startsWith('.')) continue;
+                                            const text: string = await new Promise((res, rej) => {
+                                                (ent as FileSystemFileEntry).file(f => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsText(f); });
+                                            });
+                                            const trimmed = text.slice(0, MAX_CHARS_PER_FILE);
+                                            results.push({ name: `${path}/${ent.name}`, content: trimmed });
+                                            totalChars += trimmed.length;
+                                        } else if (ent.isDirectory) {
+                                            const dirName = ent.name;
+                                            if (['node_modules', '.git', '.next', 'dist', 'build', '.vscode', 'coverage', 'out'].includes(dirName)) continue;
+                                            await readDir(ent as FileSystemDirectoryEntry, `${path}/${dirName}`);
+                                        }
+                                    }
+                                }
+                                await readDir(entry as FileSystemDirectoryEntry, entry.name);
+                                if (results.length === 0) { showToast('No code files found in folder', 'error'); return; }
+                                const context = results.map(f => `--- ${f.name} ---\n${f.content}`).join('\n\n');
+                                const summary = `[FOLDER CONTEXT: ${entry.name} — ${results.length} files, ~${Math.round(totalChars / 1000)}k chars]\n\n${context}`;
+                                setInput(prev => prev ? `${prev}\n\n${summary}` : summary);
+                                showToast(`Read ${results.length} files from ${entry.name}`, 'success');
+                            }}
                             onPaste={(e) => {
                                 const items = Array.from(e.clipboardData?.items ?? []);
                                 const files = items
