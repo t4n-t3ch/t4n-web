@@ -5888,7 +5888,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                             const hasAccess = giveAiAccessToCode && !!activeCodeId;
                                                             const ctrlFInstructions = `\n\nRespond using ONLY this format for each change:\nCtrl+F (line ~LINE_NUMBER): <exact code to find>\nReplace with:\n<exact replacement code>\n\nBoth FIND and REPLACE must be raw code only. Never prose. Maximum 10 changes.`;
                                                             const cappedCode = codeText.slice(0, 8000);
-                                                            const fullPrompt = mode === 'prose'
+                                                            const fullPrompt = (mode as string) === 'prose'
                                                                 ? `${prompt}\n\nLanguage: ${domain}\n\n\`\`\`${domain}\n${cappedCode}\n\`\`\`${projectContext}`
                                                                 : hasAccess
                                                                     ? `${prompt}\n\nLanguage: ${domain}${projectContext}`
