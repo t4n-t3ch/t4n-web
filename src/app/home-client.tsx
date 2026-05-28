@@ -5239,8 +5239,11 @@ Project description: ${newProjectPrompt.trim()}`
                                                                                 const cleanFind = findText.replace(/^`|`$/g, '').trim();
                                                                                 const cleanReplace = replaceText.trim();
                                                                                 if (!cleanFind) return;
-                                                                                if (codeText.includes(cleanFind)) {
-                                                                                    const newCode = codeText.replace(cleanFind, cleanReplace);
+
+                                                                                // Build a synthetic ctrl+f block and run through the full fuzzy matcher
+                                                                                const synthetic = `Ctrl+F: ${cleanFind}\nReplace with:\n${cleanReplace}`;
+                                                                                const { newCode, applied: count } = applyCtrlFToCode(synthetic, codeText);
+                                                                                if (count > 0) {
                                                                                     setCodeText(newCode);
                                                                                     addToHistory(newCode);
                                                                                     setHasUnsavedChanges(true);
@@ -5248,7 +5251,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                                                     setCodeOpen(true);
                                                                                     showToast('✓ Change applied', 'success');
                                                                                 } else {
-                                                                                    showToast('⚠ Code not found — try Go to first', 'error');
+                                                                                    showToast('⚠ Code not found — try Go To to locate it first', 'error');
                                                                                 }
                                                                             }}>
                                                                             ⚡ Apply
