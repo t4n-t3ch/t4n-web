@@ -1,7 +1,6 @@
 import { ThemeProvider } from '@/components/branding/ThemeProvider';
 import Footer from '@/components/Footer';
 import type { Metadata } from "next";
-// @ts-expect-error CSS import
 import "./globals.css";
 
 export const metadata: Metadata = {
