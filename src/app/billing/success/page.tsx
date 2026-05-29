@@ -6,6 +6,8 @@ import { supabase } from "@/lib/supabase";
 export default function BillingSuccess() {
     const router = useRouter();
     const [debugInfo, setDebugInfo] = useState<string>("");
+    const [purchaseType, setPurchaseType] = useState<'pro' | 'credits' | null>(null);
+    const [creditsAdded, setCreditsAdded] = useState<number>(0);
 
     useEffect(() => {
         const run = async () => {
@@ -14,7 +16,12 @@ export default function BillingSuccess() {
             try {
                 const params = new URLSearchParams(window.location.search);
                 const session_id = params.get("session_id");
-                
+                const urlType = params.get("type");
+                const urlCredits = parseInt(params.get("credits") || "0");
+                if (urlType === 'credits') {
+                    setPurchaseType('credits');
+                    if (urlCredits > 0) setCreditsAdded(urlCredits);
+                }
                 console.log("🔍 Session ID from URL:", session_id);
                 setDebugInfo(`Session ID: ${session_id || 'none'}`);
 
@@ -63,7 +70,13 @@ export default function BillingSuccess() {
                 if (response.ok) {
                     const data = await response.json();
                     console.log("✅ Verify-session response:", data);
-                    setDebugInfo(prev => prev + ` | Upgraded: ${data.upgraded || 'true'}`);
+                    setDebugInfo(prev => prev + ` | type: ${data.type} credits: ${data.creditsAdded}`);
+                    if (data.type === 'credits') {
+                        setPurchaseType('credits');
+                        setCreditsAdded(data.creditsAdded || 0);
+                    } else {
+                        setPurchaseType('pro');
+                    }
                 } else {
                     console.error("❌ Verify-session failed with status:", response.status);
                     const errorText = await response.text();
@@ -85,9 +98,19 @@ export default function BillingSuccess() {
 
     return (
         <div style={{ background: '#0f0f11', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ fontSize: '48px' }}>🎉</div>
-            <div style={{ color: '#4ade80', fontSize: '24px', fontWeight: 700 }}>You&apos;re now Pro!</div>
-            <div style={{ color: '#9ca3af', fontSize: '14px' }}>Redirecting you back to T4N…</div>
+            <div style={{ fontSize: '48px' }}>{purchaseType === 'credits' ? '💳' : '🎉'}</div>
+            {purchaseType === 'credits' ? (
+                <>
+                    <div style={{ color: '#f97316', fontSize: '24px', fontWeight: 700 }}>Credits Added!</div>
+                    <div style={{ color: '#9ca3af', fontSize: '14px' }}>{creditsAdded > 0 ? `${creditsAdded} credits have been added to your account.` : 'Your credits have been topped up.'}</div>
+                </>
+            ) : (
+                <>
+                    <div style={{ color: '#4ade80', fontSize: '24px', fontWeight: 700 }}>You&apos;re now Pro!</div>
+                    <div style={{ color: '#9ca3af', fontSize: '14px' }}>All Pro features are now unlocked.</div>
+                </>
+            )}
+            <div style={{ color: '#6b7280', fontSize: '13px' }}>Redirecting you back to T4N...</div>
             {process.env.NODE_ENV === 'development' && (
                 <div style={{ color: '#666', fontSize: '12px', marginTop: '20px' }}>
                     Debug: {debugInfo}
