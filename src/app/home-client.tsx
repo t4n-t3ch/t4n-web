@@ -5241,7 +5241,11 @@ Project description: ${newProjectPrompt.trim()}`
                                                                                 if (!cleanFind) return;
 
                                                                                 // Build a synthetic ctrl+f block and run through the full fuzzy matcher
-                                                                                const synthetic = `Ctrl+F: ${cleanFind}\nReplace with:\n${cleanReplace}`;
+                                                                                // Multi-line find: first line goes on Ctrl+F: line, rest follow
+                                                                                const findLinesSplit = cleanFind.split('\n');
+                                                                                const syntheticFind = findLinesSplit[0];
+                                                                                const syntheticFindRest = findLinesSplit.slice(1).join('\n');
+                                                                                const synthetic = `Ctrl+F: ${syntheticFind}${syntheticFindRest ? '\n' + syntheticFindRest : ''}\nReplace with:\n${cleanReplace}`;
                                                                                 const { newCode, applied: count } = applyCtrlFToCode(synthetic, codeText);
                                                                                 if (count > 0) {
                                                                                     setCodeText(newCode);
