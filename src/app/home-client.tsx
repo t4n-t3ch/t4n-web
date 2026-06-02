@@ -1077,16 +1077,18 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
                         result = result.replace(findText, replaceText);
                         applied++;
                     } else {
-                        // Fuzzy: try trimmed matching
-                        const trimmedFind = findText.split('\n').map(l => l.trim()).join('\n');
+                        // Fuzzy: try trimmed + normalised whitespace matching
+                        const normalise = (s: string) => s.trim().replace(/\s+/g, ' ');
+                        const findTrimmedLines = findText.split('\n')
+                            .map(l => l.trim())
+                            .filter((l, i, arr) => !(l === '' && (i === 0 || i === arr.length - 1))); // strip leading/trailing blank lines
                         const resultLines = result.split('\n');
                         let matchStart = -1;
-                        const findTrimmedLines = trimmedFind.split('\n');
 
                         for (let r = 0; r <= resultLines.length - findTrimmedLines.length; r++) {
                             let match = true;
                             for (let f = 0; f < findTrimmedLines.length; f++) {
-                                if (resultLines[r + f].trim() !== findTrimmedLines[f].trim()) { match = false; break; }
+                                if (normalise(resultLines[r + f]) !== normalise(findTrimmedLines[f])) { match = false; break; }
                             }
                             if (match) { matchStart = r; break; }
                         }
