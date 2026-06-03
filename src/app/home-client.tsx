@@ -443,6 +443,9 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     const [monacoTheme, setMonacoTheme] = useState<'vs-dark' | 'light' | 'hc-black'>('vs-dark');
     const [openTabs, setOpenTabs] = useState<string[]>([]); // snippet ids open as tabs
     const [activeTab, setActiveTab] = useState<string | null>(null);
+    const [bgJobHistory, setBgJobHistory] = useState<{ jobId: string; projectName: string; projectGoal: string; domain: string; maxSteps: string; maxsteps?: string; startedAt: string; step?: string; status?: string; projectFolderName?: string }[]>([]);
+    const [bgJobHistoryLoading, setBgJobHistoryLoading] = useState(false);
+    const [bgJobHistoryOpen, setBgJobHistoryOpen] = useState(false);
     const monacoEditorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
     const monacoInstanceRef = useRef<typeof Monaco | null>(null);
 
@@ -1587,6 +1590,24 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         } catch {
             // ignore plugin list failures (non-critical)
         }
+    }
+
+    async function fetchBgJobHistory() {
+        if (bgJobHistoryLoading) return;
+        setBgJobHistoryLoading(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token ?? '';
+            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+            const res = await fetch(`${API_BASE}/api/bg-projects/history`, {
+                headers: { 'Authorization': `Bearer ${token}`, 'x-api-key': API_KEY },
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setBgJobHistory(data.jobs || []);
+            }
+        } catch { } finally { setBgJobHistoryLoading(false); }
     }
 
 
@@ -6068,6 +6089,56 @@ Project description: ${newProjectPrompt.trim()}`
                                 >
                                     👻 {userPlan !== 'pro' && <span style={{ fontSize: '8px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(249,115,22,0.2)', color: 'var(--accent)', fontWeight: 700 }}>PRO</span>}
                                 </button>
+
+                                {/* ── 🏗️ Job History button ── */}
+                                <button
+                                    type="button"
+                                    title="Background job history"
+                                    onClick={() => { setBgJobHistoryOpen(v => !v); if (!bgJobHistoryOpen) fetchBgJobHistory(); }}
+                                    style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '5px', border: '1px solid var(--border-default)', background: bgJobHistoryOpen ? 'rgba(249,115,22,0.1)' : 'var(--bg-elevated)', color: bgJobHistoryOpen ? 'var(--accent)' : 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
+                                >
+                                    🏗️ Jobs
+                                </button>
+
+                                {/* ── 🏗️ Job History Panel ── */}
+                                {bgJobHistoryOpen && (
+                                    <div style={{ position: 'absolute', bottom: '48px', right: '10px', width: '340px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '10px', zIndex: 200, boxShadow: '0 8px 32px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
+                                        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>🏗️ Background Jobs</span>
+                                            <button onClick={() => setBgJobHistoryOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '16px' }}>×</button>
+                                        </div>
+                                        <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                                            {bgJobHistoryLoading && <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>Loading...</div>}
+                                            {!bgJobHistoryLoading && bgJobHistory.length === 0 && <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>No background jobs yet</div>}
+                                            {bgJobHistory.map((job, i) => {
+                                                const step = parseInt(job.step || '0');
+                                                const maxSteps = parseInt(job.maxSteps || job.maxsteps || '1');
+                                                const pct = maxSteps > 0 ? Math.round((step / maxSteps) * 100) : 0;
+                                                const statusColor = job.status === 'done' ? '#4ade80' : job.status === 'error' ? '#f87171' : job.status?.startsWith('paused') ? '#fbbf24' : '#60a5fa';
+                                                const statusLabel = job.status === 'done' ? '✅ Done' : job.status === 'error' ? '❌ Error' : job.status?.startsWith('paused') ? '⏸ Paused' : job.status === 'running' ? '🔄 Running' : job.status || 'Unknown';
+                                                return (
+                                                    <div key={job.jobId || i} style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+                                                            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', flex: 1, marginRight: '8px' }}>{job.projectName || 'Unnamed Project'}</span>
+                                                            <span style={{ fontSize: '10px', color: statusColor, fontWeight: 600, whiteSpace: 'nowrap' }}>{statusLabel}</span>
+                                                        </div>
+                                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '6px' }}>{(job.projectGoal || '').slice(0, 60)}{(job.projectGoal || '').length > 60 ? '…' : ''}</div>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                            <div style={{ flex: 1, height: '4px', background: 'var(--bg-secondary)', borderRadius: '2px', overflow: 'hidden' }}>
+                                                                <div style={{ height: '100%', width: `${pct}%`, background: job.status === 'done' ? '#4ade80' : 'var(--accent)', borderRadius: '2px', transition: 'width 0.3s' }} />
+                                                            </div>
+                                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Step {step}/{maxSteps}</span>
+                                                        </div>
+                                                        {job.startedAt && <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '4px' }}>{new Date(parseInt(job.startedAt)).toLocaleString()}</div>}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        <div style={{ padding: '8px 14px', borderTop: '1px solid var(--border-subtle)' }}>
+                                            <button onClick={fetchBgJobHistory} style={{ fontSize: '11px', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>↻ Refresh</button>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* ── ⭐ Preset star button ── */}
                                 <button
