@@ -5229,8 +5229,13 @@ Project description: ${newProjectPrompt.trim()}`
                                                         i++;
                                                     }
 
-                                                    const findText = findLines.join('\n').trim();
-                                                    const replaceText = replaceLines.join('\n').trim();
+                                                    const findText = findLines.join('\n').trim().replace(/^[`'"]+|[`'"]+$/g, '').trim();
+                                                    const isProseReplLine = (l: string) => {
+                                                        const t = l.trim();
+                                                        return /^---+$/.test(t) || /^\*\*/.test(t) || /^\*\(/.test(t) || /^Better |^Then |^Also |^Note:|^This |^The /.test(t) || /^\d+\.\s+[A-Z]/.test(t);
+                                                    };
+                                                    const cleanedReplaceLines = replaceLines.filter(l => !isProseReplLine(l));
+                                                    const replaceText = cleanedReplaceLines.join('\n').trim().replace(/^[`'"]+|[`'"]+$/g, '').trim();
 
                                                     const blockId = segKey++;
                                                     segments.push(
