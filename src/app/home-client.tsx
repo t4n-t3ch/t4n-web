@@ -1123,16 +1123,34 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     }
 
     function highlightInCanvas(searchText: string) {
-        const ta = codeTextareaRef.current;
-        if (!ta || !searchText) return;
-        const idx = ta.value.indexOf(searchText);
-        if (idx === -1) return;
+        // Strip wrapping backticks/quotes that sometimes get included
+        const clean = searchText.replace(/^[`'"]+|[`'"]+$/g, '').trim();
+        if (!clean) return;
         setCodeOpen(true);
+        // Monaco path
+        if (monacoEditorRef.current) {
+            const model = monacoEditorRef.current.getModel();
+            if (model) {
+                const matches = model.findMatches(clean, true, false, false, null, false);
+                if (matches.length > 0) {
+                    const range = matches[0].range;
+                    monacoEditorRef.current.revealRangeInCenter(range);
+                    monacoEditorRef.current.setSelection(range);
+                    monacoEditorRef.current.focus();
+                    return;
+                }
+            }
+        }
+        // Textarea fallback
+        const ta = codeTextareaRef.current;
+        if (!ta) return;
+        const idx = ta.value.indexOf(clean);
+        if (idx === -1) return;
         requestAnimationFrame(() => {
             const el = codeTextareaRef.current;
             if (!el) return;
             el.focus();
-            el.setSelectionRange(idx, idx + searchText.length);
+            el.setSelectionRange(idx, idx + clean.length);
             const linesBefore = el.value.slice(0, idx).split('\n').length;
             const lineHeight = 20;
             el.scrollTop = Math.max(0, (linesBefore - 3) * lineHeight);
@@ -5248,7 +5266,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                                     </div>
                                                                 </div>
                                                                 {/* Issue 1: strip wrapping backticks from findText display */}
-                                                                <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{findText.replace(/^`|`$/g, '')}</pre>
+                                                                <pre style={{ margin: 0, padding: '8px 10px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{findText.replace(/^[`'"]+|[`'"]+$/g, '').trim()}</pre>
                                                             </div>
                                                             {/* REPLACE/ADD box */}
                                                             <div style={{ borderRadius: '0 0 6px 6px', overflow: 'hidden', border: '1px solid rgba(99,102,241,0.35)' }}>
@@ -5259,7 +5277,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                                         <button type="button"
                                                                             style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(99,102,241,0.5)', background: 'rgba(99,102,241,0.15)', color: '#a5b4fc', cursor: 'pointer' }}
                                                                             onClick={() => {
-                                                                                const cleanFind = findText.replace(/^`|`$/g, '').trim();
+                                                                                const cleanFind = findText.replace(/^[`'"]+|[`'"]+$/g, '').trim();
                                                                                 const cleanReplace = replaceText.trim();
                                                                                 if (!cleanFind) return;
 
