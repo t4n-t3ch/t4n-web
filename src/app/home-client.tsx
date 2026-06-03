@@ -5237,6 +5237,12 @@ Project description: ${newProjectPrompt.trim()}`
                                                     const cleanedReplaceLines = replaceLines.filter(l => !isProseReplLine(l));
                                                     const replaceText = cleanedReplaceLines.join('\n').trim().replace(/^[`'"]+|[`'"]+$/g, '').trim();
 
+                                                    const findLooksLikeProse = !findText || findText.split('\n').some(l => {
+                                                        const t = l.trim();
+                                                        return /^[A-Z][a-z].*\.$/.test(t) || /\*\*/.test(t) || /^---+$/.test(t) || /^Replace with/.test(t) || /^No error/.test(t);
+                                                    });
+                                                    if (findLooksLikeProse) { i++; continue; }
+
                                                     const blockId = segKey++;
                                                     segments.push(
                                                         <div key={blockId} style={{ margin: '10px 0' }}>
