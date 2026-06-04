@@ -1127,7 +1127,6 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         if (!clean) return;
         setCodeOpen(true);
         const doFind = () => {
-            // Monaco path
             if (monacoEditorRef.current) {
                 const model = monacoEditorRef.current.getModel();
                 if (model) {
@@ -1139,14 +1138,23 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
                         monacoEditorRef.current.focus();
                         return true;
                     }
+                    // Fuzzy: try first line only
+                    const firstLine = clean.split('\n')[0].trim();
+                    if (firstLine && firstLine !== clean) {
+                        const fuzzy = model.findMatches(firstLine, true, false, false, null, false);
+                        if (fuzzy.length > 0) {
+                            monacoEditorRef.current.revealRangeInCenter(fuzzy[0].range);
+                            monacoEditorRef.current.setSelection(fuzzy[0].range);
+                            monacoEditorRef.current.focus();
+                            return true;
+                        }
+                    }
                 }
             }
             return false;
         };
-        // Try immediately, then retry after Monaco has had time to mount
-        if (!doFind()) {
-            setTimeout(() => { if (!doFind()) setTimeout(doFind, 300); }, 100);
-        }
+        // Retry with increasing delays to allow Monaco to mount after setCodeOpen
+        setTimeout(() => { if (!doFind()) setTimeout(() => { if (!doFind()) setTimeout(doFind, 500); }, 200); }, 50);
     }
 
     function cancelStreamSilently() {
@@ -5336,9 +5344,15 @@ Project description: ${newProjectPrompt.trim()}`
                                                         </div>
                                                     );
                                                 } else {
-                                                    // Prose line — strip backtick fences, collect until next ctrl+f
+                                                    // Prose line — skip noise, render real prose
                                                     const proseLine = line.replace(/```[\w]*/g, '').replace(/^```$/, '').trim();
-                                                    if (proseLine) segments.push(<div key={segKey++} style={{ marginBottom: '4px', fontSize: '13px', color: 'var(--text-primary)' }}>{proseLine}</div>);
+                                                    const isNoiseLine = !proseLine
+                                                        || /^---+$/.test(proseLine)
+                                                        || /^replace with:/i.test(proseLine)
+                                                        || /^\|/.test(proseLine)
+                                                        || /^\*\*\d/.test(proseLine)
+                                                        || /^#{1,3} /.test(proseLine);
+                                                    if (!isNoiseLine) segments.push(<div key={segKey++} style={{ marginBottom: '4px', fontSize: '13px', color: 'var(--text-primary)' }}>{proseLine}</div>);
                                                     i++;
                                                 }
                                             }
