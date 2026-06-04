@@ -1125,20 +1125,34 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     function highlightInCanvas(searchText: string) {
         const clean = searchText.replace(/^[`'"]+|[`'"]+$/g, '').trim();
         if (!clean) return;
+        // First line used for Monaco findMatches; full text used for textarea indexOf
         const searchStr = clean.split('\n')[0].trim() || clean;
 
+        // Basic textarea path (Monaco off)
+        const doRevealTextarea = () => {
+            const el = codeTextareaRef.current;
+            if (!el) return false;
+            // Try full multi-line match first, then first-line fallback
+            const idx = el.value.indexOf(clean) !== -1 ? el.value.indexOf(clean) : el.value.indexOf(searchStr);
+            if (idx === -1) return false;
+            const matchLen = el.value.indexOf(clean) !== -1 ? clean.length : searchStr.length;
+            el.focus();
+            el.setSelectionRange(idx, idx + matchLen);
+            const linesBefore = el.value.slice(0, idx).split('\n').length;
+            el.scrollTop = Math.max(0, (linesBefore - 3) * 20);
+            return true;
+        };
+
+        // Monaco path
         const doReveal = () => {
+            if (!useMonaco) return doRevealTextarea();
             const editor = monacoEditorRef.current;
-            console.log('[GoTo] editor ref:', !!editor, 'searchStr:', JSON.stringify(searchStr));
-            if (!editor) { console.log('[GoTo] NO EDITOR REF'); return false; }
+            if (!editor) return false;
             const model = editor.getModel();
-            if (!model) { console.log('[GoTo] NO MODEL'); return false; }
+            if (!model) return false;
             const matches = model.findMatches(searchStr, false, false, false, null, false);
-            console.log('[GoTo] matches:', matches.length, 'modelLines:', model.getLineCount());
-            if (matches.length === 0) { console.log('[GoTo] ZERO MATCHES for', JSON.stringify(searchStr)); return false; }
+            if (matches.length === 0) return false;
             const range = matches[0].range;
-            // Use the exact pattern the diagnostics jump uses — proven to scroll correctly.
-            // No setScrollTop: its pixel math is wrong under wordWrap and overrides the reveal.
             editor.revealLineInCenter(range.startLineNumber);
             editor.setPosition({ lineNumber: range.startLineNumber, column: range.startColumn });
             editor.setSelection(range);
@@ -1147,10 +1161,10 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         };
 
         if (codeOpen) {
-            // Panel already open — reveal immediately
+            // Panel already open — reveal immediately, retry once if not ready yet
             if (!doReveal()) setTimeout(doReveal, 200);
         } else {
-            // Open panel first, then reveal after Monaco mounts
+            // Open panel first, then reveal after editor mounts
             setCodeOpen(true);
             setTimeout(() => {
                 if (!doReveal()) setTimeout(() => {
