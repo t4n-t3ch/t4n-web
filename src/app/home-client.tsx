@@ -1125,9 +1125,9 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     function highlightInCanvas(searchText: string) {
         const clean = searchText.replace(/^[`'"]+|[`'"]+$/g, '').trim();
         if (!clean) return;
-        setCodeOpen(true);
-        const searchStr = clean.split('\n')[0].trim() || clean; // always use first line for Monaco search
-        const doFind = () => {
+        const searchStr = clean.split('\n')[0].trim() || clean;
+
+        const doReveal = () => {
             const editor = monacoEditorRef.current;
             if (!editor) return false;
             const model = editor.getModel();
@@ -1141,8 +1141,19 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
             }
             return false;
         };
-        // Retry — setCodeOpen(true) triggers re-render, Monaco needs time to mount
-        if (!doFind()) setTimeout(() => { if (!doFind()) setTimeout(doFind, 400); }, 150);
+
+        if (codeOpen) {
+            // Panel already open — reveal immediately
+            if (!doReveal()) setTimeout(doReveal, 200);
+        } else {
+            // Open panel first, then reveal after Monaco mounts
+            setCodeOpen(true);
+            setTimeout(() => {
+                if (!doReveal()) setTimeout(() => {
+                    if (!doReveal()) setTimeout(doReveal, 500);
+                }, 300);
+            }, 300);
+        }
     }
 
     function cancelStreamSilently() {
@@ -5336,8 +5347,9 @@ Project description: ${newProjectPrompt.trim()}`
                                                     const proseLines: string[] = [];
                                                     while (i < lines.length && !/^ctrl\+f(\s*\(line\s*~?\d+\))?:/i.test(lines[i].trim())) {
                                                         const l = lines[i].replace(/```[\w]*/g, '').replace(/^```$/, '');
-                                                        // skip orphaned replace with: labels
-                                                        if (!/^replace with:$/i.test(l.trim())) proseLines.push(l);
+                                                        const lt = l.trim();
+                                                        const skipLine = /^replace with:/i.test(lt) || /^---+$/.test(lt) || /^\*\(delete/i.test(lt) || /^\*\(leave/i.test(lt) || /^\*\(remove/i.test(lt);
+                                                        if (!skipLine) proseLines.push(l);
                                                         i++;
                                                     }
                                                     const proseText = proseLines.join('\n').trim();
@@ -6042,7 +6054,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                 onMouseLeave={() => setProToolsDropdownOpen(false)}
                                             >
                                                 {([
-                                                    { label: '🔬 AI Code Review', prompt: `Perform a comprehensive code review. For every change you suggest, you MUST use exact Ctrl+F find-and-replace blocks with real code only — never prose in the replace block. Format:\nCtrl+F: <exact code to find>\nReplace with:\n<exact replacement code>\n\nReturn your analysis in this exact format:\n\n## 🔒 Security Issues\nList any security vulnerabilities, injection risks, or unsafe patterns. If none, say "None found."\n\n## ⚡ Performance Problems\nList any performance issues, unnecessary loops, memory leaks. If none, say "None found."\n\n## ❌ Bad Patterns\nList anti-patterns, code smells, poor naming. If none, say "None found."\n\n## ✅ Better Approaches\nSuggest concrete improvements with Ctrl+F format where applicable.\n\nBe specific with line references.` },
+                                                    { label: '🔬 AI Code Review', prompt: `Review this code for bugs and improvements. For each issue output:\n<short title>\nCtrl+F: <exact verbatim code from the file>\nReplace with:\n<exact replacement code only — no prose, no instructions, blank to delete>\n\nRULES: FIND must be copied verbatim from the file. REPLACE must be code only. Never put instructions or prose in REPLACE. No dashes or separators between blocks.\n\nAfter all fixes output:\n## 📊 Code Quality Score\n<X>/10 — <one line reason>` },
                                                     { label: '🐛 Debug Mode', prompt: `Debug this code thoroughly. Return your analysis in this exact format:\n\n## 🔴 Error Identified\nDescribe the most likely bug or error.\n\n## 🔍 Possible Causes\n1. First possible root cause\n2. Second possible root cause\n3. Third possible root cause\n\n## 🛠 Fix\nOutput ONLY a Ctrl+F block — no prose:\nCtrl+F: <exact code that contains the bug>\nReplace with:\n<exact corrected code>\n\nRULES: FIND must be verbatim code from the file. REPLACE must be real corrected code only. Never put instructions or prose inside a Ctrl+F block.` },
                                                     { label: '🧪 Generate Tests', prompt: `Generate comprehensive unit tests for this code. Include happy path, edge cases, and error handling. Use the correct framework (Jest/Vitest for TS/JS, pytest for Python, NUnit for C#). Output the full test file, ready to run.` },
                                                     { label: '🏗️ Project Analysis', prompt: `Analyse this entire codebase/file and return:\n\n## 📐 Architecture Overview\nDescribe structure and patterns.\n\n## 🚨 Issues Found\n- Duplicated functions\n- Circular dependencies\n- Missing error handling\n- Performance bottlenecks\n\n## 🔧 Suggested Improvements\nPrioritised list with Ctrl+F format fixes. CRITICAL: The Ctrl+F FIND text must be copied EXACTLY character-for-character from the provided code — do not paraphrase, summarise, or approximate. Copy the literal exact line(s) as they appear.\n\n## 📊 Code Quality Score\nScore out of 10 with justification.` },
