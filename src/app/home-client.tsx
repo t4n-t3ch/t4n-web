@@ -5224,16 +5224,23 @@ Project description: ${newProjectPrompt.trim()}`
                                                     const findText = findLines.join('\n').trim().replace(/^[`'"]+|[`'"]+$/g, '').trim();
                                                     const isProseReplLine = (l: string) => {
                                                         const t = l.trim();
-                                                        return /^---+$/.test(t) || /^\*\*/.test(t) || /^\*\(/.test(t) || /^#{1,3} /.test(t) || /^Replace with/i.test(t) || /^And (define|move|extract)/i.test(t) || /^Better |^Then |^Also |^Note:|^This |^The /.test(t) || /^\d+\.\s+[A-Z]/.test(t);
+                                                        if (!t) return false;
+                                                        if (/^---+$/.test(t)) return true;
+                                                        if (/^\*\*/.test(t) || /^\*\(/.test(t)) return true;
+                                                        if (/^#{1,3} /.test(t)) return true;
+                                                        if (/^\|/.test(t)) return true; // table rows
+                                                        if (/^- \*\*/.test(t)) return true; // bullet+bold
+                                                        if (/^(Replace with|Add |Export |Extract |Move |Remove |Update |Consider |Use |Wrap |Change |Convert |Import )/i.test(t) && /[.`]$/.test(t)) return true; // instruction sentences
+                                                        if (/^(Better|Then|Also|Note:|This |The |No |And )/i.test(t)) return true;
+                                                        if (/^\d+\.\s+[A-Z]/.test(t)) return true;
+                                                        return false;
                                                     };
                                                     const cleanedReplaceLines = replaceLines.filter(l => !isProseReplLine(l));
                                                     const replaceText = cleanedReplaceLines.join('\n').trim().replace(/^[`'"]+|[`'"]+$/g, '').trim();
 
-                                                    const findLooksLikeProse = !findText || findText.split('\n').some(l => {
-                                                        const t = l.trim();
-                                                        return /^[A-Z][a-z].*\.$/.test(t) || /\*\*/.test(t) || /^---+$/.test(t) || /^Replace with/.test(t) || /^No error/.test(t);
-                                                    });
-                                                    if (findLooksLikeProse) { i++; continue; }
+                                                    // Skip block if findText is clearly prose (not code)
+                                                    const findIsProse = !findText || /\*\*/.test(findText) || /^---+$/m.test(findText) || /^#{1,3} /m.test(findText) || /^Replace with/im.test(findText);
+                                                    if (findIsProse) { i++; continue; }
 
                                                     const blockId = segKey++;
                                                     segments.push(
