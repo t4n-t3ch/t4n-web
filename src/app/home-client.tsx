@@ -1134,9 +1134,16 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
             if (!model) return false;
             const matches = model.findMatches(searchStr, true, false, false, null, false);
             if (matches.length > 0) {
-                editor.revealRangeInCenter(matches[0].range);
-                editor.setSelection(matches[0].range);
+                // Close find widget first — it can intercept scroll
+                editor.trigger('', 'closeFindWidget', null);
+                const range = matches[0].range;
+                editor.revealRangeInCenter(range);
+                editor.setSelection(range);
                 editor.focus();
+                // Second reveal after focus settles
+                requestAnimationFrame(() => {
+                    editor.revealRangeInCenter(range);
+                });
                 return true;
             }
             return false;
