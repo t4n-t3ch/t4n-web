@@ -1132,7 +1132,7 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
             if (!editor) return false;
             const model = editor.getModel();
             if (!model) return false;
-            const matches = model.findMatches(searchStr, true, false, false, null, false);
+            const matches = model.findMatches(searchStr, false, false, false, null, false);
             if (matches.length === 0) return false;
             const range = matches[0].range;
             const lineNumber = range.startLineNumber;
@@ -6445,7 +6445,22 @@ Project description: ${newProjectPrompt.trim()}`
 
                             <div className="p-3 overflow-y-auto pb-8" style={{ position: 'relative' }}>
                                 {useMonaco ? (
-                                    <div style={{ height: '55vh', border: '1px solid var(--border-default)', borderRadius: '6px', overflow: 'hidden' }}>
+                                    <div style={{ height: '55vh', border: '1px solid var(--border-default)', borderRadius: '6px', overflow: 'hidden', position: 'relative' }}>
+                                        {/* Next match button — sits next to Monaco's "N matches ×" in the find bar area */}
+                                        <div style={{ position: 'absolute', top: '4px', right: '90px', zIndex: 100, display: 'flex', gap: '2px' }}>
+                                            <button
+                                                type="button"
+                                                onClick={() => { monacoEditorRef.current?.trigger('', 'editor.action.previousMatchFindAction', null); }}
+                                                style={{ fontSize: '10px', padding: '2px 6px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.4)', color: 'var(--accent)', borderRadius: '3px', cursor: 'pointer', lineHeight: 1 }}
+                                                title="Previous match"
+                                            >◀</button>
+                                            <button
+                                                type="button"
+                                                onClick={() => { monacoEditorRef.current?.trigger('', 'editor.action.nextMatchFindAction', null); }}
+                                                style={{ fontSize: '10px', padding: '2px 6px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.4)', color: 'var(--accent)', borderRadius: '3px', cursor: 'pointer', lineHeight: 1 }}
+                                                title="Next match"
+                                            >▶</button>
+                                        </div>
                                         <MonacoEditor
                                             height="100%"
                                             language={
