@@ -1129,21 +1129,22 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
 
         const doReveal = () => {
             const editor = monacoEditorRef.current;
-            if (!editor) return false;
+            console.log('[GoTo] editor ref:', !!editor, 'searchStr:', JSON.stringify(searchStr));
+            if (!editor) { console.log('[GoTo] NO EDITOR REF'); return false; }
             const model = editor.getModel();
-            if (!model) return false;
+            if (!model) { console.log('[GoTo] NO MODEL'); return false; }
             const matches = model.findMatches(searchStr, false, false, false, null, false);
-            if (matches.length === 0) return false;
+            console.log('[GoTo] matches:', matches.length, 'modelLines:', model.getLineCount());
+            if (matches.length === 0) { console.log('[GoTo] ZERO MATCHES for', JSON.stringify(searchStr)); return false; }
             const range = matches[0].range;
-            const lineNumber = range.startLineNumber;
-            // setScrollTop bypasses Monaco's scroll API — guaranteed to scroll
-            const lineHeight = 19;
-            const editorHeight = editor.getLayoutInfo().height;
-            const viewportLines = Math.floor(editorHeight / lineHeight);
-            const targetScrollTop = Math.max(0, (lineNumber - Math.floor(viewportLines / 2)) * lineHeight);
-            editor.setScrollTop(targetScrollTop);
+            console.log('[GoTo] revealing line', range.startLineNumber);
             editor.setSelection(range);
+            editor.revealRangeInCenter(range, 1);
+            editor.revealLineInCenter(range.startLineNumber, 1);
+            const lh = 19;
+            editor.setScrollTop(Math.max(0, (range.startLineNumber - 8) * lh));
             editor.focus();
+            console.log('[GoTo] scrollTop now:', editor.getScrollTop(), 'lineHeight:', lh);
             return true;
         };
 
