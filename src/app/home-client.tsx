@@ -1133,16 +1133,18 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
             const model = editor.getModel();
             if (!model) return false;
             const matches = model.findMatches(searchStr, true, false, false, null, false);
-            if (matches.length > 0) {
-                const range = matches[0].range;
-                // Use Immediate (1) not Smooth (0) — smooth can be cancelled
-                editor.setPosition({ lineNumber: range.startLineNumber, column: range.startColumn });
-                editor.revealLineInCenter(range.startLineNumber, 1);
-                editor.setSelection(range);
-                editor.focus();
-                return true;
-            }
-            return false;
+            if (matches.length === 0) return false;
+            const range = matches[0].range;
+            const lineNumber = range.startLineNumber;
+            // setScrollTop bypasses Monaco's scroll API — guaranteed to scroll
+            const lineHeight = 19;
+            const editorHeight = editor.getLayoutInfo().height;
+            const viewportLines = Math.floor(editorHeight / lineHeight);
+            const targetScrollTop = Math.max(0, (lineNumber - Math.floor(viewportLines / 2)) * lineHeight);
+            editor.setScrollTop(targetScrollTop);
+            editor.setSelection(range);
+            editor.focus();
+            return true;
         };
 
         if (codeOpen) {
