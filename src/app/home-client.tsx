@@ -1126,35 +1126,23 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         const clean = searchText.replace(/^[`'"]+|[`'"]+$/g, '').trim();
         if (!clean) return;
         setCodeOpen(true);
+        const searchStr = clean.split('\n')[0].trim() || clean; // always use first line for Monaco search
         const doFind = () => {
-            if (monacoEditorRef.current) {
-                const model = monacoEditorRef.current.getModel();
-                if (model) {
-                    const matches = model.findMatches(clean, true, false, false, null, false);
-                    if (matches.length > 0) {
-                        const range = matches[0].range;
-                        monacoEditorRef.current.revealRangeInCenter(range);
-                        monacoEditorRef.current.setSelection(range);
-                        monacoEditorRef.current.focus();
-                        return true;
-                    }
-                    // Fuzzy: try first line only
-                    const firstLine = clean.split('\n')[0].trim();
-                    if (firstLine && firstLine !== clean) {
-                        const fuzzy = model.findMatches(firstLine, true, false, false, null, false);
-                        if (fuzzy.length > 0) {
-                            monacoEditorRef.current.revealRangeInCenter(fuzzy[0].range);
-                            monacoEditorRef.current.setSelection(fuzzy[0].range);
-                            monacoEditorRef.current.focus();
-                            return true;
-                        }
-                    }
-                }
+            const editor = monacoEditorRef.current;
+            if (!editor) return false;
+            const model = editor.getModel();
+            if (!model) return false;
+            const matches = model.findMatches(searchStr, true, false, false, null, false);
+            if (matches.length > 0) {
+                editor.revealRangeInCenter(matches[0].range);
+                editor.setSelection(matches[0].range);
+                editor.focus();
+                return true;
             }
             return false;
         };
-        // Retry with increasing delays to allow Monaco to mount after setCodeOpen
-        setTimeout(() => { if (!doFind()) setTimeout(() => { if (!doFind()) setTimeout(doFind, 500); }, 200); }, 50);
+        // Retry — setCodeOpen(true) triggers re-render, Monaco needs time to mount
+        if (!doFind()) setTimeout(() => { if (!doFind()) setTimeout(doFind, 400); }, 150);
     }
 
     function cancelStreamSilently() {
@@ -5344,16 +5332,16 @@ Project description: ${newProjectPrompt.trim()}`
                                                         </div>
                                                     );
                                                 } else {
-                                                    // Prose line — skip noise, render real prose
-                                                    const proseLine = line.replace(/```[\w]*/g, '').replace(/^```$/, '').trim();
-                                                    const isNoiseLine = !proseLine
-                                                        || /^---+$/.test(proseLine)
-                                                        || /^replace with:/i.test(proseLine)
-                                                        || /^\|/.test(proseLine)
-                                                        || /^\*\*\d/.test(proseLine)
-                                                        || /^#{1,3} /.test(proseLine);
-                                                    if (!isNoiseLine) segments.push(<div key={segKey++} style={{ marginBottom: '4px', fontSize: '13px', color: 'var(--text-primary)' }}>{proseLine}</div>);
-                                                    i++;
+                                                    // Accumulate prose lines and render as markdown block
+                                                    const proseLines: string[] = [];
+                                                    while (i < lines.length && !/^ctrl\+f(\s*\(line\s*~?\d+\))?:/i.test(lines[i].trim())) {
+                                                        const l = lines[i].replace(/```[\w]*/g, '').replace(/^```$/, '');
+                                                        // skip orphaned replace with: labels
+                                                        if (!/^replace with:$/i.test(l.trim())) proseLines.push(l);
+                                                        i++;
+                                                    }
+                                                    const proseText = proseLines.join('\n').trim();
+                                                    if (proseText) segments.push(<div key={segKey++} style={{ fontSize: '13px', color: 'var(--text-primary)', marginBottom: '8px' }}>{renderMarkdown(proseText)}</div>);
                                                 }
                                             }
 
@@ -5575,6 +5563,18 @@ Project description: ${newProjectPrompt.trim()}`
                                         title="Copy code to clipboard"
                                     >
                                         Copy
+                                    </button>
+
+                                    {/* Find in editor button */}
+                                    <button
+                                        type="button"
+                                        className="btn-secondary"
+                                        style={{ padding: '4px 10px', fontSize: '12px' }}
+                                        onClick={() => { monacoEditorRef.current?.getAction('actions.find')?.run(); monacoEditorRef.current?.focus(); }}
+                                        title="Find in editor (Ctrl+F)"
+                                        disabled={!codeText.trim()}
+                                    >
+                                        🔍 Find
                                     </button>
 
                                     {/* Domain / Language Selector */}
