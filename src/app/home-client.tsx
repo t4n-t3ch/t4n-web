@@ -1125,34 +1125,20 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     function highlightInCanvas(searchText: string) {
         const clean = searchText.replace(/^[`'"]+|[`'"]+$/g, '').trim();
         if (!clean) return;
-        // First line used for Monaco findMatches; full text used for textarea indexOf
         const searchStr = clean.split('\n')[0].trim() || clean;
 
-        // Basic textarea path (Monaco off)
-        const doRevealTextarea = () => {
-            const el = codeTextareaRef.current;
-            if (!el) return false;
-            // Try full multi-line match first, then first-line fallback
-            const idx = el.value.indexOf(clean) !== -1 ? el.value.indexOf(clean) : el.value.indexOf(searchStr);
-            if (idx === -1) return false;
-            const matchLen = el.value.indexOf(clean) !== -1 ? clean.length : searchStr.length;
-            el.focus();
-            el.setSelectionRange(idx, idx + matchLen);
-            const linesBefore = el.value.slice(0, idx).split('\n').length;
-            el.scrollTop = Math.max(0, (linesBefore - 3) * 20);
-            return true;
-        };
-
-        // Monaco path
         const doReveal = () => {
-            if (!useMonaco) return doRevealTextarea();
             const editor = monacoEditorRef.current;
-            if (!editor) return false;
+            console.log('[GoTo] editor ref:', !!editor, 'searchStr:', JSON.stringify(searchStr));
+            if (!editor) { console.log('[GoTo] NO EDITOR REF'); return false; }
             const model = editor.getModel();
-            if (!model) return false;
+            if (!model) { console.log('[GoTo] NO MODEL'); return false; }
             const matches = model.findMatches(searchStr, false, false, false, null, false);
-            if (matches.length === 0) return false;
+            console.log('[GoTo] matches:', matches.length, 'modelLines:', model.getLineCount());
+            if (matches.length === 0) { console.log('[GoTo] ZERO MATCHES for', JSON.stringify(searchStr)); return false; }
             const range = matches[0].range;
+            // Use the exact pattern the diagnostics jump uses — proven to scroll correctly.
+            // No setScrollTop: its pixel math is wrong under wordWrap and overrides the reveal.
             editor.revealLineInCenter(range.startLineNumber);
             editor.setPosition({ lineNumber: range.startLineNumber, column: range.startColumn });
             editor.setSelection(range);
@@ -1161,10 +1147,10 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         };
 
         if (codeOpen) {
-            // Panel already open — reveal immediately, retry once if not ready yet
+            // Panel already open — reveal immediately
             if (!doReveal()) setTimeout(doReveal, 200);
         } else {
-            // Open panel first, then reveal after editor mounts
+            // Open panel first, then reveal after Monaco mounts
             setCodeOpen(true);
             setTimeout(() => {
                 if (!doReveal()) setTimeout(() => {
@@ -6469,6 +6455,19 @@ Project description: ${newProjectPrompt.trim()}`
                                             >🔍</button>
                                             <button
                                                 type="button"
+                                                onClick={() => {
+                                                    const editor = monacoEditorRef.current;
+                                                    if (!editor) return;
+                                                    editor.trigger('', 'editor.action.nextMatchFindAction', null);
+                                                    const pos = editor.getPosition();
+                                                    if (pos) editor.revealLineInCenter(pos.lineNumber);
+                                                    editor.focus();
+                                                }}
+                                                style={{ fontSize: '10px', padding: '2px 8px', background: 'rgba(249,115,22,0.25)', border: '1px solid rgba(249,115,22,0.5)', color: 'var(--accent)', borderRadius: '3px', cursor: 'pointer', lineHeight: 1, fontWeight: 600 }}
+                                                title="Go to match in editor"
+                                            >↗ Go to</button>
+                                            <button
+                                                type="button"
                                                 onClick={() => { monacoEditorRef.current?.trigger('', 'editor.action.previousMatchFindAction', null); }}
                                                 style={{ fontSize: '10px', padding: '2px 6px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.4)', color: 'var(--accent)', borderRadius: '3px', cursor: 'pointer', lineHeight: 1 }}
                                                 title="Previous match"
@@ -6577,6 +6576,22 @@ Project description: ${newProjectPrompt.trim()}`
                                                     }}
                                                     style={{ flex: 1, fontSize: '12px', background: 'var(--bg-primary)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '3px 8px', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }} />
                                                 <span style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{codeSearchVal ? (codeText.match(new RegExp(codeSearchVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) ?? []).length : 0} matches</span>
+                                                <button type="button"
+                                                    onClick={() => {
+                                                        if (!codeSearchVal || !codeTextareaRef.current) return;
+                                                        const el = codeTextareaRef.current;
+                                                        const from = el.selectionEnd ?? 0;
+                                                        const idx = codeText.indexOf(codeSearchVal, from + 1);
+                                                        const start = idx === -1 ? codeText.indexOf(codeSearchVal) : idx;
+                                                        if (start !== -1) {
+                                                            el.focus();
+                                                            el.setSelectionRange(start, start + codeSearchVal.length);
+                                                            const line = codeText.slice(0, start).split('\n').length;
+                                                            el.scrollTop = Math.max(0, (line - 3) * 20);
+                                                        }
+                                                    }}
+                                                    style={{ fontSize: '10px', padding: '2px 8px', background: 'rgba(249,115,22,0.2)', border: '1px solid rgba(249,115,22,0.4)', color: 'var(--accent)', borderRadius: '3px', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                                    title="Go to next match">↗ Go to</button>
                                                 <button type="button" onClick={() => { setCodeSearchOpen(false); setCodeSearchVal(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '12px' }}>✕</button>
                                             </div>
                                         )}
