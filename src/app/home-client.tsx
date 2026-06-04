@@ -1134,16 +1134,12 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
             if (!model) return false;
             const matches = model.findMatches(searchStr, true, false, false, null, false);
             if (matches.length > 0) {
-                // Close find widget first — it can intercept scroll
-                editor.trigger('', 'closeFindWidget', null);
                 const range = matches[0].range;
-                editor.revealRangeInCenter(range);
+                // Use Immediate (1) not Smooth (0) — smooth can be cancelled
+                editor.setPosition({ lineNumber: range.startLineNumber, column: range.startColumn });
+                editor.revealLineInCenter(range.startLineNumber, 1);
                 editor.setSelection(range);
                 editor.focus();
-                // Second reveal after focus settles
-                requestAnimationFrame(() => {
-                    editor.revealRangeInCenter(range);
-                });
                 return true;
             }
             return false;
@@ -5595,6 +5591,22 @@ Project description: ${newProjectPrompt.trim()}`
                                     >
                                         🔍 Find
                                     </button>
+                                    <button
+                                        type="button"
+                                        className="btn-secondary"
+                                        style={{ padding: '4px 8px', fontSize: '12px' }}
+                                        onClick={() => { monacoEditorRef.current?.trigger('', 'editor.action.previousMatchFindAction', null); monacoEditorRef.current?.focus(); }}
+                                        title="Previous match"
+                                        disabled={!codeText.trim()}
+                                    >◀</button>
+                                    <button
+                                        type="button"
+                                        className="btn-secondary"
+                                        style={{ padding: '4px 8px', fontSize: '12px' }}
+                                        onClick={() => { monacoEditorRef.current?.trigger('', 'editor.action.nextMatchFindAction', null); monacoEditorRef.current?.focus(); }}
+                                        title="Next match"
+                                        disabled={!codeText.trim()}
+                                    >▶</button>
 
                                     {/* Domain / Language Selector */}
                                     {/* Export dropdown */}
