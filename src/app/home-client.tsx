@@ -1123,38 +1123,30 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     }
 
     function highlightInCanvas(searchText: string) {
-        // Strip wrapping backticks/quotes that sometimes get included
         const clean = searchText.replace(/^[`'"]+|[`'"]+$/g, '').trim();
         if (!clean) return;
         setCodeOpen(true);
-        // Monaco path
-        if (monacoEditorRef.current) {
-            const model = monacoEditorRef.current.getModel();
-            if (model) {
-                const matches = model.findMatches(clean, true, false, false, null, false);
-                if (matches.length > 0) {
-                    const range = matches[0].range;
-                    monacoEditorRef.current.revealRangeInCenter(range);
-                    monacoEditorRef.current.setSelection(range);
-                    monacoEditorRef.current.focus();
-                    return;
+        const doFind = () => {
+            // Monaco path
+            if (monacoEditorRef.current) {
+                const model = monacoEditorRef.current.getModel();
+                if (model) {
+                    const matches = model.findMatches(clean, true, false, false, null, false);
+                    if (matches.length > 0) {
+                        const range = matches[0].range;
+                        monacoEditorRef.current.revealRangeInCenter(range);
+                        monacoEditorRef.current.setSelection(range);
+                        monacoEditorRef.current.focus();
+                        return true;
+                    }
                 }
             }
+            return false;
+        };
+        // Try immediately, then retry after Monaco has had time to mount
+        if (!doFind()) {
+            setTimeout(() => { if (!doFind()) setTimeout(doFind, 300); }, 100);
         }
-        // Textarea fallback
-        const ta = codeTextareaRef.current;
-        if (!ta) return;
-        const idx = ta.value.indexOf(clean);
-        if (idx === -1) return;
-        requestAnimationFrame(() => {
-            const el = codeTextareaRef.current;
-            if (!el) return;
-            el.focus();
-            el.setSelectionRange(idx, idx + clean.length);
-            const linesBefore = el.value.slice(0, idx).split('\n').length;
-            const lineHeight = 20;
-            el.scrollTop = Math.max(0, (linesBefore - 3) * lineHeight);
-        });
     }
 
     function cancelStreamSilently() {
@@ -5232,7 +5224,7 @@ Project description: ${newProjectPrompt.trim()}`
                                                     const findText = findLines.join('\n').trim().replace(/^[`'"]+|[`'"]+$/g, '').trim();
                                                     const isProseReplLine = (l: string) => {
                                                         const t = l.trim();
-                                                        return /^---+$/.test(t) || /^\*\*/.test(t) || /^\*\(/.test(t) || /^Better |^Then |^Also |^Note:|^This |^The /.test(t) || /^\d+\.\s+[A-Z]/.test(t);
+                                                        return /^---+$/.test(t) || /^\*\*/.test(t) || /^\*\(/.test(t) || /^#{1,3} /.test(t) || /^Replace with/i.test(t) || /^And (define|move|extract)/i.test(t) || /^Better |^Then |^Also |^Note:|^This |^The /.test(t) || /^\d+\.\s+[A-Z]/.test(t);
                                                     };
                                                     const cleanedReplaceLines = replaceLines.filter(l => !isProseReplLine(l));
                                                     const replaceText = cleanedReplaceLines.join('\n').trim().replace(/^[`'"]+|[`'"]+$/g, '').trim();
