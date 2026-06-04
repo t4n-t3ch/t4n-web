@@ -1137,14 +1137,12 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
             console.log('[GoTo] matches:', matches.length, 'modelLines:', model.getLineCount());
             if (matches.length === 0) { console.log('[GoTo] ZERO MATCHES for', JSON.stringify(searchStr)); return false; }
             const range = matches[0].range;
-            console.log('[GoTo] revealing line', range.startLineNumber);
+            // Use the exact pattern the diagnostics jump uses — proven to scroll correctly.
+            // No setScrollTop: its pixel math is wrong under wordWrap and overrides the reveal.
+            editor.revealLineInCenter(range.startLineNumber);
+            editor.setPosition({ lineNumber: range.startLineNumber, column: range.startColumn });
             editor.setSelection(range);
-            editor.revealRangeInCenter(range, 1);
-            editor.revealLineInCenter(range.startLineNumber, 1);
-            const lh = 19;
-            editor.setScrollTop(Math.max(0, (range.startLineNumber - 8) * lh));
             editor.focus();
-            console.log('[GoTo] scrollTop now:', editor.getScrollTop(), 'lineHeight:', lh);
             return true;
         };
 
@@ -6449,6 +6447,12 @@ Project description: ${newProjectPrompt.trim()}`
                                     <div style={{ height: '55vh', border: '1px solid var(--border-default)', borderRadius: '6px', overflow: 'hidden', position: 'relative' }}>
                                         {/* Next match button — sits next to Monaco's "N matches ×" in the find bar area */}
                                         <div style={{ position: 'absolute', top: '4px', right: '90px', zIndex: 100, display: 'flex', gap: '2px' }}>
+                                            <button
+                                                type="button"
+                                                onClick={() => { monacoEditorRef.current?.getAction('actions.find')?.run(); monacoEditorRef.current?.focus(); }}
+                                                style={{ fontSize: '10px', padding: '2px 6px', background: 'rgba(249,115,22,0.25)', border: '1px solid rgba(249,115,22,0.5)', color: 'var(--accent)', borderRadius: '3px', cursor: 'pointer', lineHeight: 1, fontWeight: 700 }}
+                                                title="Find in code (Ctrl+F)"
+                                            >🔍</button>
                                             <button
                                                 type="button"
                                                 onClick={() => { monacoEditorRef.current?.trigger('', 'editor.action.previousMatchFindAction', null); }}
