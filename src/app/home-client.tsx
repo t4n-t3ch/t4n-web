@@ -177,24 +177,6 @@ export default function HomeClient() {
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
 
-    // Prompt queue
-    type QueuedPrompt = { id: string; text: string };
-    const [promptQueue, setPromptQueue] = useState<QueuedPrompt[]>([]);
-    const [queuePanelOpen, setQueuePanelOpen] = useState(false);
-    const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
-    const [editingQueueText, setEditingQueueText] = useState('');
-    const dragQueueIdRef = useRef<string | null>(null);
-
-    // Rate limit pause/resume
-    const [rateLimitCountdown, setRateLimitCountdown] = useState<number | null>(null);
-    const rateLimitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const pendingRateLimitRetryRef = useRef<(() => void) | null>(null);
-
-    // Per-tab access mode: 'edit' | 'read' | 'off'
-    // edit = AI reads + can write back, read = AI sees as context only, off = excluded
-    type TabAccessMode = 'edit' | 'read' | 'off';
-    const [tabAccessModes, setTabAccessModes] = useState<Record<string, TabAccessMode>>({});
-
     // =========================
     // Image attachments (screenshots) + OCR
     // =========================
@@ -446,6 +428,11 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     const [giveAiAccessToCode, setGiveAiAccessToCode] = useState(false);
     const [, setAccessLockedSnippetId] = useState<string | null>(null);
     const [accessLockedCode, setAccessLockedCode] = useState<string>("");
+
+    // Per-tab access mode: 'edit' | 'read' | 'off'
+    type TabAccessMode = 'edit' | 'read' | 'off';
+    const [tabAccessModes, setTabAccessModes] = useState<Record<string, TabAccessMode>>({});
+    const [accessDropdownOpen, setAccessDropdownOpen] = useState(false);
     const [loadingSnippets, setLoadingSnippets] = useState(false);
     const [snippetVersions, setSnippetVersions] = useState<SnippetVersion[]>([]);
     const [showVersions, setShowVersions] = useState(false);
@@ -1186,25 +1173,6 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         activeAssistantIdRef.current = null;
     }
 
-    function startRateLimitCountdown(seconds: number, onExpire: () => void) {
-        if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current);
-        setRateLimitCountdown(seconds);
-        pendingRateLimitRetryRef.current = onExpire;
-        rateLimitTimerRef.current = setInterval(() => {
-            setRateLimitCountdown(prev => {
-                if (prev === null || prev <= 1) {
-                    clearInterval(rateLimitTimerRef.current!);
-                    rateLimitTimerRef.current = null;
-                    const retry = pendingRateLimitRetryRef.current;
-                    pendingRateLimitRetryRef.current = null;
-                    if (retry) setTimeout(retry, 0);
-                    return null;
-                }
-                return prev - 1;
-            });
-        }, 1000);
-    }
-
 
     function stopStreaming() {
         stoppedByUserRef.current = true;
@@ -1933,14 +1901,6 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
                     if (event === "delta" && data?.delta) onDelta(String(data.delta));
                     if (event === "done") onDone((data || {}) as StreamDone);
 
-                    if (event === "rate_limit") {
-                        const retryAfter = Number(data?.retryAfter ?? 30);
-                        const e = new Error("rate_limit") as Error & { isRateLimit?: boolean; retryAfter?: number };
-                        e.isRateLimit = true;
-                        e.retryAfter = retryAfter;
-                        throw e;
-                    }
-
                     if (event === "ping") continue;
 
                     if (event === "error") {
@@ -2054,17 +2014,50 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
             // 2. User has given access AND wants to edit
             wantsCodeRef.current = promptLooksLikeCodeRequest(payload.text) || (hasExistingCode && wantsEdit) || (giveAiAccessToCode && !!codeText.trim());
 
-            // Use the locked snapshot when access was granted — not live codeText
-            // This prevents browsing other snippets from changing what gets sent
-            const codeForContext = (giveAiAccessToCode && accessLockedCode)
-                ? accessLockedCode
-                : codeText;
-            const trimmedForPrompt = codeForContext.slice(0, 120000);
-            const codeContext =
-                giveAiAccessToCode && codeForContext.trim()
-                    ? `\n\nEXISTING CODE (you MUST either give Ctrl+F find-and-replace instructions OR output the FULL corrected file — NEVER output a partial truncated file):\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
-                    : "";
+            // Build multi-file context from all open tabs with their access modes
+            const buildMultiFileContext = (): string => {
+                if (!giveAiAccessToCode) return "";
+                const parts: string[] = [];
+                const isEditRequest = looksLikeEditRequest(payload.text);
 
+                // Active file
+                if (activeCodeId) {
+                    const activeMode: TabAccessMode = tabAccessModes[activeCodeId] ?? 'edit';
+                    if (activeMode !== 'off') {
+                        const activeName = savedCodes.find(s => s.id === activeCodeId)?.name ?? 'active file';
+                        const codeForContext = accessLockedCode || codeText;
+                        const label = activeMode === 'edit'
+                            ? (isEditRequest
+                                ? `EDIT THIS FILE — return the COMPLETE file with changes applied. Do NOT truncate:`
+                                : `ACTIVE FILE (output full file OR Ctrl+F blocks — NEVER partial):`)
+                            : `REFERENCE ONLY — do not edit:`;
+                        parts.push(`\n\n[${activeName}] ${label}\n\`\`\`\n${codeForContext.slice(0, 120000)}\n\`\`\``);
+                    }
+                } else if (codeText.trim()) {
+                    // No active tab but code exists — send as edit target
+                    const label = isEditRequest
+                        ? `EDIT THIS FILE — return the COMPLETE file with changes applied:`
+                        : `EXISTING CODE (output full file OR Ctrl+F blocks — NEVER partial):`;
+                    parts.push(`\n\n${label}\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\``);
+                }
+
+                // Other open tabs
+                openTabs.forEach(tid => {
+                    if (tid === activeCodeId) return;
+                    const mode: TabAccessMode = tabAccessModes[tid] ?? 'read';
+                    if (mode === 'off') return;
+                    const snippet = savedCodes.find(s => s.id === tid);
+                    if (!snippet) return;
+                    const label = mode === 'edit'
+                        ? `ALSO EDITABLE — apply changes here too if relevant:`
+                        : `REFERENCE ONLY — do not edit:`;
+                    parts.push(`\n\n[${snippet.name}] ${label}\n\`\`\`\n${snippet.code.slice(0, 40000)}\n\`\`\``);
+                });
+
+                return parts.join('');
+            };
+
+            const codeContext = buildMultiFileContext();
             const projectContext = buildProjectContext();
 
             const finalText = (wantsCodeRef.current || (giveAiAccessToCode && codeForContext.trim()))
@@ -2275,49 +2268,35 @@ ${codeContext}` : ""}${projectContext}`
 
             const payload = lastSendRef.current ?? { text: apiText, conversationId: activeId ?? undefined };
 
-            // Use locked snapshot if available, otherwise fall back to live codeText
-            const codeForContext = (giveAiAccessToCode && accessLockedCode)
-                ? accessLockedCode
-                : codeText;
-            const trimmedForPrompt = codeForContext.slice(0, 120000);
-            const isEditRequest = looksLikeEditRequest(payload.text);
-
-            // Build multi-file context — active tab is edit target, others are read-only reference
-            const buildMultiFileContext = (): string => {
-                if (!giveAiAccessToCode || !codeForContext.trim()) return "";
-
+            // Build multi-file context — same logic as main handleSend
+            const buildRetryContext = (): string => {
+                if (!giveAiAccessToCode) return "";
                 const parts: string[] = [];
-
-                // Active file — the one the AI edits
-                const activeMode = activeCodeId ? (tabAccessModes[activeCodeId] ?? 'edit') : 'edit';
-                if (activeMode !== 'off') {
-                    const editLabel = activeMode === 'edit'
-                        ? (isEditRequest
-                            ? `EDIT THIS FILE — return the COMPLETE file with changes. Do NOT truncate or use "// rest unchanged":`
-                            : `ACTIVE FILE (output full file OR Ctrl+F blocks — NEVER partial):`)
-                        : `REFERENCE FILE (read-only context — do NOT edit this):`;
-                    const activeName = savedCodes.find(s => s.id === activeCodeId)?.name ?? 'active file';
-                    parts.push(`\n\n[${activeName}] ${editLabel}\n\`\`\`\n${trimmedForPrompt}\n\`\`\``);
+                const isEditRequest = looksLikeEditRequest(payload.text);
+                if (activeCodeId) {
+                    const activeMode: TabAccessMode = tabAccessModes[activeCodeId] ?? 'edit';
+                    if (activeMode !== 'off') {
+                        const activeName = savedCodes.find(s => s.id === activeCodeId)?.name ?? 'active file';
+                        const code = accessLockedCode || codeText;
+                        const label = activeMode === 'edit'
+                            ? (isEditRequest ? `EDIT THIS FILE — return COMPLETE file:` : `ACTIVE FILE (full file OR Ctrl+F):`)
+                            : `REFERENCE ONLY:`;
+                        parts.push(`\n\n[${activeName}] ${label}\n\`\`\`\n${code.slice(0, 120000)}\n\`\`\``);
+                    }
+                } else if (codeText.trim()) {
+                    parts.push(`\n\nEXISTING CODE (full file OR Ctrl+F — NEVER partial):\n\`\`\`\n${codeText.slice(0, 120000)}\n\`\`\``);
                 }
-
-                // Other open tabs
                 openTabs.forEach(tid => {
                     if (tid === activeCodeId) return;
-                    const mode = tabAccessModes[tid] ?? 'read';
+                    const mode: TabAccessMode = tabAccessModes[tid] ?? 'read';
                     if (mode === 'off') return;
                     const snippet = savedCodes.find(s => s.id === tid);
                     if (!snippet) return;
-                    const label = mode === 'edit'
-                        ? `ALSO EDITABLE — apply changes here too if relevant:`
-                        : `REFERENCE ONLY — do not edit:`;
-                    parts.push(`\n\n[${snippet.name}] ${label}\n\`\`\`\n${snippet.code.slice(0, 40000)}\n\`\`\``);
+                    parts.push(`\n\n[${snippet.name}] ${mode === 'edit' ? 'ALSO EDITABLE:' : 'REFERENCE ONLY:'}\n\`\`\`\n${snippet.code.slice(0, 40000)}\n\`\`\``);
                 });
-
                 return parts.join('');
             };
-
-            const codeContext = buildMultiFileContext();
-
+            const codeContext = buildRetryContext();
             const projectContext = buildProjectContext();
 
             const finalText = (wantsCodeRef.current || (giveAiAccessToCode && codeForContext.trim()))
@@ -2459,18 +2438,10 @@ ${codeContext}` : ""}${projectContext}`
         try {
             await action();
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "⚠️ Failed to get a reply. Is the API running?";
+            const msg =
+                err instanceof Error ? err.message : "⚠️ Failed to get a reply. Is the API running?";
             const status = (err as Error & { status?: number })?.status;
             const code = (err as Error & { code?: string })?.code;
-            const isRateLimit = (err as Error & { isRateLimit?: boolean })?.isRateLimit || msg === 'rate_limit';
-            const retryAfterSecs = (err as Error & { retryAfter?: number })?.retryAfter ?? 30;
-
-            if (isRateLimit) {
-                setLoading(false);
-                setStreaming(false);
-                startRateLimitCountdown(retryAfterSecs, () => void retryLastSend());
-                return;
-            }
 
             // Check for payment required error (usage limits)
             const isPaywall =
@@ -2488,6 +2459,7 @@ ${codeContext}` : ""}${projectContext}`
                 msg.toLowerCase().includes("pro feature");
 
             if (isPaywall) {
+                // Show appropriate message based on error type
                 if (msg.toLowerCase().includes("pro feature") || code === "TOPIC_RESTRICTED") {
                     alert("✨ This feature requires a Pro subscription. Please upgrade to access it.");
                 } else {
@@ -2504,16 +2476,6 @@ ${codeContext}` : ""}${projectContext}`
         } finally {
             setLoading(false);
             setStreaming(false);
-            // Auto-advance prompt queue
-            setPromptQueue(prev => {
-                if (prev.length === 0) return prev;
-                const [next, ...rest] = prev;
-                setTimeout(() => {
-                    setInput(next.text);
-                    setTimeout(() => void handleSend(), 50);
-                }, 400);
-                return rest;
-            });
         }
 
     }
@@ -5855,45 +5817,24 @@ Project description: ${newProjectPrompt.trim()}`
 
                                     {/* Open Tabs bar */}
                                     {useMonaco && openTabs.length > 0 && (
-                                        <div style={{ display: 'flex', gap: '2px', flexWrap: 'nowrap', overflowX: 'auto', padding: '0 2px', maxWidth: '100%', alignItems: 'flex-end' }}>
+                                        <div style={{ display: 'flex', gap: '2px', flexWrap: 'nowrap', overflowX: 'auto', padding: '0 2px', maxWidth: '100%' }}>
                                             {openTabs.map(tid => {
                                                 const tabSnippet = savedCodes.find(s => s.id === tid);
                                                 if (!tabSnippet) return null;
-                                                const isActive = activeCodeId === tid;
-                                                const mode: 'edit' | 'read' | 'off' = tabAccessModes[tid] ?? (isActive ? 'edit' : 'read');
-                                                const modeColour = mode === 'edit' ? '#4ade80' : mode === 'read' ? '#60a5fa' : 'var(--text-muted)';
-                                                const modeIcon = mode === 'edit' ? '✏️' : mode === 'read' ? '👁' : '🚫';
-                                                const modeLabel = mode === 'edit' ? 'Edit' : mode === 'read' ? 'Read' : 'Off';
-                                                const nextMode: Record<string, 'edit' | 'read' | 'off'> = { edit: 'read', read: 'off', off: 'edit' };
+                                                const isActive = activeTab === tid;
                                                 return (
-                                                    <div key={tid} style={{ display: 'flex', alignItems: 'center', gap: '0', borderRadius: '5px 5px 0 0', background: isActive ? 'var(--bg-primary)' : 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderBottom: isActive ? '1px solid var(--bg-primary)' : '1px solid var(--border-default)', overflow: 'hidden' }}>
-                                                        {/* Tab name — click to activate */}
-                                                        <div
-                                                            style={{ padding: '3px 8px', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '11px', color: isActive ? 'var(--accent)' : 'var(--text-muted)', fontWeight: isActive ? 600 : 400 }}
-                                                            onClick={() => {
-                                                                setActiveTab(tid);
-                                                                setActiveCodeId(tid);
-                                                                setCodeText(tabSnippet.code);
-                                                            }}>
-                                                            {tabSnippet.name}
-                                                        </div>
-                                                        {/* Mode toggle — click cycles edit → read → off */}
+                                                    <div key={tid} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 10px 3px 10px', borderRadius: '5px 5px 0 0', background: isActive ? 'var(--bg-primary)' : 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderBottom: isActive ? '1px solid var(--bg-primary)' : '1px solid var(--border-default)', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '11px', color: isActive ? 'var(--accent)' : 'var(--text-muted)', fontWeight: isActive ? 600 : 400 }}
+                                                        onClick={() => {
+                                                            setActiveTab(tid);
+                                                            setActiveCodeId(tid);
+                                                            setCodeText(tabSnippet.code);
+                                                        }}>
+                                                        <span>{tabSnippet.name}</span>
                                                         <button type="button"
-                                                            title={`AI mode: ${modeLabel} — click to cycle`}
-                                                            onClick={e => {
-                                                                e.stopPropagation();
-                                                                setTabAccessModes(prev => ({ ...prev, [tid]: nextMode[mode] }));
-                                                            }}
-                                                            style={{ padding: '3px 5px', background: 'none', border: 'none', borderLeft: '1px solid var(--border-subtle)', cursor: 'pointer', fontSize: '10px', color: modeColour, lineHeight: 1, display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                                            <span>{modeIcon}</span>
-                                                        </button>
-                                                        {/* Close tab */}
-                                                        <button type="button"
-                                                            style={{ padding: '3px 5px', background: 'none', border: 'none', borderLeft: '1px solid var(--border-subtle)', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1 }}
+                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: 'var(--text-muted)', padding: '0 0 0 4px', lineHeight: 1 }}
                                                             onClick={e => {
                                                                 e.stopPropagation();
                                                                 setOpenTabs(prev => prev.filter(t => t !== tid));
-                                                                setTabAccessModes(prev => { const next = { ...prev }; delete next[tid]; return next; });
                                                                 if (activeTab === tid) {
                                                                     const remaining = openTabs.filter(t => t !== tid);
                                                                     const next = remaining[remaining.length - 1] ?? null;
@@ -5907,10 +5848,6 @@ Project description: ${newProjectPrompt.trim()}`
                                                     </div>
                                                 );
                                             })}
-                                            {/* Legend */}
-                                            <div style={{ fontSize: '9px', color: 'var(--text-muted)', padding: '0 6px', alignSelf: 'center', opacity: 0.6, whiteSpace: 'nowrap' }}>
-                                                ✏️edit · 👁read · 🚫off
-                                            </div>
                                         </div>
                                     )}
 
@@ -5972,34 +5909,93 @@ Project description: ${newProjectPrompt.trim()}`
                                             ))}
                                         </select>
 
-                                        <button
-                                            type="button"
-                                            className="btn-secondary"
-                                            style={{
-                                                padding: '4px 10px', fontSize: '12px',
-                                                ...(giveAiAccessToCode ? { background: 'rgba(34,197,94,0.1)', borderColor: 'rgba(34,197,94,0.4)', color: '#4ade80' } : {})
-                                            }}
-                                            disabled={!activeCodeId}
-                                            title={
-                                                !activeCodeId
-                                                    ? "Select a saved snippet first"
-                                                    : giveAiAccessToCode
-                                                        ? "AI sees first ~200 lines. For deep changes, describe the section by name (e.g. 'edit the ENTRY CONDITIONS section')"
-                                                        : "Click to allow AI to see this snippet"
-                                            }
-                                            onClick={() => {
-                                                if (!activeCodeId) return;
-                                                if (!giveAiAccessToCode) {
-                                                    setGiveAccessModal(true);
-                                                    return;
-                                                }
-                                                setGiveAiAccessToCode(false);
-                                                setAccessLockedSnippetId(null);
-                                                setAccessLockedCode("");
-                                            }}
-                                        >
-                                            {giveAiAccessToCode ? "Access: ON" : "Give access"}
-                                        </button>
+                                        <div style={{ position: 'relative' }}>
+                                            <button
+                                                type="button"
+                                                className="btn-secondary"
+                                                style={{
+                                                    padding: '4px 10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px',
+                                                    ...(giveAiAccessToCode ? { background: 'rgba(34,197,94,0.1)', borderColor: 'rgba(34,197,94,0.4)', color: '#4ade80' } : {})
+                                                }}
+                                                onClick={() => setAccessDropdownOpen(v => !v)}
+                                                title="Set AI access mode for open files"
+                                            >
+                                                {giveAiAccessToCode ? '🟢 Access ON' : 'Give access'}
+                                                <span style={{ fontSize: '9px', opacity: 0.7 }}>▼</span>
+                                            </button>
+
+                                            {accessDropdownOpen && (
+                                                <div
+                                                    style={{ position: 'absolute', top: '100%', left: 0, zIndex: 200, marginTop: '4px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', padding: '8px', minWidth: '260px' }}
+                                                    onMouseLeave={() => setAccessDropdownOpen(false)}
+                                                >
+                                                    <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px', padding: '0 4px' }}>
+                                                        AI File Access
+                                                    </div>
+
+                                                    {/* Active file */}
+                                                    {activeCodeId && (() => {
+                                                        const mode: TabAccessMode = tabAccessModes[activeCodeId] ?? (giveAiAccessToCode ? 'edit' : 'off');
+                                                        const snippet = savedCodes.find(s => s.id === activeCodeId);
+                                                        return (
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 6px', borderRadius: '6px', background: 'var(--bg-elevated)', marginBottom: '4px' }}>
+                                                                <span style={{ fontSize: '11px', flex: 1, color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                    📄 {snippet?.name ?? 'Active file'}
+                                                                </span>
+                                                                {(['edit', 'read', 'off'] as TabAccessMode[]).map(m => (
+                                                                    <button key={m} type="button"
+                                                                        onClick={() => {
+                                                                            setTabAccessModes(prev => ({ ...prev, [activeCodeId]: m }));
+                                                                            if (m !== 'off') {
+                                                                                setGiveAiAccessToCode(true);
+                                                                                setAccessLockedSnippetId(activeCodeId);
+                                                                                setAccessLockedCode(codeText);
+                                                                            } else if (Object.values({ ...tabAccessModes, [activeCodeId]: m }).every(v => v === 'off')) {
+                                                                                setGiveAiAccessToCode(false);
+                                                                                setAccessLockedCode('');
+                                                                            }
+                                                                        }}
+                                                                        style={{ padding: '2px 7px', fontSize: '10px', borderRadius: '4px', fontFamily: 'DM Sans, sans-serif', cursor: 'pointer', fontWeight: mode === m ? 700 : 400, border: mode === m ? '1px solid' : '1px solid transparent', borderColor: mode === m ? (m === 'edit' ? '#4ade80' : m === 'read' ? '#60a5fa' : 'var(--border-default)') : 'transparent', background: mode === m ? (m === 'edit' ? 'rgba(74,222,128,0.1)' : m === 'read' ? 'rgba(96,165,250,0.1)' : 'rgba(255,255,255,0.05)') : 'none', color: mode === m ? (m === 'edit' ? '#4ade80' : m === 'read' ? '#60a5fa' : 'var(--text-muted)') : 'var(--text-muted)' }}>
+                                                                        {m === 'edit' ? '✏️ Edit' : m === 'read' ? '👁 Read' : '🚫 Off'}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        );
+                                                    })()}
+
+                                                    {/* Other open tabs */}
+                                                    {openTabs.filter(tid => tid !== activeCodeId).map(tid => {
+                                                        const snippet = savedCodes.find(s => s.id === tid);
+                                                        if (!snippet) return null;
+                                                        const mode: TabAccessMode = tabAccessModes[tid] ?? 'read';
+                                                        return (
+                                                            <div key={tid} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 6px', borderRadius: '6px', marginBottom: '2px' }}>
+                                                                <span style={{ fontSize: '11px', flex: 1, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                    📄 {snippet.name}
+                                                                </span>
+                                                                {(['edit', 'read', 'off'] as TabAccessMode[]).map(m => (
+                                                                    <button key={m} type="button"
+                                                                        onClick={() => {
+                                                                            setTabAccessModes(prev => ({ ...prev, [tid]: m }));
+                                                                            if (m !== 'off') setGiveAiAccessToCode(true);
+                                                                        }}
+                                                                        style={{ padding: '2px 7px', fontSize: '10px', borderRadius: '4px', fontFamily: 'DM Sans, sans-serif', cursor: 'pointer', fontWeight: mode === m ? 700 : 400, border: mode === m ? '1px solid' : '1px solid transparent', borderColor: mode === m ? (m === 'edit' ? '#4ade80' : m === 'read' ? '#60a5fa' : 'var(--border-default)') : 'transparent', background: mode === m ? (m === 'edit' ? 'rgba(74,222,128,0.1)' : m === 'read' ? 'rgba(96,165,250,0.1)' : 'rgba(255,255,255,0.05)') : 'none', color: mode === m ? (m === 'edit' ? '#4ade80' : m === 'read' ? '#60a5fa' : 'var(--text-muted)') : 'var(--text-muted)' }}>
+                                                                        {m === 'edit' ? '✏️' : m === 'read' ? '👁' : '🚫'}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        );
+                                                    })}
+
+                                                    {/* Legend */}
+                                                    <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: '6px', paddingTop: '6px', fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.6, padding: '6px 4px 2px' }}>
+                                                        <span style={{ color: '#4ade80' }}>✏️ Edit</span> — AI reads + edits this file<br/>
+                                                        <span style={{ color: '#60a5fa' }}>👁 Read</span> — AI sees for context only<br/>
+                                                        <span style={{ color: 'var(--text-muted)' }}>🚫 Off</span> — excluded from prompt
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
                                     {activeCodeId && (
@@ -7153,85 +7149,6 @@ Project description: ${newProjectPrompt.trim()}`
                     </div>
                 )}
 
-                {/* Rate limit countdown banner */}
-                {rateLimitCountdown !== null && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', background: 'rgba(251,191,36,0.1)', borderTop: '1px solid rgba(251,191,36,0.3)', fontSize: '12px' }}>
-                        <span style={{ fontSize: '16px' }}>⏱</span>
-                        <span style={{ color: '#fbbf24', fontWeight: 600 }}>Rate limit — auto-retrying in {rateLimitCountdown}s</span>
-                        <button type="button"
-                            onClick={() => {
-                                if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current);
-                                setRateLimitCountdown(null);
-                                const retry = pendingRateLimitRetryRef.current;
-                                pendingRateLimitRetryRef.current = null;
-                                if (retry) retry();
-                            }}
-                            style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: '11px', background: 'rgba(251,191,36,0.2)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}>
-                            ▶ Retry Now
-                        </button>
-                        <button type="button"
-                            onClick={() => { if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current); setRateLimitCountdown(null); pendingRateLimitRetryRef.current = null; }}
-                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '13px' }}>✕</button>
-                    </div>
-                )}
-
-                {/* Prompt queue panel */}
-                {queuePanelOpen && (
-                    <div style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', padding: '8px 12px', maxHeight: '220px', overflowY: 'auto' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Queue ({promptQueue.length})</span>
-                            <button type="button" onClick={() => setQueuePanelOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '13px' }}>✕</button>
-                        </div>
-                        {promptQueue.length === 0 ? (
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '8px 0', textAlign: 'center' }}>
-                                Type a message and click + Queue while a response is streaming
-                            </div>
-                        ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                {promptQueue.map((item, idx) => (
-                                    <div key={item.id}
-                                        draggable
-                                        onDragStart={() => { dragQueueIdRef.current = item.id; }}
-                                        onDragOver={e => e.preventDefault()}
-                                        onDrop={() => {
-                                            const fromId = dragQueueIdRef.current;
-                                            if (!fromId || fromId === item.id) return;
-                                            setPromptQueue(prev => {
-                                                const fromIdx = prev.findIndex(p => p.id === fromId);
-                                                const toIdx = prev.findIndex(p => p.id === item.id);
-                                                if (fromIdx === -1 || toIdx === -1) return prev;
-                                                const next = [...prev];
-                                                const [moved] = next.splice(fromIdx, 1);
-                                                next.splice(toIdx, 0, moved);
-                                                return next;
-                                            });
-                                            dragQueueIdRef.current = null;
-                                        }}
-                                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 8px', background: 'var(--bg-primary)', border: '1px solid var(--border-default)', borderRadius: '6px', cursor: 'grab' }}>
-                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', minWidth: '16px' }}>#{idx + 1}</span>
-                                        {editingQueueId === item.id ? (
-                                            <input autoFocus value={editingQueueText}
-                                                onChange={e => setEditingQueueText(e.target.value)}
-                                                onKeyDown={e => {
-                                                    if (e.key === 'Enter') { setPromptQueue(prev => prev.map(p => p.id === item.id ? { ...p, text: editingQueueText } : p)); setEditingQueueId(null); }
-                                                    if (e.key === 'Escape') setEditingQueueId(null);
-                                                }}
-                                                onBlur={() => { setPromptQueue(prev => prev.map(p => p.id === item.id ? { ...p, text: editingQueueText } : p)); setEditingQueueId(null); }}
-                                                style={{ flex: 1, fontSize: '12px', background: 'var(--bg-elevated)', border: '1px solid var(--accent)', borderRadius: '4px', padding: '2px 6px', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }} />
-                                        ) : (
-                                            <span style={{ flex: 1, fontSize: '12px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.text}</span>
-                                        )}
-                                        <button type="button" onClick={() => { setEditingQueueId(item.id); setEditingQueueText(item.text); }}
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '11px', padding: '1px 4px' }}>✏️</button>
-                                        <button type="button" onClick={() => setPromptQueue(prev => prev.filter(p => p.id !== item.id))}
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '12px', padding: '1px 4px' }}>✕</button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
-
                 {/* ALWAYS SHOW COMPOSER */}
                 <form
                     className="p-3 flex gap-2"
@@ -7372,27 +7289,13 @@ Project description: ${newProjectPrompt.trim()}`
                     </div>
 
                     {streaming ? (
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                            <button type="button" className="btn-primary px-6" onClick={stopStreaming}>Stop</button>
-                            {input.trim() ? (
-                                <button type="button"
-                                    onClick={() => {
-                                        if (!input.trim()) return;
-                                        setPromptQueue(prev => [...prev, { id: globalThis.crypto.randomUUID(), text: input.trim() }]);
-                                        setInput('');
-                                        setQueuePanelOpen(true);
-                                        showToast('Added to queue', 'success');
-                                    }}
-                                    style={{ padding: '6px 12px', fontSize: '12px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.4)', color: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                                    + Queue
-                                </button>
-                            ) : (
-                                <button type="button" onClick={() => setQueuePanelOpen(v => !v)}
-                                    style={{ padding: '6px 10px', fontSize: '12px', background: promptQueue.length > 0 ? 'rgba(249,115,22,0.15)' : 'transparent', border: '1px solid var(--border-default)', color: promptQueue.length > 0 ? 'var(--accent)' : 'var(--text-muted)', borderRadius: '6px', cursor: 'pointer' }}>
-                                    📋{promptQueue.length > 0 ? ` ${promptQueue.length}` : ''}
-                                </button>
-                            )}
-                        </div>
+                        <button
+                            type="button"
+                            className="btn-primary px-6"
+                            onClick={stopStreaming}
+                        >
+                            Stop
+                        </button>
                     ) : (
                         <>
                             <label className="btn-secondary cursor-pointer select-none">
@@ -7403,6 +7306,7 @@ Project description: ${newProjectPrompt.trim()}`
                                     className="hidden"
                                     onChange={(e) => {
                                         void handleAttachFiles(e.target.files);
+                                        // allow attaching the same file again later
                                         e.currentTarget.value = "";
                                     }}
                                     disabled={loading}
@@ -7422,15 +7326,11 @@ Project description: ${newProjectPrompt.trim()}`
                                 Retry
                             </button>
 
-                            {promptQueue.length > 0 && (
-                                <button type="button" onClick={() => setQueuePanelOpen(v => !v)}
-                                    style={{ padding: '6px 10px', fontSize: '12px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.4)', color: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
-                                    📋 {promptQueue.length}
-                                </button>
-                            )}
-
-                            <button className="btn-primary">Send</button>
+                            <button className="btn-primary">
+                                Send
+                            </button>
                         </>
+
                     )}
                 </form>
             </main>
@@ -8362,6 +8262,9 @@ Project description: ${newProjectPrompt.trim()}`
                                 setGiveAiAccessToCode(true);
                                 setAccessLockedSnippetId(activeCodeId);
                                 setAccessLockedCode(codeText);
+                                if (activeCodeId) {
+                                    setTabAccessModes(prev => ({ ...prev, [activeCodeId]: 'edit' }));
+                                }
                             }}
                                 style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
                                 Give Access
