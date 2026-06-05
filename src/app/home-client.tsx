@@ -333,6 +333,7 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
     const [droppedFolder, setDroppedFolder] = useState<{ name: string; fileCount: number; content: string } | null>(null);
+    const [pastedCode, setPastedCode] = useState<{ text: string; expanded: boolean } | null>(null);
 
     useEffect(() => {
         // Restore layout
@@ -2161,6 +2162,7 @@ ${codeContext}` : ""}${projectContext}`
         const folderContext = droppedFolder ? `\n\n${droppedFolder.content}` : '';
         const apiText = `${text}${screenshotContext}${folderContext}`.trim();
         if (droppedFolder) setDroppedFolder(null);
+        if (pastedCode) setPastedCode(null);
 
         // Determine if user intent requires code-mode (edit existing code OR request code)
         const hasExistingCode = giveAiAccessToCode && !!codeText.trim(); // This is correct - requires access
@@ -2242,8 +2244,13 @@ ${codeContext}` : ""}${projectContext}`
 
             const projectContext = buildProjectContext();
 
+            const isCtrlFRetry = /ctrl[\+\s]?f\s*(wrong|bad|incorrect|not right|off)|wrong\s*ctrl|re[\s-]?read|read the file|reading the (correct|right|wrong) file/i.test(payload.text);
+            const retryPrefix = isCtrlFRetry
+                ? `⚠️ YOUR PREVIOUS CTRL+F WAS WRONG. Before responding: re-read the EXISTING CODE block below line by line. Find the EXACT text as it appears in the file — copy it character-for-character. Do NOT reconstruct from memory or training knowledge.\n\n`
+                : '';
+
             const finalText = (wantsCodeRef.current || (giveAiAccessToCode && codeForContext.trim()))
-                ? `USER REQUEST:
+                ? `${retryPrefix}USER REQUEST:
 ${payload.text}${codeContext ? `
 
 ${codeContext}` : ""}${projectContext}`
@@ -7052,6 +7059,27 @@ Project description: ${newProjectPrompt.trim()}`
                                     style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '13px', padding: '0 2px' }}>✕</button>
                             </div>
                         )}
+                        {pastedCode && (
+                            <div style={{ background: 'rgba(249,115,22,0.07)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', overflow: 'hidden', fontSize: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px' }}>
+                                    <span>📄</span>
+                                    <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Code pasted</span>
+                                    <span style={{ color: 'var(--text-muted)' }}>{pastedCode.text.split('\n').length} lines · loaded into Code panel</span>
+                                    <button type="button"
+                                        onClick={() => setPastedCode(p => p ? { ...p, expanded: !p.expanded } : null)}
+                                        style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: '11px', padding: '0 4px' }}>
+                                        {pastedCode.expanded ? '▲ Hide' : '▼ Show'}
+                                    </button>
+                                    <button type="button" onClick={() => setPastedCode(null)}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '13px', padding: '0 2px' }}>✕</button>
+                                </div>
+                                {pastedCode.expanded && (
+                                    <pre style={{ margin: 0, padding: '8px 10px', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', maxHeight: '180px', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', borderTop: '1px solid rgba(249,115,22,0.2)' }}>
+                                        {pastedCode.text.slice(0, 3000)}{pastedCode.text.length > 3000 ? '\n…' : ''}
+                                    </pre>
+                                )}
+                            </div>
+                        )}
                         {attachments.length > 0 && (
                             <div className="flex items-center gap-2 flex-wrap">
                                 {attachments.map((a) => (
@@ -7150,7 +7178,7 @@ Project description: ${newProjectPrompt.trim()}`
                                     return;
                                 }
 
-                                // Detect code pasted as text — if it looks like code, route it to the code panel
+                                // Detect code pasted as text — show a preview chip in the chatbox
                                 const text = e.clipboardData?.getData("text") ?? "";
                                 const looksLikeCode =
                                     /```[\s\S]*```/.test(text) ||
@@ -7160,12 +7188,13 @@ Project description: ${newProjectPrompt.trim()}`
 
                                 if (looksLikeCode && text.trim().length > 80) {
                                     e.preventDefault();
-                                    // Put it in the code panel as unsaved, open the panel
+                                    // Show preview chip in chatbox (like Claude does)
+                                    setPastedCode({ text, expanded: false });
+                                    // Also load into code panel silently
                                     setCodeText(text);
                                     setUnsavedCode(text);
                                     setHasUnsavedChanges(true);
                                     setActiveCodeId(null);
-                                    setCodeOpen(true);
                                 }
                             }}
                             disabled={loading}
