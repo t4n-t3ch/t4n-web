@@ -333,7 +333,8 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
     const [droppedFolder, setDroppedFolder] = useState<{ name: string; fileCount: number; content: string } | null>(null);
-    const [pastedCode, setPastedCode] = useState<{ text: string; expanded: boolean } | null>(null);
+    // Code pasted into chat — kept separate from canvas code so AI sees them as distinct
+    const [chatPastedCode, setChatPastedCode] = useState<{ text: string; expanded: boolean } | null>(null);
 
     useEffect(() => {
         // Restore layout
@@ -1126,20 +1127,40 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     function highlightInCanvas(searchText: string) {
         const clean = searchText.replace(/^[`'"]+|[`'"]+$/g, '').trim();
         if (!clean) return;
+        // Try full text first for precision, fall back to first line for single-line searches
         const searchStr = clean.split('\n')[0].trim() || clean;
+        const isMultiLine = clean.includes('\n');
 
         const doReveal = () => {
             const editor = monacoEditorRef.current;
-            console.log('[GoTo] editor ref:', !!editor, 'searchStr:', JSON.stringify(searchStr));
-            if (!editor) { console.log('[GoTo] NO EDITOR REF'); return false; }
+            if (!editor) return false;
             const model = editor.getModel();
-            if (!model) { console.log('[GoTo] NO MODEL'); return false; }
-            const matches = model.findMatches(searchStr, false, false, false, null, false);
-            console.log('[GoTo] matches:', matches.length, 'modelLines:', model.getLineCount());
-            if (matches.length === 0) { console.log('[GoTo] ZERO MATCHES for', JSON.stringify(searchStr)); return false; }
+            if (!model) return false;
+
+            // For multi-line FIND blocks: search for the first unique-enough line
+            // Try progressively longer substrings of the first line until we get exactly 1 match
+            const matchLine = searchStr;
+            if (isMultiLine) {
+                // Try matching a 2-line chunk for precision in large files
+                const lines = clean.split('\n');
+                const twoLineChunk = lines.slice(0, 2).join('\n').trim();
+                const multiMatches = model.findMatches(twoLineChunk, false, false, false, null, false);
+                if (multiMatches.length === 1) {
+                    const range = multiMatches[0].range;
+                    editor.revealLineInCenter(range.startLineNumber);
+                    editor.setPosition({ lineNumber: range.startLineNumber, column: range.startColumn });
+                    editor.setSelection(range);
+                    editor.focus();
+                    return true;
+                }
+            }
+
+            // Single-line or fallback: try full first line, then trim progressively
+            const matches = model.findMatches(matchLine, false, false, false, null, false);
+            if (matches.length === 0) return false;
+
+            // If multiple matches, try to find the best one using surrounding context
             const range = matches[0].range;
-            // Use the exact pattern the diagnostics jump uses — proven to scroll correctly.
-            // No setScrollTop: its pixel math is wrong under wordWrap and overrides the reveal.
             editor.revealLineInCenter(range.startLineNumber);
             editor.setPosition({ lineNumber: range.startLineNumber, column: range.startColumn });
             editor.setSelection(range);
@@ -1148,10 +1169,8 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         };
 
         if (codeOpen) {
-            // Panel already open — reveal immediately
             if (!doReveal()) setTimeout(doReveal, 200);
         } else {
-            // Open panel first, then reveal after Monaco mounts
             setCodeOpen(true);
             setTimeout(() => {
                 if (!doReveal()) setTimeout(() => {
@@ -2160,9 +2179,13 @@ ${codeContext}` : ""}${projectContext}`
         // What the user sees vs what the API receives
         const uiText = text;
         const folderContext = droppedFolder ? `\n\n${droppedFolder.content}` : '';
-        const apiText = `${text}${screenshotContext}${folderContext}`.trim();
+        // Pasted code sent as explicit context — separate from canvas so AI treats them differently
+        const pastedCodeContext = chatPastedCode
+            ? `\n\n[PASTED CODE — this is the code the user just shared in the message, NOT the canvas code]\n\`\`\`\n${chatPastedCode.text}\n\`\`\`\n[END PASTED CODE]`
+            : '';
+        const apiText = `${text}${screenshotContext}${folderContext}${pastedCodeContext}`.trim();
         if (droppedFolder) setDroppedFolder(null);
-        if (pastedCode) setPastedCode(null);
+        if (chatPastedCode) setChatPastedCode(null);
 
         // Determine if user intent requires code-mode (edit existing code OR request code)
         const hasExistingCode = giveAiAccessToCode && !!codeText.trim(); // This is correct - requires access
@@ -2244,13 +2267,8 @@ ${codeContext}` : ""}${projectContext}`
 
             const projectContext = buildProjectContext();
 
-            const isCtrlFRetry = /ctrl[\+\s]?f\s*(wrong|bad|incorrect|not right|off)|wrong\s*ctrl|re[\s-]?read|read the file|reading the (correct|right|wrong) file/i.test(payload.text);
-            const retryPrefix = isCtrlFRetry
-                ? `⚠️ YOUR PREVIOUS CTRL+F WAS WRONG. Before responding: re-read the EXISTING CODE block below line by line. Find the EXACT text as it appears in the file — copy it character-for-character. Do NOT reconstruct from memory or training knowledge.\n\n`
-                : '';
-
             const finalText = (wantsCodeRef.current || (giveAiAccessToCode && codeForContext.trim()))
-                ? `${retryPrefix}USER REQUEST:
+                ? `USER REQUEST:
 ${payload.text}${codeContext ? `
 
 ${codeContext}` : ""}${projectContext}`
@@ -6657,8 +6675,15 @@ Project description: ${newProjectPrompt.trim()}`
                                     </>
                                 )}
 
-                                {showVersions && activeCodeId && (
+                                {showVersions && (
                                     <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                                        {!activeCodeId ? (
+                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '16px 0', textAlign: 'center' }}>
+                                                <div style={{ marginBottom: '6px' }}>💾 Save this snippet first to see version history</div>
+                                                <div style={{ fontSize: '11px', opacity: 0.7 }}>Use the Save button in the toolbar above</div>
+                                            </div>
+                                        ) : (
+                                            <>
                                         <div className="flex items-center justify-between mb-2">
                                             <h4 style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                                                 {showDiffView ? 'Version Diff' : 'Version History'}
@@ -6880,6 +6905,8 @@ Project description: ${newProjectPrompt.trim()}`
                                                 No version history yet
                                             </div>
                                         )}
+                                            </>
+                                        )}
                                     </div>
                                 )}
                                 {/* ── Diagnostics Panel ── */}
@@ -7059,23 +7086,30 @@ Project description: ${newProjectPrompt.trim()}`
                                     style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '13px', padding: '0 2px' }}>✕</button>
                             </div>
                         )}
-                        {pastedCode && (
+                        {chatPastedCode && (
                             <div style={{ background: 'rgba(249,115,22,0.07)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', overflow: 'hidden', fontSize: '12px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px' }}>
                                     <span>📄</span>
-                                    <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Code pasted</span>
-                                    <span style={{ color: 'var(--text-muted)' }}>{pastedCode.text.split('\n').length} lines · loaded into Code panel</span>
-                                    <button type="button"
-                                        onClick={() => setPastedCode(p => p ? { ...p, expanded: !p.expanded } : null)}
-                                        style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: '11px', padding: '0 4px' }}>
-                                        {pastedCode.expanded ? '▲ Hide' : '▼ Show'}
-                                    </button>
-                                    <button type="button" onClick={() => setPastedCode(null)}
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '13px', padding: '0 2px' }}>✕</button>
+                                    <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Code attached</span>
+                                    <span style={{ color: 'var(--text-muted)' }}>{chatPastedCode!.text.split('\n').length} lines · separate from canvas</span>
+                                    <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
+                                        <button type="button"
+                                            onClick={() => setChatPastedCode(p => p ? { ...p, expanded: !p.expanded } : null)}
+                                            style={{ background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '4px', cursor: 'pointer', color: 'var(--accent)', fontSize: '10px', padding: '2px 6px' }}>
+                                            {chatPastedCode!.expanded ? '▲ Hide' : '▼ Preview'}
+                                        </button>
+                                        <button type="button"
+                                            onClick={() => { const c = chatPastedCode!; setCodeText(c.text); setUnsavedCode(c.text); setHasUnsavedChanges(true); setActiveCodeId(null); setCodeOpen(true); setChatPastedCode(null); showToast('Moved to canvas', 'success'); }}
+                                            style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '4px', cursor: 'pointer', color: '#818cf8', fontSize: '10px', padding: '2px 6px' }}>
+                                            → Canvas
+                                        </button>
+                                        <button type="button" onClick={() => setChatPastedCode(null)}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '13px', padding: '0 2px' }}>✕</button>
+                                    </div>
                                 </div>
-                                {pastedCode.expanded && (
-                                    <pre style={{ margin: 0, padding: '8px 10px', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', maxHeight: '180px', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', borderTop: '1px solid rgba(249,115,22,0.2)' }}>
-                                        {pastedCode.text.slice(0, 3000)}{pastedCode.text.length > 3000 ? '\n…' : ''}
+                                {chatPastedCode!.expanded && (
+                                    <pre style={{ margin: 0, padding: '8px 10px', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', maxHeight: '160px', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', borderTop: '1px solid rgba(249,115,22,0.2)' }}>
+                                        {chatPastedCode!.text.slice(0, 3000)}{chatPastedCode!.text.length > 3000 ? '\n…' : ''}
                                     </pre>
                                 )}
                             </div>
@@ -7178,7 +7212,7 @@ Project description: ${newProjectPrompt.trim()}`
                                     return;
                                 }
 
-                                // Detect code pasted as text — show a preview chip in the chatbox
+                                // Detect code pasted as text
                                 const text = e.clipboardData?.getData("text") ?? "";
                                 const looksLikeCode =
                                     /```[\s\S]*```/.test(text) ||
@@ -7188,13 +7222,10 @@ Project description: ${newProjectPrompt.trim()}`
 
                                 if (looksLikeCode && text.trim().length > 80) {
                                     e.preventDefault();
-                                    // Show preview chip in chatbox (like Claude does)
-                                    setPastedCode({ text, expanded: false });
-                                    // Also load into code panel silently
-                                    setCodeText(text);
-                                    setUnsavedCode(text);
-                                    setHasUnsavedChanges(true);
-                                    setActiveCodeId(null);
+                                    // Store separately from canvas — AI will receive it as [PASTED CODE] context
+                                    // NOT routed to the canvas so the two codes stay separate
+                                    setChatPastedCode({ text, expanded: false });
+                                    showToast('Code attached to message — AI will read it', 'info');
                                 }
                             }}
                             disabled={loading}
