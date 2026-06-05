@@ -177,6 +177,19 @@ export default function HomeClient() {
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
 
+    // Prompt queue — queued messages to send after current finishes
+    type QueuedPrompt = { id: string; text: string };
+    const [promptQueue, setPromptQueue] = useState<QueuedPrompt[]>([]);
+    const [queuePanelOpen, setQueuePanelOpen] = useState(false);
+    const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
+    const [editingQueueText, setEditingQueueText] = useState('');
+    const dragQueueIdRef = useRef<string | null>(null);
+
+    // Rate limit pause/resume
+    const [rateLimitCountdown, setRateLimitCountdown] = useState<number | null>(null);
+    const rateLimitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const pendingRateLimitRetryRef = useRef<(() => void) | null>(null);
+
     // =========================
     // Image attachments (screenshots) + OCR
     // =========================
@@ -333,8 +346,6 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
     const [droppedFolder, setDroppedFolder] = useState<{ name: string; fileCount: number; content: string } | null>(null);
-    // Code pasted into chat — kept separate from canvas code so AI sees them as distinct
-    const [chatPastedCode, setChatPastedCode] = useState<{ text: string; expanded: boolean } | null>(null);
 
     useEffect(() => {
         // Restore layout
@@ -1127,40 +1138,20 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     function highlightInCanvas(searchText: string) {
         const clean = searchText.replace(/^[`'"]+|[`'"]+$/g, '').trim();
         if (!clean) return;
-        // Try full text first for precision, fall back to first line for single-line searches
         const searchStr = clean.split('\n')[0].trim() || clean;
-        const isMultiLine = clean.includes('\n');
 
         const doReveal = () => {
             const editor = monacoEditorRef.current;
-            if (!editor) return false;
+            console.log('[GoTo] editor ref:', !!editor, 'searchStr:', JSON.stringify(searchStr));
+            if (!editor) { console.log('[GoTo] NO EDITOR REF'); return false; }
             const model = editor.getModel();
-            if (!model) return false;
-
-            // For multi-line FIND blocks: search for the first unique-enough line
-            // Try progressively longer substrings of the first line until we get exactly 1 match
-            const matchLine = searchStr;
-            if (isMultiLine) {
-                // Try matching a 2-line chunk for precision in large files
-                const lines = clean.split('\n');
-                const twoLineChunk = lines.slice(0, 2).join('\n').trim();
-                const multiMatches = model.findMatches(twoLineChunk, false, false, false, null, false);
-                if (multiMatches.length === 1) {
-                    const range = multiMatches[0].range;
-                    editor.revealLineInCenter(range.startLineNumber);
-                    editor.setPosition({ lineNumber: range.startLineNumber, column: range.startColumn });
-                    editor.setSelection(range);
-                    editor.focus();
-                    return true;
-                }
-            }
-
-            // Single-line or fallback: try full first line, then trim progressively
-            const matches = model.findMatches(matchLine, false, false, false, null, false);
-            if (matches.length === 0) return false;
-
-            // If multiple matches, try to find the best one using surrounding context
+            if (!model) { console.log('[GoTo] NO MODEL'); return false; }
+            const matches = model.findMatches(searchStr, false, false, false, null, false);
+            console.log('[GoTo] matches:', matches.length, 'modelLines:', model.getLineCount());
+            if (matches.length === 0) { console.log('[GoTo] ZERO MATCHES for', JSON.stringify(searchStr)); return false; }
             const range = matches[0].range;
+            // Use the exact pattern the diagnostics jump uses — proven to scroll correctly.
+            // No setScrollTop: its pixel math is wrong under wordWrap and overrides the reveal.
             editor.revealLineInCenter(range.startLineNumber);
             editor.setPosition({ lineNumber: range.startLineNumber, column: range.startColumn });
             editor.setSelection(range);
@@ -1169,8 +1160,10 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         };
 
         if (codeOpen) {
+            // Panel already open — reveal immediately
             if (!doReveal()) setTimeout(doReveal, 200);
         } else {
+            // Open panel first, then reveal after Monaco mounts
             setCodeOpen(true);
             setTimeout(() => {
                 if (!doReveal()) setTimeout(() => {
@@ -1186,6 +1179,26 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         setStreaming(false);
         setLoading(false);
         activeAssistantIdRef.current = null;
+    }
+
+    function startRateLimitCountdown(seconds: number, onExpire: () => void) {
+        if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current);
+        setRateLimitCountdown(seconds);
+        pendingRateLimitRetryRef.current = onExpire;
+        rateLimitTimerRef.current = setInterval(() => {
+            setRateLimitCountdown(prev => {
+                if (prev === null || prev <= 1) {
+                    clearInterval(rateLimitTimerRef.current!);
+                    rateLimitTimerRef.current = null;
+                    // Auto-retry
+                    const retry = pendingRateLimitRetryRef.current;
+                    pendingRateLimitRetryRef.current = null;
+                    if (retry) setTimeout(retry, 0);
+                    return null;
+                }
+                return prev - 1;
+            });
+        }, 1000);
     }
 
 
@@ -1916,6 +1929,14 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
                     if (event === "delta" && data?.delta) onDelta(String(data.delta));
                     if (event === "done") onDone((data || {}) as StreamDone);
 
+                    if (event === "rate_limit") {
+                        const retryAfter = Number(data?.retryAfter ?? 30);
+                        const e = new Error("rate_limit") as Error & { isRateLimit?: boolean; retryAfter?: number };
+                        e.isRateLimit = true;
+                        e.retryAfter = retryAfter;
+                        throw e;
+                    }
+
                     if (event === "ping") continue;
 
                     if (event === "error") {
@@ -2067,7 +2088,9 @@ ${codeContext}` : ""}${projectContext}`
                     // If we detect code, push it to the code canvas and OPEN the code panel.
                     // Never touch the code panel for project analysis responses
                     if (extracted && !/ctrl\+f:/i.test(streamed) && !isProjectAnalysis) {
-                        const merged = (giveAiAccessToCode && accessLockedCode.trim())
+                        const isMergeable = giveAiAccessToCode && accessLockedCode.trim() &&
+                            extracted.length < accessLockedCode.length * 0.85;
+                        const merged = isMergeable
                             ? mergePatchWithExisting(accessLockedCode, extracted)
                             : extracted;
 
@@ -2179,13 +2202,8 @@ ${codeContext}` : ""}${projectContext}`
         // What the user sees vs what the API receives
         const uiText = text;
         const folderContext = droppedFolder ? `\n\n${droppedFolder.content}` : '';
-        // Pasted code sent as explicit context — separate from canvas so AI treats them differently
-        const pastedCodeContext = chatPastedCode
-            ? `\n\n[PASTED CODE — this is the code the user just shared in the message, NOT the canvas code]\n\`\`\`\n${chatPastedCode.text}\n\`\`\`\n[END PASTED CODE]`
-            : '';
-        const apiText = `${text}${screenshotContext}${folderContext}${pastedCodeContext}`.trim();
+        const apiText = `${text}${screenshotContext}${folderContext}`.trim();
         if (droppedFolder) setDroppedFolder(null);
-        if (chatPastedCode) setChatPastedCode(null);
 
         // Determine if user intent requires code-mode (edit existing code OR request code)
         const hasExistingCode = giveAiAccessToCode && !!codeText.trim(); // This is correct - requires access
@@ -2260,9 +2278,12 @@ ${codeContext}` : ""}${projectContext}`
                 ? accessLockedCode
                 : codeText;
             const trimmedForPrompt = codeForContext.slice(0, 120000);
+            const isEditRequest = looksLikeEditRequest(payload.text);
             const codeContext =
                 giveAiAccessToCode && codeForContext.trim()
-                    ? `\n\nEXISTING CODE (you MUST either output the FULL corrected file OR give Ctrl+F find-and-replace instructions — NEVER output a partial truncated file):\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
+                    ? isEditRequest
+                        ? `\n\nEXISTING CODE — you are editing this file. You MUST return the COMPLETE file with your changes applied. Do NOT truncate, summarise, or use "// rest of file unchanged". Return every line:\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
+                        : `\n\nEXISTING CODE (you MUST either output the FULL corrected file OR give Ctrl+F find-and-replace instructions — NEVER output a partial truncated file):\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
                     : "";
 
             const projectContext = buildProjectContext();
@@ -2288,7 +2309,11 @@ ${codeContext}` : ""}${projectContext}`
                     const isProjectAnalysis2 = streamed.includes('Project Analysis') || streamed.includes('Architecture Overview') || streamed.includes('applied to current code');
 
                     if (extracted && !/ctrl\+f:/i.test(streamed) && !isProjectAnalysis2) {
-                        const merged = (giveAiAccessToCode && accessLockedCode.trim())
+                        // Only run mergePatchWithExisting if the response is a partial patch
+                        // (has truncation markers). If the AI returned a full file, use it directly.
+                        const isMergeable = giveAiAccessToCode && accessLockedCode.trim() &&
+                            extracted.length < accessLockedCode.length * 0.85; // clearly shorter = patch
+                        const merged = isMergeable
                             ? mergePatchWithExisting(accessLockedCode, extracted)
                             : extracted;
 
@@ -2410,6 +2435,16 @@ ${codeContext}` : ""}${projectContext}`
                 err instanceof Error ? err.message : "⚠️ Failed to get a reply. Is the API running?";
             const status = (err as Error & { status?: number })?.status;
             const code = (err as Error & { code?: string })?.code;
+            const isRateLimit = (err as Error & { isRateLimit?: boolean })?.isRateLimit || msg === 'rate_limit';
+            const retryAfterSecs = (err as Error & { retryAfter?: number })?.retryAfter ?? 30;
+
+            // Rate limit — show countdown, auto-retry
+            if (isRateLimit) {
+                setLoading(false);
+                setStreaming(false);
+                startRateLimitCountdown(retryAfterSecs, () => void retryLastSend());
+                return;
+            }
 
             // Check for payment required error (usage limits)
             const isPaywall =
@@ -2444,6 +2479,17 @@ ${codeContext}` : ""}${projectContext}`
         } finally {
             setLoading(false);
             setStreaming(false);
+            // Auto-advance prompt queue — send next queued prompt if any
+            setPromptQueue(prev => {
+                if (prev.length === 0) return prev;
+                const [next, ...rest] = prev;
+                // Small delay so UI settles first
+                setTimeout(() => {
+                    setInput(next.text);
+                    setTimeout(() => void handleSend(), 50);
+                }, 400);
+                return rest;
+            });
         }
 
     }
@@ -6675,15 +6721,8 @@ Project description: ${newProjectPrompt.trim()}`
                                     </>
                                 )}
 
-                                {showVersions && (
+                                {showVersions && activeCodeId && (
                                     <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                                        {!activeCodeId ? (
-                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '16px 0', textAlign: 'center' }}>
-                                                <div style={{ marginBottom: '6px' }}>💾 Save this snippet first to see version history</div>
-                                                <div style={{ fontSize: '11px', opacity: 0.7 }}>Use the Save button in the toolbar above</div>
-                                            </div>
-                                        ) : (
-                                            <>
                                         <div className="flex items-center justify-between mb-2">
                                             <h4 style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                                                 {showDiffView ? 'Version Diff' : 'Version History'}
@@ -6905,8 +6944,6 @@ Project description: ${newProjectPrompt.trim()}`
                                                 No version history yet
                                             </div>
                                         )}
-                                            </>
-                                        )}
                                     </div>
                                 )}
                                 {/* ── Diagnostics Panel ── */}
@@ -7067,6 +7104,97 @@ Project description: ${newProjectPrompt.trim()}`
                     </div>
                 )}
 
+                {/* Rate limit countdown banner */}
+                {rateLimitCountdown !== null && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', background: 'rgba(251,191,36,0.1)', borderTop: '1px solid rgba(251,191,36,0.3)', fontSize: '12px' }}>
+                        <span style={{ fontSize: '16px' }}>⏱</span>
+                        <span style={{ color: '#fbbf24', fontWeight: 600 }}>Rate limit — auto-retrying in {rateLimitCountdown}s</span>
+                        <button type="button"
+                            onClick={() => {
+                                if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current);
+                                setRateLimitCountdown(null);
+                                const retry = pendingRateLimitRetryRef.current;
+                                pendingRateLimitRetryRef.current = null;
+                                if (retry) retry();
+                            }}
+                            style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: '11px', background: 'rgba(251,191,36,0.2)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}>
+                            ▶ Retry Now
+                        </button>
+                        <button type="button"
+                            onClick={() => {
+                                if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current);
+                                setRateLimitCountdown(null);
+                                pendingRateLimitRetryRef.current = null;
+                            }}
+                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '13px' }}>✕</button>
+                    </div>
+                )}
+
+                {/* Prompt queue panel */}
+                {queuePanelOpen && (
+                    <div style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', padding: '8px 12px', maxHeight: '220px', overflowY: 'auto' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                Queue ({promptQueue.length})
+                            </span>
+                            <button type="button" onClick={() => setQueuePanelOpen(false)}
+                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '13px' }}>✕</button>
+                        </div>
+                        {promptQueue.length === 0 ? (
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '8px 0', textAlign: 'center' }}>
+                                No queued prompts — type a message and click + Queue while a response is streaming
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                {promptQueue.map((item, idx) => (
+                                    <div key={item.id}
+                                        draggable
+                                        onDragStart={() => { dragQueueIdRef.current = item.id; }}
+                                        onDragOver={e => e.preventDefault()}
+                                        onDrop={() => {
+                                            const fromId = dragQueueIdRef.current;
+                                            if (!fromId || fromId === item.id) return;
+                                            setPromptQueue(prev => {
+                                                const fromIdx = prev.findIndex(p => p.id === fromId);
+                                                const toIdx = prev.findIndex(p => p.id === item.id);
+                                                if (fromIdx === -1 || toIdx === -1) return prev;
+                                                const next = [...prev];
+                                                const [moved] = next.splice(fromIdx, 1);
+                                                next.splice(toIdx, 0, moved);
+                                                return next;
+                                            });
+                                            dragQueueIdRef.current = null;
+                                        }}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 8px', background: 'var(--bg-primary)', border: '1px solid var(--border-default)', borderRadius: '6px', cursor: 'grab' }}>
+                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', minWidth: '16px' }}>#{idx + 1}</span>
+                                        {editingQueueId === item.id ? (
+                                            <input
+                                                autoFocus
+                                                value={editingQueueText}
+                                                onChange={e => setEditingQueueText(e.target.value)}
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter') { setPromptQueue(prev => prev.map(p => p.id === item.id ? { ...p, text: editingQueueText } : p)); setEditingQueueId(null); }
+                                                    if (e.key === 'Escape') setEditingQueueId(null);
+                                                }}
+                                                onBlur={() => { setPromptQueue(prev => prev.map(p => p.id === item.id ? { ...p, text: editingQueueText } : p)); setEditingQueueId(null); }}
+                                                style={{ flex: 1, fontSize: '12px', background: 'var(--bg-elevated)', border: '1px solid var(--accent)', borderRadius: '4px', padding: '2px 6px', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}
+                                            />
+                                        ) : (
+                                            <span style={{ flex: 1, fontSize: '12px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.text}</span>
+                                        )}
+                                        <button type="button"
+                                            onClick={() => { setEditingQueueId(item.id); setEditingQueueText(item.text); }}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '11px', padding: '1px 4px' }} title="Edit">✏️</button>
+                                        <button type="button"
+                                            onClick={() => setPromptQueue(prev => prev.filter(p => p.id !== item.id))}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '12px', padding: '1px 4px' }} title="Remove">✕</button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* ALWAYS SHOW COMPOSER */}
                 <form
                     className="p-3 flex gap-2"
@@ -7084,34 +7212,6 @@ Project description: ${newProjectPrompt.trim()}`
                                 <span style={{ color: 'var(--text-muted)' }}>{droppedFolder.fileCount} files attached</span>
                                 <button type="button" onClick={() => setDroppedFolder(null)}
                                     style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '13px', padding: '0 2px' }}>✕</button>
-                            </div>
-                        )}
-                        {chatPastedCode && (
-                            <div style={{ background: 'rgba(249,115,22,0.07)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', overflow: 'hidden', fontSize: '12px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px' }}>
-                                    <span>📄</span>
-                                    <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Code attached</span>
-                                    <span style={{ color: 'var(--text-muted)' }}>{chatPastedCode!.text.split('\n').length} lines · separate from canvas</span>
-                                    <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
-                                        <button type="button"
-                                            onClick={() => setChatPastedCode(p => p ? { ...p, expanded: !p.expanded } : null)}
-                                            style={{ background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '4px', cursor: 'pointer', color: 'var(--accent)', fontSize: '10px', padding: '2px 6px' }}>
-                                            {chatPastedCode!.expanded ? '▲ Hide' : '▼ Preview'}
-                                        </button>
-                                        <button type="button"
-                                            onClick={() => { const c = chatPastedCode!; setCodeText(c.text); setUnsavedCode(c.text); setHasUnsavedChanges(true); setActiveCodeId(null); setCodeOpen(true); setChatPastedCode(null); showToast('Moved to canvas', 'success'); }}
-                                            style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '4px', cursor: 'pointer', color: '#818cf8', fontSize: '10px', padding: '2px 6px' }}>
-                                            → Canvas
-                                        </button>
-                                        <button type="button" onClick={() => setChatPastedCode(null)}
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '13px', padding: '0 2px' }}>✕</button>
-                                    </div>
-                                </div>
-                                {chatPastedCode!.expanded && (
-                                    <pre style={{ margin: 0, padding: '8px 10px', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', maxHeight: '160px', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', borderTop: '1px solid rgba(249,115,22,0.2)' }}>
-                                        {chatPastedCode!.text.slice(0, 3000)}{chatPastedCode!.text.length > 3000 ? '\n…' : ''}
-                                    </pre>
-                                )}
                             </div>
                         )}
                         {attachments.length > 0 && (
@@ -7212,7 +7312,7 @@ Project description: ${newProjectPrompt.trim()}`
                                     return;
                                 }
 
-                                // Detect code pasted as text
+                                // Detect code pasted as text — if it looks like code, route it to the code panel
                                 const text = e.clipboardData?.getData("text") ?? "";
                                 const looksLikeCode =
                                     /```[\s\S]*```/.test(text) ||
@@ -7222,10 +7322,12 @@ Project description: ${newProjectPrompt.trim()}`
 
                                 if (looksLikeCode && text.trim().length > 80) {
                                     e.preventDefault();
-                                    // Store separately from canvas — AI will receive it as [PASTED CODE] context
-                                    // NOT routed to the canvas so the two codes stay separate
-                                    setChatPastedCode({ text, expanded: false });
-                                    showToast('Code attached to message — AI will read it', 'info');
+                                    // Put it in the code panel as unsaved, open the panel
+                                    setCodeText(text);
+                                    setUnsavedCode(text);
+                                    setHasUnsavedChanges(true);
+                                    setActiveCodeId(null);
+                                    setCodeOpen(true);
                                 }
                             }}
                             disabled={loading}
@@ -7233,13 +7335,38 @@ Project description: ${newProjectPrompt.trim()}`
                     </div>
 
                     {streaming ? (
-                        <button
-                            type="button"
-                            className="btn-primary px-6"
-                            onClick={stopStreaming}
-                        >
-                            Stop
-                        </button>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                                type="button"
+                                className="btn-primary px-6"
+                                onClick={stopStreaming}
+                            >
+                                Stop
+                            </button>
+                            {input.trim() ? (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (!input.trim()) return;
+                                        setPromptQueue(prev => [...prev, { id: globalThis.crypto.randomUUID(), text: input.trim() }]);
+                                        setInput('');
+                                        setQueuePanelOpen(true);
+                                        showToast('Added to queue', 'success');
+                                    }}
+                                    style={{ padding: '6px 12px', fontSize: '12px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.4)', color: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                    title="Queue this message to send after current response">
+                                    + Queue
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => setQueuePanelOpen(v => !v)}
+                                    style={{ padding: '6px 10px', fontSize: '12px', background: promptQueue.length > 0 ? 'rgba(249,115,22,0.15)' : 'transparent', border: '1px solid var(--border-default)', color: promptQueue.length > 0 ? 'var(--accent)' : 'var(--text-muted)', borderRadius: '6px', cursor: 'pointer' }}
+                                    title="View prompt queue">
+                                    📋{promptQueue.length > 0 ? ` ${promptQueue.length}` : ''}
+                                </button>
+                            )}
+                        </div>
                     ) : (
                         <>
                             <label className="btn-secondary cursor-pointer select-none">
@@ -7269,6 +7396,14 @@ Project description: ${newProjectPrompt.trim()}`
                             >
                                 Retry
                             </button>
+
+                            {promptQueue.length > 0 && (
+                                <button type="button"
+                                    onClick={() => setQueuePanelOpen(v => !v)}
+                                    style={{ padding: '6px 10px', fontSize: '12px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.4)', color: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
+                                    📋 {promptQueue.length}
+                                </button>
+                            )}
 
                             <button className="btn-primary">
                                 Send
