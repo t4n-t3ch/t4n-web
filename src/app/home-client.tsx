@@ -177,19 +177,6 @@ export default function HomeClient() {
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
 
-    // Prompt queue — queued messages to send after current finishes
-    type QueuedPrompt = { id: string; text: string };
-    const [promptQueue, setPromptQueue] = useState<QueuedPrompt[]>([]);
-    const [queuePanelOpen, setQueuePanelOpen] = useState(false);
-    const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
-    const [editingQueueText, setEditingQueueText] = useState('');
-    const dragQueueIdRef = useRef<string | null>(null);
-
-    // Rate limit pause/resume
-    const [rateLimitCountdown, setRateLimitCountdown] = useState<number | null>(null);
-    const rateLimitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const pendingRateLimitRetryRef = useRef<(() => void) | null>(null);
-
     // =========================
     // Image attachments (screenshots) + OCR
     // =========================
@@ -1051,19 +1038,77 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         let failed = 0;
         let i = 0;
 
+        const normalise = (s: string) => s.trim().replace(/\s+/g, ' ');
+
+        // Fast exact substring replace
+        function exactReplace(code: string, find: string, rep: string): string | null {
+            if (code.includes(find)) return code.replace(find, rep);
+            return null;
+        }
+
+        // Line-number-guided window search (±60 lines around hint)
+        function windowReplace(code: string, find: string, rep: string, lineHint: number): string | null {
+            const codeLines = code.split('\n');
+            const findLines = find.split('\n').map(l => l.trim()).filter((l, idx, arr) => !(l === '' && (idx === 0 || idx === arr.length - 1)));
+            if (findLines.length === 0) return null;
+            const windowStart = Math.max(0, lineHint - 60 - 1);
+            const windowEnd = Math.min(codeLines.length - findLines.length, lineHint + 60);
+            for (let r = windowStart; r <= windowEnd; r++) {
+                let match = true;
+                for (let f = 0; f < findLines.length; f++) {
+                    if (normalise(codeLines[r + f]) !== normalise(findLines[f])) { match = false; break; }
+                }
+                if (match) {
+                    const before = codeLines.slice(0, r);
+                    const after = codeLines.slice(r + findLines.length);
+                    return [...before, rep, ...after].join('\n');
+                }
+            }
+            return null;
+        }
+
+        // Full fuzzy scan (fallback for files without line hints)
+        function fuzzyReplace(code: string, find: string, rep: string): string | null {
+            const codeLines = code.split('\n');
+            const findLines = find.split('\n').map(l => l.trim()).filter((l, idx, arr) => !(l === '' && (idx === 0 || idx === arr.length - 1)));
+            if (findLines.length === 0) return null;
+            for (let r = 0; r <= codeLines.length - findLines.length; r++) {
+                let match = true;
+                for (let f = 0; f < findLines.length; f++) {
+                    if (normalise(codeLines[r + f]) !== normalise(findLines[f])) { match = false; break; }
+                }
+                if (match) {
+                    const before = codeLines.slice(0, r);
+                    const after = codeLines.slice(r + findLines.length);
+                    return [...before, rep, ...after].join('\n');
+                }
+            }
+            return null;
+        }
+
         while (i < lines.length) {
             const line = lines[i];
 
             // Detect Ctrl+F block — with or without line number hint
-            if (/^ctrl\+f(\s*\(line\s*~?\d+\))?:/i.test(line.trim())) {
-                // Extract FIND text
+            const ctrlFMatch = /^ctrl\+f(\s*\(line\s*~?(\d+)\))?:/i.exec(line.trim());
+            if (ctrlFMatch) {
+                // Extract optional line hint
+                const lineHint = ctrlFMatch[2] ? parseInt(ctrlFMatch[2], 10) : null;
+
+                // Extract FIND text — strip the Ctrl+F prefix, handle backtick fences
                 const findVal = line.replace(/^ctrl\+f(\s*\(line\s*~?\d+\))?:\s*/i, '').replace(/```[\w]*/g, '').trim();
                 const findLines = findVal ? [findVal] : [];
                 i++;
 
-                while (i < lines.length && !/^replace with:/i.test(lines[i].trim()) && !/^ctrl\+f/i.test(lines[i].trim()) && !/^add (above|below):/i.test(lines[i].trim())) {
-                    const l = lines[i].replace(/```[\w]*/g, '').replace(/^```$/, '');
-                    if (l.trim() || findLines.length > 0) findLines.push(l);
+                while (i < lines.length
+                    && !/^replace with:/i.test(lines[i].trim())
+                    && !/^ctrl\+f/i.test(lines[i].trim())
+                    && !/^add (above|below):/i.test(lines[i].trim())) {
+                    // Stop collecting at a lone closing fence only if we already have content
+                    const rawLine = lines[i];
+                    const stripped = rawLine.replace(/```[\w]*/g, '').replace(/^```$/, '');
+                    if (rawLine.trim() === '```' && findLines.length > 1) { i++; break; }
+                    if (stripped.trim() || findLines.length > 0) findLines.push(stripped);
                     i++;
                 }
 
@@ -1071,7 +1116,7 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
                 let action = 'replace';
                 if (i < lines.length && /^add above:/i.test(lines[i].trim())) action = 'add_above';
                 else if (i < lines.length && /^add below:/i.test(lines[i].trim())) action = 'add_below';
-                i++; // skip "Replace with:" line
+                i++; // skip "Replace with:" / "Add above:" / "Add below:" line
 
                 // Extract REPLACE text
                 const replaceLines: string[] = [];
@@ -1087,45 +1132,31 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
 
                 if (!findText) { failed++; continue; }
 
-                // Apply the change
+                // Check for (delete) — empty replace means delete
+                const effectiveReplace = /^\(delete\)$/i.test(replaceText) ? '' : replaceText;
+
+                // Apply: 1) exact, 2) window (if we have a line hint), 3) full fuzzy
                 if (action === 'replace') {
-                    if (result.includes(findText)) {
-                        result = result.replace(findText, replaceText);
-                        applied++;
-                    } else {
-                        // Fuzzy: try trimmed + normalised whitespace matching
-                        const normalise = (s: string) => s.trim().replace(/\s+/g, ' ');
-                        const findTrimmedLines = findText.split('\n')
-                            .map(l => l.trim())
-                            .filter((l, i, arr) => !(l === '' && (i === 0 || i === arr.length - 1))); // strip leading/trailing blank lines
-                        const resultLines = result.split('\n');
-                        let matchStart = -1;
+                    let patched: string | null = null;
 
-                        for (let r = 0; r <= resultLines.length - findTrimmedLines.length; r++) {
-                            let match = true;
-                            for (let f = 0; f < findTrimmedLines.length; f++) {
-                                if (normalise(resultLines[r + f]) !== normalise(findTrimmedLines[f])) { match = false; break; }
-                            }
-                            if (match) { matchStart = r; break; }
-                        }
+                    patched = exactReplace(result, findText, effectiveReplace);
+                    if (!patched && lineHint !== null) patched = windowReplace(result, findText, effectiveReplace, lineHint);
+                    if (!patched) patched = fuzzyReplace(result, findText, effectiveReplace);
 
-                        if (matchStart >= 0) {
-                            const before = resultLines.slice(0, matchStart);
-                            const after = resultLines.slice(matchStart + findTrimmedLines.length);
-                            result = [...before, replaceText, ...after].join('\n');
-                            applied++;
-                        } else {
-                            failed++;
-                        }
-                    }
-                } else if (action === 'add_above' && result.includes(findText)) {
-                    result = result.replace(findText, replaceText + '\n' + findText);
-                    applied++;
-                } else if (action === 'add_below' && result.includes(findText)) {
-                    result = result.replace(findText, findText + '\n' + replaceText);
-                    applied++;
-                } else {
-                    failed++;
+                    if (patched !== null) { result = patched; applied++; }
+                    else { failed++; }
+
+                } else if (action === 'add_above') {
+                    const patched = exactReplace(result, findText, effectiveReplace + '\n' + findText)
+                        ?? (lineHint !== null ? windowReplace(result, findText, effectiveReplace + '\n' + findText, lineHint) : null)
+                        ?? fuzzyReplace(result, findText, effectiveReplace + '\n' + findText);
+                    if (patched !== null) { result = patched; applied++; } else { failed++; }
+
+                } else if (action === 'add_below') {
+                    const patched = exactReplace(result, findText, findText + '\n' + effectiveReplace)
+                        ?? (lineHint !== null ? windowReplace(result, findText, findText + '\n' + effectiveReplace, lineHint) : null)
+                        ?? fuzzyReplace(result, findText, findText + '\n' + effectiveReplace);
+                    if (patched !== null) { result = patched; applied++; } else { failed++; }
                 }
             } else {
                 i++;
@@ -1139,31 +1170,57 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         const clean = searchText.replace(/^[`'"]+|[`'"]+$/g, '').trim();
         if (!clean) return;
         const searchStr = clean.split('\n')[0].trim() || clean;
+        const isMultiLine = clean.includes('\n');
 
         const doReveal = () => {
-            const editor = monacoEditorRef.current;
-            console.log('[GoTo] editor ref:', !!editor, 'searchStr:', JSON.stringify(searchStr));
-            if (!editor) { console.log('[GoTo] NO EDITOR REF'); return false; }
-            const model = editor.getModel();
-            if (!model) { console.log('[GoTo] NO MODEL'); return false; }
-            const matches = model.findMatches(searchStr, false, false, false, null, false);
-            console.log('[GoTo] matches:', matches.length, 'modelLines:', model.getLineCount());
-            if (matches.length === 0) { console.log('[GoTo] ZERO MATCHES for', JSON.stringify(searchStr)); return false; }
-            const range = matches[0].range;
-            // Use the exact pattern the diagnostics jump uses — proven to scroll correctly.
-            // No setScrollTop: its pixel math is wrong under wordWrap and overrides the reveal.
-            editor.revealLineInCenter(range.startLineNumber);
-            editor.setPosition({ lineNumber: range.startLineNumber, column: range.startColumn });
-            editor.setSelection(range);
-            editor.focus();
+            // Monaco path
+            if (useMonaco && monacoEditorRef.current) {
+                const editor = monacoEditorRef.current;
+                const model = editor.getModel();
+                if (!model) return false;
+
+                // For multi-line blocks: try 2-line chunk first (far more unique in large files)
+                if (isMultiLine) {
+                    const lines = clean.split('\n');
+                    const twoLine = lines.slice(0, 2).join('\n').trim();
+                    const multiMatches = model.findMatches(twoLine, false, false, false, null, false);
+                    if (multiMatches.length >= 1) {
+                        const range = multiMatches[0].range;
+                        editor.revealLineInCenter(range.startLineNumber);
+                        editor.setPosition({ lineNumber: range.startLineNumber, column: range.startColumn });
+                        editor.setSelection(range);
+                        editor.focus();
+                        return true;
+                    }
+                }
+
+                // Single line or fallback
+                const matches = model.findMatches(searchStr, false, false, false, null, false);
+                if (matches.length === 0) return false;
+                const range = matches[0].range;
+                editor.revealLineInCenter(range.startLineNumber);
+                editor.setPosition({ lineNumber: range.startLineNumber, column: range.startColumn });
+                editor.setSelection(range);
+                editor.focus();
+                return true;
+            }
+
+            // Basic textarea path
+            const el = codeTextareaRef.current;
+            if (!el) return false;
+            const idx = el.value.indexOf(clean) !== -1 ? el.value.indexOf(clean) : el.value.indexOf(searchStr);
+            if (idx === -1) return false;
+            const matchLen = el.value.indexOf(clean) !== -1 ? clean.length : searchStr.length;
+            el.focus();
+            el.setSelectionRange(idx, idx + matchLen);
+            const linesBefore = el.value.slice(0, idx).split('\n').length;
+            el.scrollTop = Math.max(0, (linesBefore - 3) * 20);
             return true;
         };
 
         if (codeOpen) {
-            // Panel already open — reveal immediately
             if (!doReveal()) setTimeout(doReveal, 200);
         } else {
-            // Open panel first, then reveal after Monaco mounts
             setCodeOpen(true);
             setTimeout(() => {
                 if (!doReveal()) setTimeout(() => {
@@ -1179,26 +1236,6 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         setStreaming(false);
         setLoading(false);
         activeAssistantIdRef.current = null;
-    }
-
-    function startRateLimitCountdown(seconds: number, onExpire: () => void) {
-        if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current);
-        setRateLimitCountdown(seconds);
-        pendingRateLimitRetryRef.current = onExpire;
-        rateLimitTimerRef.current = setInterval(() => {
-            setRateLimitCountdown(prev => {
-                if (prev === null || prev <= 1) {
-                    clearInterval(rateLimitTimerRef.current!);
-                    rateLimitTimerRef.current = null;
-                    // Auto-retry
-                    const retry = pendingRateLimitRetryRef.current;
-                    pendingRateLimitRetryRef.current = null;
-                    if (retry) setTimeout(retry, 0);
-                    return null;
-                }
-                return prev - 1;
-            });
-        }, 1000);
     }
 
 
@@ -1929,14 +1966,6 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
                     if (event === "delta" && data?.delta) onDelta(String(data.delta));
                     if (event === "done") onDone((data || {}) as StreamDone);
 
-                    if (event === "rate_limit") {
-                        const retryAfter = Number(data?.retryAfter ?? 30);
-                        const e = new Error("rate_limit") as Error & { isRateLimit?: boolean; retryAfter?: number };
-                        e.isRateLimit = true;
-                        e.retryAfter = retryAfter;
-                        throw e;
-                    }
-
                     if (event === "ping") continue;
 
                     if (event === "error") {
@@ -2088,9 +2117,7 @@ ${codeContext}` : ""}${projectContext}`
                     // If we detect code, push it to the code canvas and OPEN the code panel.
                     // Never touch the code panel for project analysis responses
                     if (extracted && !/ctrl\+f:/i.test(streamed) && !isProjectAnalysis) {
-                        const isMergeable = giveAiAccessToCode && accessLockedCode.trim() &&
-                            extracted.length < accessLockedCode.length * 0.85;
-                        const merged = isMergeable
+                        const merged = (giveAiAccessToCode && accessLockedCode.trim())
                             ? mergePatchWithExisting(accessLockedCode, extracted)
                             : extracted;
 
@@ -2278,12 +2305,9 @@ ${codeContext}` : ""}${projectContext}`
                 ? accessLockedCode
                 : codeText;
             const trimmedForPrompt = codeForContext.slice(0, 120000);
-            const isEditRequest = looksLikeEditRequest(payload.text);
             const codeContext =
                 giveAiAccessToCode && codeForContext.trim()
-                    ? isEditRequest
-                        ? `\n\nEXISTING CODE — you are editing this file. You MUST return the COMPLETE file with your changes applied. Do NOT truncate, summarise, or use "// rest of file unchanged". Return every line:\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
-                        : `\n\nEXISTING CODE (you MUST either output the FULL corrected file OR give Ctrl+F find-and-replace instructions — NEVER output a partial truncated file):\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
+                    ? `\n\nEXISTING CODE (you MUST either output the FULL corrected file OR give Ctrl+F find-and-replace instructions — NEVER output a partial truncated file):\n\`\`\`pinescript\n${trimmedForPrompt}\n\`\`\`\n`
                     : "";
 
             const projectContext = buildProjectContext();
@@ -2309,11 +2333,7 @@ ${codeContext}` : ""}${projectContext}`
                     const isProjectAnalysis2 = streamed.includes('Project Analysis') || streamed.includes('Architecture Overview') || streamed.includes('applied to current code');
 
                     if (extracted && !/ctrl\+f:/i.test(streamed) && !isProjectAnalysis2) {
-                        // Only run mergePatchWithExisting if the response is a partial patch
-                        // (has truncation markers). If the AI returned a full file, use it directly.
-                        const isMergeable = giveAiAccessToCode && accessLockedCode.trim() &&
-                            extracted.length < accessLockedCode.length * 0.85; // clearly shorter = patch
-                        const merged = isMergeable
+                        const merged = (giveAiAccessToCode && accessLockedCode.trim())
                             ? mergePatchWithExisting(accessLockedCode, extracted)
                             : extracted;
 
@@ -2435,16 +2455,6 @@ ${codeContext}` : ""}${projectContext}`
                 err instanceof Error ? err.message : "⚠️ Failed to get a reply. Is the API running?";
             const status = (err as Error & { status?: number })?.status;
             const code = (err as Error & { code?: string })?.code;
-            const isRateLimit = (err as Error & { isRateLimit?: boolean })?.isRateLimit || msg === 'rate_limit';
-            const retryAfterSecs = (err as Error & { retryAfter?: number })?.retryAfter ?? 30;
-
-            // Rate limit — show countdown, auto-retry
-            if (isRateLimit) {
-                setLoading(false);
-                setStreaming(false);
-                startRateLimitCountdown(retryAfterSecs, () => void retryLastSend());
-                return;
-            }
 
             // Check for payment required error (usage limits)
             const isPaywall =
@@ -2479,17 +2489,6 @@ ${codeContext}` : ""}${projectContext}`
         } finally {
             setLoading(false);
             setStreaming(false);
-            // Auto-advance prompt queue — send next queued prompt if any
-            setPromptQueue(prev => {
-                if (prev.length === 0) return prev;
-                const [next, ...rest] = prev;
-                // Small delay so UI settles first
-                setTimeout(() => {
-                    setInput(next.text);
-                    setTimeout(() => void handleSend(), 50);
-                }, 400);
-                return rest;
-            });
         }
 
     }
@@ -6961,7 +6960,7 @@ Project description: ${newProjectPrompt.trim()}`
                                             <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', flex: 1 }}>
                                                 🔎 Diagnostics
                                             </span>
-                                            {/* Severity counts */}
+                                            {/* Always show counts — even when closed */}
                                             {diagnostics.filter(d => d.severity === 'error').length > 0 && (
                                                 <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '10px', background: 'rgba(248,113,113,0.15)', color: '#f87171', fontWeight: 700 }}>
                                                     🔴 {diagnostics.filter(d => d.severity === 'error').length}
@@ -7005,14 +7004,32 @@ Project description: ${newProjectPrompt.trim()}`
                                                     >
                                                         ↺ Run
                                                     </button>
+                                                    {diagnostics.filter(d => d.severity === 'error').length > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const errors = diagnostics.filter(d => d.severity === 'error');
+                                                                const errorSummary = errors.slice(0, 5).map(d => `Line ${d.line}: ${d.message}`).join('\n');
+                                                                setInput(`Fix these errors:\n${errorSummary}`);
+                                                                setTimeout(() => void handleSend(), 50);
+                                                            }}
+                                                            style={{ padding: '2px 8px', fontSize: '10px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.1)', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                                            title="Send all errors to AI for fixing"
+                                                        >
+                                                            ⚡ Fix All
+                                                        </button>
+                                                    )}
                                                 </div>
 
                                                 {/* Diagnostic list */}
-                                                <div style={{ maxHeight: '180px', overflowY: 'auto', padding: '4px 0' }}>
+                                                <div style={{ maxHeight: '280px', overflowY: 'auto', padding: '4px 0' }}>
                                                     {(() => {
-                                                        const filtered = diagnosticsFilter === 'all'
-                                                            ? diagnostics
-                                                            : diagnostics.filter(d => d.severity === diagnosticsFilter);
+                                                        const filtered = (diagnosticsFilter === 'all'
+                                                            ? [...diagnostics].sort((a, b) => {
+                                                                const order = { error: 0, warning: 1, info: 2 };
+                                                                return order[a.severity] - order[b.severity] || a.line - b.line;
+                                                            })
+                                                            : diagnostics.filter(d => d.severity === diagnosticsFilter));
 
                                                         if (filtered.length === 0) {
                                                             return (
@@ -7022,59 +7039,81 @@ Project description: ${newProjectPrompt.trim()}`
                                                             );
                                                         }
 
-                                                        return filtered.map((d, i) => (
-                                                            <div
-                                                                key={i}
-                                                                style={{ padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', alignItems: 'flex-start', cursor: 'pointer' }}
-                                                                onClick={() => {
-                                                                    // Jump to line in textarea
-                                                                    const ta = codeTextareaRef.current;
-                                                                    if (ta && !useMonaco) {
-                                                                        const lines = codeText.split('\n');
-                                                                        const charsBefore = lines.slice(0, d.line - 1).join('\n').length + (d.line > 1 ? 1 : 0);
-                                                                        const charsToEnd = charsBefore + lines[d.line - 1].length;
-                                                                        ta.focus();
-                                                                        ta.setSelectionRange(charsBefore, charsToEnd);
-                                                                        const lineHeight = 20;
-                                                                        ta.scrollTop = Math.max(0, (d.line - 3) * lineHeight);
-                                                                    }
-                                                                    // Jump to line in Monaco
-                                                                    if (useMonaco && monacoEditorRef.current) {
-                                                                        monacoEditorRef.current.revealLineInCenter(d.line);
-                                                                        monacoEditorRef.current.setPosition({ lineNumber: d.line, column: d.col });
-                                                                        monacoEditorRef.current.focus();
-                                                                    }
-                                                                }}
-                                                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
-                                                                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                                                            >
-                                                                <span style={{ fontSize: '11px', flexShrink: 0, marginTop: '1px' }}>{severityIcon(d.severity)}</span>
-                                                                <div style={{ flex: 1, minWidth: 0 }}>
-                                                                    <div style={{ fontSize: '12px', color: severityColor(d.severity), lineHeight: 1.4 }}>{d.message}</div>
-                                                                    <div style={{ display: 'flex', gap: '8px', marginTop: '2px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Line {d.line} · {d.code}</span>
-                                                                        {d.quickFix && (
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    const lines = codeText.split('\n');
-                                                                                    lines[d.line - 1] = d.quickFix!.replacement;
-                                                                                    const fixed = lines.join('\n');
-                                                                                    setCodeText(fixed);
-                                                                                    addToHistory(fixed);
-                                                                                    setHasUnsavedChanges(true);
-                                                                                    setTimeout(() => runDiagnostics(fixed), 50);
-                                                                                }}
-                                                                                style={{ fontSize: '10px', padding: '1px 7px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.08)', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
-                                                                            >
-                                                                                ⚡ {d.quickFix.label}
-                                                                            </button>
-                                                                        )}
+                                                        return filtered.map((d, i) => {
+                                                            // Get the actual line of code for preview
+                                                            const codeLine = codeText.split('\n')[d.line - 1]?.trim() ?? '';
+                                                            return (
+                                                                <div
+                                                                    key={i}
+                                                                    style={{ padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+                                                                    onClick={() => {
+                                                                        // Jump to line in textarea
+                                                                        const ta = codeTextareaRef.current;
+                                                                        if (ta && !useMonaco) {
+                                                                            const lines = codeText.split('\n');
+                                                                            const charsBefore = lines.slice(0, d.line - 1).join('\n').length + (d.line > 1 ? 1 : 0);
+                                                                            const charsToEnd = charsBefore + lines[d.line - 1].length;
+                                                                            ta.focus();
+                                                                            ta.setSelectionRange(charsBefore, charsToEnd);
+                                                                            const lineHeight = 20;
+                                                                            ta.scrollTop = Math.max(0, (d.line - 3) * lineHeight);
+                                                                        }
+                                                                        if (useMonaco && monacoEditorRef.current) {
+                                                                            monacoEditorRef.current.revealLineInCenter(d.line);
+                                                                            monacoEditorRef.current.setPosition({ lineNumber: d.line, column: d.col });
+                                                                            monacoEditorRef.current.focus();
+                                                                        }
+                                                                    }}
+                                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                                                                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                                                                >
+                                                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                                                                        <span style={{ fontSize: '11px', flexShrink: 0, marginTop: '1px' }}>{severityIcon(d.severity)}</span>
+                                                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                                                            <div style={{ fontSize: '12px', color: severityColor(d.severity), lineHeight: 1.4 }}>{d.message}</div>
+                                                                            {/* Line preview */}
+                                                                            {codeLine && (
+                                                                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%', opacity: 0.7 }}>
+                                                                                    {codeLine.slice(0, 80)}{codeLine.length > 80 ? '…' : ''}
+                                                                                </div>
+                                                                            )}
+                                                                            <div style={{ display: 'flex', gap: '6px', marginTop: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Line {d.line} · {d.code}</span>
+                                                                                {d.quickFix && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            const lines = codeText.split('\n');
+                                                                                            lines[d.line - 1] = d.quickFix!.replacement;
+                                                                                            const fixed = lines.join('\n');
+                                                                                            setCodeText(fixed);
+                                                                                            addToHistory(fixed);
+                                                                                            setHasUnsavedChanges(true);
+                                                                                            setTimeout(() => runDiagnostics(fixed), 50);
+                                                                                        }}
+                                                                                        style={{ fontSize: '10px', padding: '1px 7px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.08)', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
+                                                                                    >
+                                                                                        ⚡ {d.quickFix.label}
+                                                                                    </button>
+                                                                                )}
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setInput(`Fix this error on line ${d.line}: ${d.message}\nCode: ${codeLine}`);
+                                                                                        setTimeout(() => void handleSend(), 50);
+                                                                                    }}
+                                                                                    style={{ fontSize: '10px', padding: '1px 7px', borderRadius: '4px', border: '1px solid rgba(96,165,250,0.3)', background: 'rgba(96,165,250,0.08)', color: '#60a5fa', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}
+                                                                                >
+                                                                                    🤖 Fix with AI
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
                                                                     </div>
                                                                 </div>
-                                                            </div>
-                                                        ));
+                                                            );
+                                                        });
                                                     })()}
                                                 </div>
                                             </div>
@@ -7101,97 +7140,6 @@ Project description: ${newProjectPrompt.trim()}`
                             style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: '11px', borderRadius: '10px', border: '1px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.08)', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>
                             Upgrade ↗
                         </button>
-                    </div>
-                )}
-
-                {/* Rate limit countdown banner */}
-                {rateLimitCountdown !== null && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', background: 'rgba(251,191,36,0.1)', borderTop: '1px solid rgba(251,191,36,0.3)', fontSize: '12px' }}>
-                        <span style={{ fontSize: '16px' }}>⏱</span>
-                        <span style={{ color: '#fbbf24', fontWeight: 600 }}>Rate limit — auto-retrying in {rateLimitCountdown}s</span>
-                        <button type="button"
-                            onClick={() => {
-                                if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current);
-                                setRateLimitCountdown(null);
-                                const retry = pendingRateLimitRetryRef.current;
-                                pendingRateLimitRetryRef.current = null;
-                                if (retry) retry();
-                            }}
-                            style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: '11px', background: 'rgba(251,191,36,0.2)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}>
-                            ▶ Retry Now
-                        </button>
-                        <button type="button"
-                            onClick={() => {
-                                if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current);
-                                setRateLimitCountdown(null);
-                                pendingRateLimitRetryRef.current = null;
-                            }}
-                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '13px' }}>✕</button>
-                    </div>
-                )}
-
-                {/* Prompt queue panel */}
-                {queuePanelOpen && (
-                    <div style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', padding: '8px 12px', maxHeight: '220px', overflowY: 'auto' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                                Queue ({promptQueue.length})
-                            </span>
-                            <button type="button" onClick={() => setQueuePanelOpen(false)}
-                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '13px' }}>✕</button>
-                        </div>
-                        {promptQueue.length === 0 ? (
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '8px 0', textAlign: 'center' }}>
-                                No queued prompts — type a message and click + Queue while a response is streaming
-                            </div>
-                        ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                {promptQueue.map((item, idx) => (
-                                    <div key={item.id}
-                                        draggable
-                                        onDragStart={() => { dragQueueIdRef.current = item.id; }}
-                                        onDragOver={e => e.preventDefault()}
-                                        onDrop={() => {
-                                            const fromId = dragQueueIdRef.current;
-                                            if (!fromId || fromId === item.id) return;
-                                            setPromptQueue(prev => {
-                                                const fromIdx = prev.findIndex(p => p.id === fromId);
-                                                const toIdx = prev.findIndex(p => p.id === item.id);
-                                                if (fromIdx === -1 || toIdx === -1) return prev;
-                                                const next = [...prev];
-                                                const [moved] = next.splice(fromIdx, 1);
-                                                next.splice(toIdx, 0, moved);
-                                                return next;
-                                            });
-                                            dragQueueIdRef.current = null;
-                                        }}
-                                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 8px', background: 'var(--bg-primary)', border: '1px solid var(--border-default)', borderRadius: '6px', cursor: 'grab' }}>
-                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', minWidth: '16px' }}>#{idx + 1}</span>
-                                        {editingQueueId === item.id ? (
-                                            <input
-                                                autoFocus
-                                                value={editingQueueText}
-                                                onChange={e => setEditingQueueText(e.target.value)}
-                                                onKeyDown={e => {
-                                                    if (e.key === 'Enter') { setPromptQueue(prev => prev.map(p => p.id === item.id ? { ...p, text: editingQueueText } : p)); setEditingQueueId(null); }
-                                                    if (e.key === 'Escape') setEditingQueueId(null);
-                                                }}
-                                                onBlur={() => { setPromptQueue(prev => prev.map(p => p.id === item.id ? { ...p, text: editingQueueText } : p)); setEditingQueueId(null); }}
-                                                style={{ flex: 1, fontSize: '12px', background: 'var(--bg-elevated)', border: '1px solid var(--accent)', borderRadius: '4px', padding: '2px 6px', color: 'var(--text-primary)', fontFamily: 'DM Sans, sans-serif' }}
-                                            />
-                                        ) : (
-                                            <span style={{ flex: 1, fontSize: '12px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.text}</span>
-                                        )}
-                                        <button type="button"
-                                            onClick={() => { setEditingQueueId(item.id); setEditingQueueText(item.text); }}
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '11px', padding: '1px 4px' }} title="Edit">✏️</button>
-                                        <button type="button"
-                                            onClick={() => setPromptQueue(prev => prev.filter(p => p.id !== item.id))}
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '12px', padding: '1px 4px' }} title="Remove">✕</button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
                     </div>
                 )}
 
@@ -7335,38 +7283,13 @@ Project description: ${newProjectPrompt.trim()}`
                     </div>
 
                     {streaming ? (
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                            <button
-                                type="button"
-                                className="btn-primary px-6"
-                                onClick={stopStreaming}
-                            >
-                                Stop
-                            </button>
-                            {input.trim() ? (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        if (!input.trim()) return;
-                                        setPromptQueue(prev => [...prev, { id: globalThis.crypto.randomUUID(), text: input.trim() }]);
-                                        setInput('');
-                                        setQueuePanelOpen(true);
-                                        showToast('Added to queue', 'success');
-                                    }}
-                                    style={{ padding: '6px 12px', fontSize: '12px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.4)', color: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
-                                    title="Queue this message to send after current response">
-                                    + Queue
-                                </button>
-                            ) : (
-                                <button
-                                    type="button"
-                                    onClick={() => setQueuePanelOpen(v => !v)}
-                                    style={{ padding: '6px 10px', fontSize: '12px', background: promptQueue.length > 0 ? 'rgba(249,115,22,0.15)' : 'transparent', border: '1px solid var(--border-default)', color: promptQueue.length > 0 ? 'var(--accent)' : 'var(--text-muted)', borderRadius: '6px', cursor: 'pointer' }}
-                                    title="View prompt queue">
-                                    📋{promptQueue.length > 0 ? ` ${promptQueue.length}` : ''}
-                                </button>
-                            )}
-                        </div>
+                        <button
+                            type="button"
+                            className="btn-primary px-6"
+                            onClick={stopStreaming}
+                        >
+                            Stop
+                        </button>
                     ) : (
                         <>
                             <label className="btn-secondary cursor-pointer select-none">
@@ -7396,14 +7319,6 @@ Project description: ${newProjectPrompt.trim()}`
                             >
                                 Retry
                             </button>
-
-                            {promptQueue.length > 0 && (
-                                <button type="button"
-                                    onClick={() => setQueuePanelOpen(v => !v)}
-                                    style={{ padding: '6px 10px', fontSize: '12px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.4)', color: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
-                                    📋 {promptQueue.length}
-                                </button>
-                            )}
 
                             <button className="btn-primary">
                                 Send
