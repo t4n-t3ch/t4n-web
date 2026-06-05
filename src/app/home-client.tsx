@@ -2060,7 +2060,7 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
             const codeContext = buildMultiFileContext();
             const projectContext = buildProjectContext();
 
-            const finalText = (wantsCodeRef.current || (giveAiAccessToCode && codeForContext.trim()))
+            const finalText = (wantsCodeRef.current || (giveAiAccessToCode && !!codeContext))
                 ? `USER REQUEST:
 ${payload.text}${codeContext ? `
 
@@ -2299,7 +2299,7 @@ ${codeContext}` : ""}${projectContext}`
             const codeContext = buildRetryContext();
             const projectContext = buildProjectContext();
 
-            const finalText = (wantsCodeRef.current || (giveAiAccessToCode && codeForContext.trim()))
+            const finalText = (wantsCodeRef.current || (giveAiAccessToCode && !!codeContext))
                 ? `USER REQUEST:
 ${payload.text}${codeContext ? `
 
