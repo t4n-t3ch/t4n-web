@@ -333,6 +333,7 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     const [codeSearchOpen, setCodeSearchOpen] = useState(false);
     const [codeSearchVal, setCodeSearchVal] = useState('');
     const [droppedFolder, setDroppedFolder] = useState<{ name: string; fileCount: number; content: string } | null>(null);
+    const [chatPastedCode, setChatPastedCode] = useState<{ text: string; expanded: boolean } | null>(null);
 
     useEffect(() => {
         // Restore layout
@@ -433,6 +434,7 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     type TabAccessMode = 'edit' | 'read' | 'off';
     const [tabAccessModes, setTabAccessModes] = useState<Record<string, TabAccessMode>>({});
     const [accessDropdownOpen, setAccessDropdownOpen] = useState(false);
+    const accessDropdownRef = useRef<HTMLDivElement | null>(null);
     const [loadingSnippets, setLoadingSnippets] = useState(false);
     const [snippetVersions, setSnippetVersions] = useState<SnippetVersion[]>([]);
     const [showVersions, setShowVersions] = useState(false);
@@ -443,12 +445,12 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     const [renameModalValue, setRenameModalValue] = useState('');
 
     // Monaco editor state
-    const [useMonaco, setUseMonaco] = useState(false);
+    const [useMonaco, setUseMonaco] = useState(true);
     const [monacoMinimap, setMonacoMinimap] = useState(false);
     const [monacoTheme, setMonacoTheme] = useState<'vs-dark' | 'light' | 'hc-black'>('vs-dark');
     const [openTabs, setOpenTabs] = useState<string[]>([]); // snippet ids open as tabs
     const [activeTab, setActiveTab] = useState<string | null>(null);
-    const [bgJobHistory, setBgJobHistory] = useState<{ jobId: string; projectName: string; projectGoal: string; domain: string; maxSteps: string; maxsteps?: string; startedAt: string; step?: string; status?: string; projectFolderName?: string }[]>([]);
+    const [bgJobHistory, setBgJobHistory] = useState<{ jobId: string; conversationId?: string; projectName: string; projectGoal: string; domain: string; maxSteps: string; maxsteps?: string; startedAt: string; step?: string; status?: string; projectFolderName?: string }[]>([]);
     const [bgJobHistoryLoading, setBgJobHistoryLoading] = useState(false);
     const [bgJobHistoryOpen, setBgJobHistoryOpen] = useState(false);
     const monacoEditorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -1555,6 +1557,18 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
     }, [session]);
 
+    // Close access dropdown on click outside
+    useEffect(() => {
+        if (!accessDropdownOpen) return;
+        const handler = (e: MouseEvent) => {
+            if (accessDropdownRef.current && !accessDropdownRef.current.contains(e.target as Node)) {
+                setAccessDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [accessDropdownOpen]);
+
     const filteredConversations = (() => {
         const q = convSearch.trim().toLowerCase();
         if (!q) return conversations;
@@ -2197,8 +2211,12 @@ ${codeContext}` : ""}${projectContext}`
         // What the user sees vs what the API receives
         const uiText = text;
         const folderContext = droppedFolder ? `\n\n${droppedFolder.content}` : '';
-        const apiText = `${text}${screenshotContext}${folderContext}`.trim();
+        const pastedCodeContext = chatPastedCode
+            ? `\n\n[PASTED CODE — this is code the user shared in the message, NOT the canvas code. Read it carefully.]\n\`\`\`\n${chatPastedCode.text}\n\`\`\`\n[END PASTED CODE]`
+            : '';
+        const apiText = `${text}${screenshotContext}${folderContext}${pastedCodeContext}`.trim();
         if (droppedFolder) setDroppedFolder(null);
+        if (chatPastedCode) setChatPastedCode(null);
 
         // Determine if user intent requires code-mode (edit existing code OR request code)
         const hasExistingCode = giveAiAccessToCode && !!codeText.trim(); // This is correct - requires access
@@ -5926,8 +5944,8 @@ Project description: ${newProjectPrompt.trim()}`
 
                                             {accessDropdownOpen && (
                                                 <div
+                                                    ref={accessDropdownRef}
                                                     style={{ position: 'absolute', top: '100%', left: 0, zIndex: 200, marginTop: '4px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', padding: '8px', minWidth: '260px' }}
-                                                    onMouseLeave={() => setAccessDropdownOpen(false)}
                                                 >
                                                     <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px', padding: '0 4px' }}>
                                                         AI File Access
@@ -6307,7 +6325,22 @@ Project description: ${newProjectPrompt.trim()}`
                                                 const statusColor = job.status === 'done' ? '#4ade80' : job.status === 'error' ? '#f87171' : job.status?.startsWith('paused') ? '#fbbf24' : '#60a5fa';
                                                 const statusLabel = job.status === 'done' ? '✅ Done' : job.status === 'error' ? '❌ Error' : job.status?.startsWith('paused') ? '⏸ Paused' : job.status === 'running' ? '🔄 Running' : job.status || 'Unknown';
                                                 return (
-                                                    <div key={job.jobId || i} style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)' }}>
+                                                    <div key={job.jobId || i}
+                                                        onClick={async () => {
+                                                            if (!job.conversationId) return;
+                                                            setBgJobHistoryOpen(false);
+                                                            router.push(`/?c=${encodeURIComponent(job.conversationId)}`);
+                                                            setActiveId(job.conversationId);
+                                                            setMessages([]);
+                                                            try {
+                                                                const r = await getMessages(job.conversationId);
+                                                                if (r.ok) setMessages(r.data.messages ?? []);
+                                                            } catch { }
+                                                        }}
+                                                        style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)', cursor: job.conversationId ? 'pointer' : 'default', transition: 'background 0.15s' }}
+                                                        onMouseEnter={e => { if (job.conversationId) e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                                                        onMouseLeave={e => { e.currentTarget.style.background = 'none'; }}
+                                                    >
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
                                                             <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', flex: 1, marginRight: '8px' }}>{job.projectName || 'Unnamed Project'}</span>
                                                             <span style={{ fontSize: '10px', color: statusColor, fontWeight: 600, whiteSpace: 'nowrap' }}>{statusLabel}</span>
@@ -7168,6 +7201,34 @@ Project description: ${newProjectPrompt.trim()}`
                                     style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '13px', padding: '0 2px' }}>✕</button>
                             </div>
                         )}
+                        {chatPastedCode && (
+                            <div style={{ background: 'rgba(249,115,22,0.07)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '8px', overflow: 'hidden', fontSize: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px' }}>
+                                    <span>📄</span>
+                                    <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Code attached</span>
+                                    <span style={{ color: 'var(--text-muted)' }}>{chatPastedCode!.text.split('\n').length} lines · separate from canvas</span>
+                                    <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
+                                        <button type="button"
+                                            onClick={() => setChatPastedCode(p => p ? { ...p, expanded: !p.expanded } : null)}
+                                            style={{ background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '4px', cursor: 'pointer', color: 'var(--accent)', fontSize: '10px', padding: '2px 6px' }}>
+                                            {chatPastedCode!.expanded ? '▲ Hide' : '▼ Preview'}
+                                        </button>
+                                        <button type="button"
+                                            onClick={() => { const c = chatPastedCode!; setCodeText(c.text); setUnsavedCode(c.text); setHasUnsavedChanges(true); setActiveCodeId(null); setCodeOpen(true); setChatPastedCode(null); showToast('Moved to canvas', 'success'); }}
+                                            style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '4px', cursor: 'pointer', color: '#818cf8', fontSize: '10px', padding: '2px 6px' }}>
+                                            → Canvas
+                                        </button>
+                                        <button type="button" onClick={() => setChatPastedCode(null)}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '13px', padding: '0 2px' }}>✕</button>
+                                    </div>
+                                </div>
+                                {chatPastedCode!.expanded && (
+                                    <pre style={{ margin: 0, padding: '8px 10px', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', color: '#e2e2e8', background: '#0d0d10', maxHeight: '160px', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', borderTop: '1px solid rgba(249,115,22,0.2)' }}>
+                                        {chatPastedCode!.text.slice(0, 3000)}{chatPastedCode!.text.length > 3000 ? '\n…' : ''}
+                                    </pre>
+                                )}
+                            </div>
+                        )}
                         {attachments.length > 0 && (
                             <div className="flex items-center gap-2 flex-wrap">
                                 {attachments.map((a) => (
@@ -7266,7 +7327,7 @@ Project description: ${newProjectPrompt.trim()}`
                                     return;
                                 }
 
-                                // Detect code pasted as text — if it looks like code, route it to the code panel
+                                // Detect code pasted as text — show chip in chatbox, keep separate from canvas
                                 const text = e.clipboardData?.getData("text") ?? "";
                                 const looksLikeCode =
                                     /```[\s\S]*```/.test(text) ||
@@ -7276,12 +7337,9 @@ Project description: ${newProjectPrompt.trim()}`
 
                                 if (looksLikeCode && text.trim().length > 80) {
                                     e.preventDefault();
-                                    // Put it in the code panel as unsaved, open the panel
-                                    setCodeText(text);
-                                    setUnsavedCode(text);
-                                    setHasUnsavedChanges(true);
-                                    setActiveCodeId(null);
-                                    setCodeOpen(true);
+                                    // Show as chip in chat — AI receives as [PASTED CODE], canvas unchanged
+                                    setChatPastedCode({ text, expanded: false });
+                                    showToast('Code attached to message — AI will read it', 'info');
                                 }
                             }}
                             disabled={loading}
@@ -7296,17 +7354,28 @@ Project description: ${newProjectPrompt.trim()}`
                         >
                             Stop
                         </button>
-                    ) : (
+                        ) : (
                         <>
                             <label className="btn-secondary cursor-pointer select-none">
                                 <input
                                     type="file"
-                                    accept="image/*"
+                                    accept="image/*,.ts,.tsx,.js,.jsx,.py,.pine,.cs,.md,.txt,.json,.yaml,.yml,.sh,.csv,.html,.css,.sql"
                                     multiple
                                     className="hidden"
                                     onChange={(e) => {
-                                        void handleAttachFiles(e.target.files);
-                                        // allow attaching the same file again later
+                                        const files = Array.from(e.target.files ?? []);
+                                        const imageFiles = files.filter(f => f.type.startsWith('image/'));
+                                        const codeFiles = files.filter(f => !f.type.startsWith('image/'));
+                                        if (imageFiles.length > 0) void handleAttachArray(imageFiles);
+                                        // Read code files as text → show as chip
+                                        codeFiles.forEach(f => {
+                                            const reader = new FileReader();
+                                            reader.onload = ev => {
+                                                const text = ev.target?.result as string;
+                                                if (text) setChatPastedCode({ text: `// ${f.name}\n${text}`, expanded: false });
+                                            };
+                                            reader.readAsText(f);
+                                        });
                                         e.currentTarget.value = "";
                                     }}
                                     disabled={loading}
