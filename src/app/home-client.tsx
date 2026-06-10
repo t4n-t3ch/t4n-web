@@ -318,6 +318,27 @@ const [bgProjectQueueLoading, setBgProjectQueueLoading] = useState(false);
 const [bgProjectAddToQueue, setBgProjectAddToQueue] = useState(false);
 const [bgProjectSelfFeed, setBgProjectSelfFeed] = useState(false);
 const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
+
+    // Integration tokens
+    const [integrationTokens, setIntegrationTokens] = useState<{ hasGithub?: boolean; hasVercel?: boolean; hasRender?: boolean }>({});
+    const [integrationsOpen, setIntegrationsOpen] = useState(false);
+    const [githubTokenInput, setGithubTokenInput] = useState('');
+    const [vercelTokenInput, setVercelTokenInput] = useState('');
+    const [renderTokenInput, setRenderTokenInput] = useState('');
+    const [savingTokens, setSavingTokens] = useState(false);
+    const [autoDeployVercel, setAutoDeployVercel] = useState(false);
+    const [vercelDeployHook, setVercelDeployHook] = useState('');
+    const [autoDeployRender, setAutoDeployRender] = useState(false);
+    const [renderDeployHook, setRenderDeployHook] = useState('');
+
+    // Scheduled autopilot
+    const [autopilotOpen, setAutopilotOpen] = useState(false);
+    const [autopilotGoal, setAutopilotGoal] = useState('');
+    const [autopilotDomain, setAutopilotDomain] = useState('nextjs');
+    const [autopilotStartHour, setAutopilotStartHour] = useState(9);
+    const [autopilotEndHour, setAutopilotEndHour] = useState(21);
+    const [autopilotEnabled, setAutopilotEnabled] = useState(false);
+    const [savingAutopilot, setSavingAutopilot] = useState(false);
 const [bgProjectTab, setBgProjectTab] = useState<'submit' | 'monitor'>('submit');
 const [bgProjectPausedCredits, setBgProjectPausedCredits] = useState<{ step: number; maxSteps: number; balance: number } | null>(null);
 const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -1329,6 +1350,22 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
                     }
                     setBgProjectJobId(null);
 
+                    // Auto-deploy if configured
+                    const API_BASE_DEPLOY = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                    const API_KEY_DEPLOY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                    if (autoDeployVercel && vercelDeployHook) {
+                        fetch(`${API_BASE_DEPLOY}/api/integrations/vercel/deploy`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY_DEPLOY, 'Authorization': `Bearer ${session?.access_token}` },
+                            body: JSON.stringify({ deployHookUrl: vercelDeployHook })
+                        }).then(() => showToast('🚀 Vercel deploy triggered!', 'success')).catch(() => {});
+                    }
+                    if (autoDeployRender && renderDeployHook) {
+                        fetch(`${API_BASE_DEPLOY}/api/integrations/render/deploy`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY_DEPLOY, 'Authorization': `Bearer ${session?.access_token}` },
+                            body: JSON.stringify({ deployHookUrl: renderDeployHook })
+                        }).then(() => showToast('🚀 Render deploy triggered!', 'success')).catch(() => {});
+                    }
+
                     // Auto-start next queued job if Autopilot is ON
                     if (bgProjectSelfFeed) {
                         setBgProjectQueue(prev => {
@@ -1361,6 +1398,58 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         }, 15000); // poll every 15s
         return () => clearInterval(interval);
     }, [bgProjectJobId, session]);
+
+    async function loadIntegrations() {
+        if (!session) return;
+        try {
+            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+            const res = await fetch(`${API_BASE}/api/integrations/tokens`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}` } });
+            const data = await res.json();
+            if (data.ok) setIntegrationTokens({ hasGithub: data.hasGithub, hasVercel: data.hasVercel, hasRender: data.hasRender });
+        } catch { }
+    }
+
+    async function saveIntegrationTokens() {
+        if (!session) return;
+        setSavingTokens(true);
+        try {
+            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+            await fetch(`${API_BASE}/api/integrations/tokens`, { method: 'POST', headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ github: githubTokenInput || undefined, vercel: vercelTokenInput || undefined, render: renderTokenInput || undefined }) });
+            await loadIntegrations();
+            setGithubTokenInput(''); setVercelTokenInput(''); setRenderTokenInput('');
+            showToast('Tokens saved!', 'success');
+        } catch { showToast('Failed to save tokens', 'error'); } finally { setSavingTokens(false); }
+    }
+
+    async function loadAutopilotSchedule() {
+        if (!session) return;
+        try {
+            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+            const res = await fetch(`${API_BASE}/api/autopilot/schedule`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}` } });
+            const data = await res.json();
+            if (data.ok && data.schedule) {
+                setAutopilotEnabled(data.schedule.enabled);
+                setAutopilotGoal(data.schedule.goal || '');
+                setAutopilotDomain(data.schedule.domain || 'nextjs');
+                setAutopilotStartHour(data.schedule.startHour ?? 9);
+                setAutopilotEndHour(data.schedule.endHour ?? 21);
+            }
+        } catch { }
+    }
+
+    async function saveAutopilotSchedule() {
+        if (!session) return;
+        setSavingAutopilot(true);
+        try {
+            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+            await fetch(`${API_BASE}/api/autopilot/schedule`, { method: 'POST', headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: autopilotEnabled, startHour: autopilotStartHour, endHour: autopilotEndHour, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, goal: autopilotGoal, domain: autopilotDomain, maxSteps: 10 }) });
+            showToast(autopilotEnabled ? `⏰ Autopilot active ${autopilotStartHour}:00–${autopilotEndHour}:00` : 'Autopilot disabled', 'success');
+        } catch { showToast('Failed to save schedule', 'error'); } finally { setSavingAutopilot(false); }
+    }
 
     async function loadCredits() {
         if (!session) return;
@@ -1571,6 +1660,8 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         void refreshConversations();
         void syncProjectsFromApi();
         void fetchUserPlan(session.access_token);
+        void loadIntegrations();
+        void loadAutopilotSchedule();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [session]);
 
@@ -7953,6 +8044,93 @@ Project description: ${newProjectPrompt.trim()}`
                             }} style={{ padding: '5px 12px', fontSize: '12px', borderRadius: '20px', border: `1px solid ${bgProjectSelfFeed ? '#8b5cf6' : 'var(--border-default)'}`, background: bgProjectSelfFeed ? '#8b5cf6' : 'var(--bg-secondary)', color: bgProjectSelfFeed ? '#fff' : 'var(--text-muted)', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
                                 {bgProjectSelfFeed ? '✅ ON' : 'OFF'}
                             </button>
+                        </div>
+
+                        {/* ── Scheduled Autopilot ── */}
+                        <div style={{ border: '1px solid var(--border-default)', borderRadius: '8px', overflow: 'hidden' }}>
+                            <button type="button" onClick={() => setAutopilotOpen(v => !v)}
+                                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: autopilotEnabled ? 'rgba(251,191,36,0.08)' : 'var(--bg-elevated)', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: autopilotEnabled ? '#fbbf24' : 'var(--text-primary)', textAlign: 'left' }}>⏰ Scheduled Autopilot</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'left' }}>{autopilotEnabled ? `Active ${autopilotStartHour}:00–${autopilotEndHour}:00 daily` : 'Run jobs automatically during set hours'}</div>
+                                </div>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{autopilotOpen ? '▲' : '▼'}</span>
+                            </button>
+                            {autopilotOpen && (
+                                <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '10px', background: 'var(--bg-primary)' }}>
+                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', minWidth: '40px' }}>From</span>
+                                        <select value={autopilotStartHour} onChange={e => setAutopilotStartHour(Number(e.target.value))} style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '4px 8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'DM Sans, sans-serif' }}>
+                                            {Array.from({length: 24}, (_, i) => <option key={i} value={i}>{i}:00</option>)}
+                                        </select>
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', minWidth: '16px' }}>to</span>
+                                        <select value={autopilotEndHour} onChange={e => setAutopilotEndHour(Number(e.target.value))} style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '4px 8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'DM Sans, sans-serif' }}>
+                                            {Array.from({length: 24}, (_, i) => <option key={i} value={i}>{i}:00</option>)}
+                                        </select>
+                                    </div>
+                                    <textarea value={autopilotGoal} onChange={e => setAutopilotGoal(e.target.value)} placeholder="e.g. Continue improving the T4N Ads project — fix bugs and add features"
+                                        style={{ width: '100%', minHeight: '60px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical' }} />
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                        <select value={autopilotDomain} onChange={e => setAutopilotDomain(e.target.value)} style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '4px 8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'DM Sans, sans-serif' }}>
+                                            {['nextjs','react','python','pinescript','typescript','unity','mql5'].map(d => <option key={d} value={d}>{d}</option>)}
+                                        </select>
+                                        <button type="button" onClick={() => setAutopilotEnabled(v => !v)} style={{ padding: '4px 12px', borderRadius: '20px', border: `1px solid ${autopilotEnabled ? '#fbbf24' : 'var(--border-default)'}`, background: autopilotEnabled ? 'rgba(251,191,36,0.15)' : 'none', color: autopilotEnabled ? '#fbbf24' : 'var(--text-muted)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}>
+                                            {autopilotEnabled ? '✅ Enabled' : 'Disabled'}
+                                        </button>
+                                        <button type="button" onClick={() => void saveAutopilotSchedule()} disabled={savingAutopilot || !autopilotGoal.trim()} style={{ padding: '4px 12px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', opacity: !autopilotGoal.trim() ? 0.5 : 1 }}>
+                                            {savingAutopilot ? '...' : 'Save'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* ── Integrations ── */}
+                        <div style={{ border: '1px solid var(--border-default)', borderRadius: '8px', overflow: 'hidden' }}>
+                            <button type="button" onClick={() => setIntegrationsOpen(v => !v)}
+                                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--bg-elevated)', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', textAlign: 'left', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                        🔗 Integrations
+                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>{[integrationTokens.hasGithub && 'GitHub', integrationTokens.hasVercel && 'Vercel', integrationTokens.hasRender && 'Render'].filter(Boolean).join(' · ') || 'None connected'}</span>
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'left' }}>Auto-deploy after job completes</div>
+                                </div>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{integrationsOpen ? '▲' : '▼'}</span>
+                            </button>
+                            {integrationsOpen && (
+                                <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '10px', background: 'var(--bg-primary)' }}>
+                                    {[
+                                        { label: 'GitHub Token', val: githubTokenInput, set: setGithubTokenInput, has: integrationTokens.hasGithub, placeholder: 'ghp_...' },
+                                        { label: 'Vercel Token', val: vercelTokenInput, set: setVercelTokenInput, has: integrationTokens.hasVercel, placeholder: 'vercel token...' },
+                                        { label: 'Render Token', val: renderTokenInput, set: setRenderTokenInput, has: integrationTokens.hasRender, placeholder: 'render api key...' },
+                                    ].map(({ label, val, set, has, placeholder }) => (
+                                        <div key={label} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', minWidth: '90px' }}>{has ? <span style={{ color: '#4ade80' }}>✅ {label}</span> : label}</div>
+                                            <input type="password" value={val} onChange={e => set(e.target.value)} placeholder={has ? '••••• (update)' : placeholder}
+                                                style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '4px 8px', color: 'var(--text-primary)', fontSize: '11px', fontFamily: 'monospace' }} />
+                                        </div>
+                                    ))}
+                                    <button type="button" onClick={() => void saveIntegrationTokens()} disabled={savingTokens} style={{ padding: '6px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                        {savingTokens ? 'Saving...' : 'Save Tokens'}
+                                    </button>
+                                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Auto-deploy after job</div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <button type="button" onClick={() => setAutoDeployVercel(v => !v)} style={{ padding: '3px 10px', borderRadius: '20px', border: `1px solid ${autoDeployVercel ? '#60a5fa' : 'var(--border-default)'}`, background: autoDeployVercel ? 'rgba(96,165,250,0.1)' : 'none', color: autoDeployVercel ? '#60a5fa' : 'var(--text-muted)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                                {autoDeployVercel ? '✅' : '○'} Vercel
+                                            </button>
+                                            {autoDeployVercel && <input value={vercelDeployHook} onChange={e => setVercelDeployHook(e.target.value)} placeholder="Vercel deploy hook URL..." style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '3px 8px', color: 'var(--text-primary)', fontSize: '11px', fontFamily: 'monospace' }} />}
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <button type="button" onClick={() => setAutoDeployRender(v => !v)} style={{ padding: '3px 10px', borderRadius: '20px', border: `1px solid ${autoDeployRender ? '#a78bfa' : 'var(--border-default)'}`, background: autoDeployRender ? 'rgba(167,139,250,0.1)' : 'none', color: autoDeployRender ? '#a78bfa' : 'var(--text-muted)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                                {autoDeployRender ? '✅' : '○'} Render
+                                            </button>
+                                            {autoDeployRender && <input value={renderDeployHook} onChange={e => setRenderDeployHook(e.target.value)} placeholder="Render deploy hook URL..." style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '3px 8px', color: 'var(--text-primary)', fontSize: '11px', fontFamily: 'monospace' }} />}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
