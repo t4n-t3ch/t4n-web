@@ -331,6 +331,14 @@ const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
     const [autoDeployRender, setAutoDeployRender] = useState(false);
     const [renderDeployHook, setRenderDeployHook] = useState('');
 
+    // Railway
+    const [railwayTokenInput, setRailwayTokenInput] = useState('');
+    const [railwayProjectName, setRailwayProjectName] = useState('');
+    const [railwayGithubRepo, setRailwayGithubRepo] = useState('');
+    const [railwayProvisioning, setRailwayProvisioning] = useState(false);
+    const [railwayResult, setRailwayResult] = useState<{ projectId?: string; deploymentUrl?: string; railwayDashboard?: string } | null>(null);
+    const [autoDeployRailway, setAutoDeployRailway] = useState(false);
+
     // Scheduled autopilot
     const [autopilotOpen, setAutopilotOpen] = useState(false);
     const [autopilotGoal, setAutopilotGoal] = useState('');
@@ -1364,6 +1372,12 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
                             method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY_DEPLOY, 'Authorization': `Bearer ${session?.access_token}` },
                             body: JSON.stringify({ deployHookUrl: renderDeployHook })
                         }).then(() => showToast('🚀 Render deploy triggered!', 'success')).catch(() => {});
+                    }
+                    if (autoDeployRailway && railwayResult?.projectId) {
+                        fetch(`${API_BASE_DEPLOY}/api/integrations/railway/deploy`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY_DEPLOY, 'Authorization': `Bearer ${session?.access_token}` },
+                            body: JSON.stringify({ railwayToken: railwayTokenInput, serviceId: railwayResult.projectId })
+                        }).then(() => showToast('🚂 Railway deploy triggered!', 'success')).catch(() => {});
                     }
 
                     // Auto-start next queued job if Autopilot is ON
@@ -8104,6 +8118,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         { label: 'GitHub Token', val: githubTokenInput, set: setGithubTokenInput, has: integrationTokens.hasGithub, placeholder: 'ghp_...' },
                                         { label: 'Vercel Token', val: vercelTokenInput, set: setVercelTokenInput, has: integrationTokens.hasVercel, placeholder: 'vercel token...' },
                                         { label: 'Render Token', val: renderTokenInput, set: setRenderTokenInput, has: integrationTokens.hasRender, placeholder: 'render api key...' },
+                                        { label: 'Railway Token', val: railwayTokenInput, set: setRailwayTokenInput, has: false, placeholder: 'railway token...' },
                                     ].map(({ label, val, set, has, placeholder }) => (
                                         <div key={label} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                             <div style={{ fontSize: '11px', color: 'var(--text-muted)', minWidth: '90px' }}>{has ? <span style={{ color: '#4ade80' }}>✅ {label}</span> : label}</div>
@@ -8128,6 +8143,40 @@ Project description: ${newProjectPrompt.trim()}`
                                             </button>
                                             {autoDeployRender && <input value={renderDeployHook} onChange={e => setRenderDeployHook(e.target.value)} placeholder="Render deploy hook URL..." style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '3px 8px', color: 'var(--text-primary)', fontSize: '11px', fontFamily: 'monospace' }} />}
                                         </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <button type="button" onClick={() => setAutoDeployRailway(v => !v)} style={{ padding: '3px 10px', borderRadius: '20px', border: `1px solid ${autoDeployRailway ? '#c084fc' : 'var(--border-default)'}`, background: autoDeployRailway ? 'rgba(192,132,252,0.1)' : 'none', color: autoDeployRailway ? '#c084fc' : 'var(--text-muted)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                                {autoDeployRailway ? '✅' : '○'} Railway
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#c084fc' }}>🚂 Railway Cloud Execution</div>
+                                        <input value={railwayProjectName} onChange={e => setRailwayProjectName(e.target.value)} placeholder="Project name (e.g. t4n-ads)" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '4px 8px', color: 'var(--text-primary)', fontSize: '11px', fontFamily: 'monospace' }} />
+                                        <input value={railwayGithubRepo} onChange={e => setRailwayGithubRepo(e.target.value)} placeholder="GitHub repo (e.g. t4n-t3ch/t4n-ads)" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '4px', padding: '4px 8px', color: 'var(--text-primary)', fontSize: '11px', fontFamily: 'monospace' }} />
+                                        <button type="button" disabled={railwayProvisioning || !railwayProjectName.trim() || !railwayTokenInput.trim()}
+                                            onClick={async () => {
+                                                setRailwayProvisioning(true); setRailwayResult(null);
+                                                try {
+                                                    const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                                    const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                                    const { data: { session: s } } = await supabase.auth.getSession();
+                                                    if (!s) return;
+                                                    const res = await fetch(`${API_BASE}/api/integrations/railway/provision`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` }, body: JSON.stringify({ railwayToken: railwayTokenInput, projectName: railwayProjectName, githubRepo: railwayGithubRepo }) });
+                                                    const data = await res.json();
+                                                    if (data.ok) { setRailwayResult(data); showToast('🚂 Railway project created!', 'success'); }
+                                                    else showToast(data.error || 'Railway provision failed', 'error');
+                                                } catch { showToast('Railway provision failed', 'error'); } finally { setRailwayProvisioning(false); }
+                                            }}
+                                            style={{ padding: '5px', borderRadius: '6px', border: 'none', background: '#c084fc', color: '#fff', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', opacity: (!railwayProjectName.trim() || !railwayTokenInput.trim()) ? 0.5 : 1 }}>
+                                            {railwayProvisioning ? '⏳ Provisioning...' : '🚂 Provision Railway Project'}
+                                        </button>
+                                        {railwayResult && (
+                                            <div style={{ fontSize: '11px', color: '#4ade80', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                <div>✅ Project created!</div>
+                                                {railwayResult.deploymentUrl && <div>🌐 <a href={railwayResult.deploymentUrl} target="_blank" rel="noreferrer" style={{ color: '#60a5fa' }}>{railwayResult.deploymentUrl}</a></div>}
+                                                {railwayResult.railwayDashboard && <div>📊 <a href={railwayResult.railwayDashboard} target="_blank" rel="noreferrer" style={{ color: '#c084fc' }}>Railway Dashboard</a></div>}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
