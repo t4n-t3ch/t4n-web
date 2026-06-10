@@ -1328,6 +1328,34 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
                         new Notification('T4N Background Project', { body: msg, icon: '/t4n-logo.png' });
                     }
                     setBgProjectJobId(null);
+
+                    // Auto-start next queued job if Autopilot is ON
+                    if (bgProjectSelfFeed) {
+                        setBgProjectQueue(prev => {
+                            if (prev.length === 0) return prev;
+                            setTimeout(async () => {
+                                try {
+                                    const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                    const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+                                    const s = session;
+                                    if (!s) return;
+                                    showToast('🤖 Autopilot: starting next queued job...', 'info');
+                                    const res = await fetch(`${API_BASE}/api/background-project/queue/start`, {
+                                        method: 'POST',
+                                        headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
+                                    });
+                                    const d = await res.json();
+                                    if (d.ok) {
+                                        setBgProjectJobId(d.jobId);
+                                        const qRes = await fetch(`${API_BASE}/api/background-project/queue`, { headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` } });
+                                        const qData = await qRes.json();
+                                        if (qData.queue) setBgProjectQueue(qData.queue);
+                                    }
+                                } catch { /* ignore */ }
+                            }, 3000);
+                            return prev;
+                        });
+                    }
                 }
             } catch { /* ignore poll errors */ }
         }, 15000); // poll every 15s
