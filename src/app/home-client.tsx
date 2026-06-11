@@ -483,6 +483,8 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     const [bgJobHistory, setBgJobHistory] = useState<{ jobId: string; conversationId?: string; projectName: string; projectGoal: string; domain: string; maxSteps: string; maxsteps?: string; startedAt: string; step?: string; status?: string; projectFolderName?: string }[]>([]);
     const [bgJobHistoryLoading, setBgJobHistoryLoading] = useState(false);
     const [bgJobHistoryOpen, setBgJobHistoryOpen] = useState(false);
+    const [bgJobResults, setBgJobResults] = useState<{ jobId: string; status: string; step: number; maxSteps: number; projectName: string; projectFolderName: string; conversationId: string | null; builtFiles: string[]; railwayDashboard: string | null; hasVercel: boolean; hasRender: boolean; hasRailway: boolean; completedAt: string | null } | null>(null);
+    const [bgJobResultsOpen, setBgJobResultsOpen] = useState(false);
     const monacoEditorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
     const monacoInstanceRef = useRef<typeof Monaco | null>(null);
 
@@ -1359,6 +1361,11 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
                     }
                     setBgProjectJobId(null);
 
+                    // Load results panel when job is done
+                    if (data.status === 'done' && data.jobId) {
+                        setTimeout(() => void loadJobResults(data.jobId), 1000);
+                    }
+
                     // Auto-deploy if configured
                     const API_BASE_DEPLOY = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
                     const API_KEY_DEPLOY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
@@ -1413,6 +1420,22 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         }, 15000); // poll every 15s
         return () => clearInterval(interval);
     }, [bgProjectJobId, session]);
+
+    async function loadJobResults(jobId: string) {
+        if (!session) return;
+        try {
+            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+            const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+            const res = await fetch(`${API_BASE}/api/bg-projects/results/${jobId}`, {
+                headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}` }
+            });
+            const data = await res.json();
+            if (data.ok && data.results) {
+                setBgJobResults(data.results);
+                setBgJobResultsOpen(true);
+            }
+        } catch { }
+    }
 
     async function loadIntegrations() {
         if (!session) return;
@@ -3744,6 +3767,58 @@ Project description: ${newProjectPrompt.trim()}`
                         </button>
                     ))}
                 </div>
+
+                {/* Results modal — mobile */}
+                {bgJobResultsOpen && bgJobResults && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={() => setBgJobResultsOpen(false)}>
+                        <div style={{ width: '100%', maxWidth: '480px', maxHeight: '85dvh', overflowY: 'auto', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid rgba(74,222,128,0.3)', boxShadow: '0 24px 80px rgba(0,0,0,0.8)' }} onMouseDown={e => e.stopPropagation()}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid rgba(74,222,128,0.15)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '18px' }}>✅</span>
+                                    <div>
+                                        <div style={{ fontSize: '14px', fontWeight: 700, color: '#4ade80' }}>Job Complete!</div>
+                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{bgJobResults.projectName} · {bgJobResults.step}/{bgJobResults.maxSteps} steps</div>
+                                    </div>
+                                </div>
+                                <button type="button" onClick={() => setBgJobResultsOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+                            </div>
+                            {bgJobResults.builtFiles.length > 0 && (
+                                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>📁 Files Built ({bgJobResults.builtFiles.length})</div>
+                                    <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                        {bgJobResults.builtFiles.map((f, i) => (
+                                            <div key={i} style={{ fontSize: '12px', color: '#4ade80', fontFamily: 'monospace' }}>✓ {f}</div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {bgJobResults.railwayDashboard && (
+                                    <a href={bgJobResults.railwayDashboard} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', color: '#c084fc', textDecoration: 'none', padding: '10px', background: 'rgba(192,132,252,0.08)', border: '1px solid rgba(192,132,252,0.2)', borderRadius: '8px', fontWeight: 600 }}>
+                                        🚂 View on Railway →
+                                    </a>
+                                )}
+                                {bgJobResults.conversationId && (
+                                    <button type="button" onClick={async () => {
+                                        if (!bgJobResults.conversationId) return;
+                                        setBgJobResultsOpen(false);
+                                        setMobileTab('chat');
+                                        router.push(`/?c=${encodeURIComponent(bgJobResults.conversationId)}`);
+                                        setActiveId(bgJobResults.conversationId);
+                                        setMessages([]);
+                                        try { const r = await getMessages(bgJobResults.conversationId); if (r.ok) setMessages(r.data.messages ?? []); } catch { }
+                                    }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', color: '#60a5fa', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: '8px', padding: '10px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>
+                                        💬 View Build Conversation
+                                    </button>
+                                )}
+                                <button type="button" onClick={() => { setBgProjectGoal(`Fix any errors and improve: ${bgJobResults.projectName || 'project'}.`); setBgJobResultsOpen(false); setMobileTab('background'); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', color: 'var(--accent)', background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '8px', padding: '10px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>
+                                    🔁 Submit Fix / Improve Job
+                                </button>
+                                <button type="button" onClick={() => setBgJobResultsOpen(false)} style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', fontFamily: 'DM Sans, sans-serif' }}>Dismiss</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Settings modal — must live inside mobile return to be reachable */}
                 {settingsOpen && (
@@ -8184,6 +8259,54 @@ Project description: ${newProjectPrompt.trim()}`
                                 </button>
                             </div>
                         </div>
+                        {/* ── Results Panel ── */}
+                        {bgJobResultsOpen && bgJobResults && (
+                            <div style={{ border: '1px solid rgba(74,222,128,0.3)', borderRadius: '10px', overflow: 'hidden', background: 'rgba(74,222,128,0.04)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid rgba(74,222,128,0.15)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span>✅</span>
+                                        <div>
+                                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#4ade80' }}>Job Complete</div>
+                                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{bgJobResults.projectName} · {bgJobResults.step}/{bgJobResults.maxSteps} steps</div>
+                                        </div>
+                                    </div>
+                                    <button type="button" onClick={() => setBgJobResultsOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '14px', cursor: 'pointer' }}>✕</button>
+                                </div>
+                                {bgJobResults.builtFiles.length > 0 && (
+                                    <div style={{ padding: '10px 14px', borderBottom: '1px solid rgba(74,222,128,0.1)' }}>
+                                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>📁 FILES BUILT ({bgJobResults.builtFiles.length})</div>
+                                        <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                            {bgJobResults.builtFiles.map((f, i) => (
+                                                <div key={i} style={{ fontSize: '11px', color: '#4ade80', fontFamily: 'monospace' }}>✓ {f}</div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                    {bgJobResults.railwayDashboard && (
+                                        <a href={bgJobResults.railwayDashboard} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#c084fc', textDecoration: 'none', padding: '6px 10px', background: 'rgba(192,132,252,0.08)', border: '1px solid rgba(192,132,252,0.2)', borderRadius: '6px' }}>
+                                            🚂 View on Railway Dashboard →
+                                        </a>
+                                    )}
+                                    {bgJobResults.conversationId && (
+                                        <button type="button" onClick={async () => {
+                                            if (!bgJobResults.conversationId) return;
+                                            setBgProjectModal(false);
+                                            router.push(`/?c=${encodeURIComponent(bgJobResults.conversationId)}`);
+                                            setActiveId(bgJobResults.conversationId);
+                                            setMessages([]);
+                                            try { const r = await getMessages(bgJobResults.conversationId); if (r.ok) setMessages(r.data.messages ?? []); } catch { }
+                                        }} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#60a5fa', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', textAlign: 'left' }}>
+                                            💬 View Build Conversation →
+                                        </button>
+                                    )}
+                                    <button type="button" onClick={() => { setBgProjectGoal(`Fix any errors and improve: ${bgJobResults.projectName || 'project'}.`); setBgProjectTab('submit'); setBgJobResultsOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--accent)', background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', textAlign: 'left' }}>
+                                        🔁 Submit Fix/Improve Job →
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Autopilot toggle */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: bgProjectSelfFeed ? 'rgba(139,92,246,0.08)' : 'var(--bg-elevated)', border: `1px solid ${bgProjectSelfFeed ? 'rgba(139,92,246,0.3)' : 'var(--border-default)'}`, borderRadius: '8px' }}>
                             <div>
