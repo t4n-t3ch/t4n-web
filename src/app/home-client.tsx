@@ -194,7 +194,7 @@ export default function HomeClient() {
     const [streaming, setStreaming] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const isMobile = useIsMobile();
-    const [mobileTab, setMobileTab] = useState<'chat' | 'code' | 'sessions' | 'projects'>('chat');
+    const [mobileTab, setMobileTab] = useState<'chat' | 'code' | 'sessions' | 'projects' | 'background'>('chat');
     const [promptDisplayMode, setPromptDisplayMode] = useState<'description' | 'minimal'>('description');
     const [pluginName, setPluginName] = useState<
         "healthcheck" | "summariseConversation" | "exportConversation"
@@ -316,6 +316,7 @@ const [bgProjectLocalFilesCount, setBgProjectLocalFilesCount] = useState<number 
 const [bgProjectQueue, setBgProjectQueue] = useState<{ position: number; projectGoal: string; domain: string; maxSteps: number }[]>([]);
 const [bgProjectQueueLoading, setBgProjectQueueLoading] = useState(false);
 const [bgProjectAddToQueue, setBgProjectAddToQueue] = useState(false);
+const [bgProjectQueueInput, setBgProjectQueueInput] = useState('');
 const [bgProjectSelfFeed, setBgProjectSelfFeed] = useState(false);
 const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
 
@@ -3558,6 +3559,149 @@ Project description: ${newProjectPrompt.trim()}`
                     </div>
                 )}
 
+                {/* ── BACKGROUND TAB ── */}
+                {mobileTab === 'background' && (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '10px', borderBottom: '1px solid var(--border-subtle)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '20px' }}>🏗️</span>
+                                <span style={{ fontWeight: 700, fontSize: '16px', color: 'var(--text-primary)' }}>Background Agent</span>
+                            </div>
+                            {bgProjectJobId && <span style={{ fontSize: '11px', background: 'rgba(249,115,22,0.15)', color: 'var(--accent)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '12px', padding: '3px 10px', fontWeight: 600 }}>⚡ Running</span>}
+                        </div>
+
+                        {bgProjectJobId && (
+                            <div style={{ background: 'var(--bg-secondary)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '10px', padding: '12px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent)', marginBottom: '6px' }}>🔴 Active Job</div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>{bgProjectGoal?.slice(0, 80)}...</div>
+                                <div style={{ height: '4px', background: 'var(--bg-elevated)', borderRadius: '4px', overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', background: 'var(--accent)', borderRadius: '4px', width: '60%' }} />
+                                </div>
+                                <button type="button" onClick={() => setBgProjectJobId(null)} style={{ marginTop: '8px', fontSize: '11px', color: '#f87171', background: 'none', border: '1px solid rgba(248,113,113,0.3)', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Cancel Job</button>
+                            </div>
+                        )}
+
+                        {!bgProjectJobId && (
+                            <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>+ Submit Job</div>
+                                <textarea value={bgProjectGoal} onChange={e => setBgProjectGoal(e.target.value)} placeholder="Describe what you want to build or improve..."
+                                    style={{ width: '100%', minHeight: '100px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '10px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical' }} />
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <select value={bgProjectDomain} onChange={e => setBgProjectDomain(e.target.value)}
+                                        style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'DM Sans, sans-serif' }}>
+                                        {['Next.js TypeScript','React TypeScript','Python','Pine Script','Unity C#','MQL5'].map(d => <option key={d}>{d}</option>)}
+                                    </select>
+                                    <input type="number" value={bgProjectMaxSteps} onChange={e => setBgProjectMaxSteps(Number(e.target.value))} min={1} max={40}
+                                        style={{ width: '60px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', textAlign: 'center', fontFamily: 'DM Sans, sans-serif' }} />
+                                </div>
+                                <button type="button" disabled={!bgProjectGoal.trim()} onClick={async () => {
+                                    try {
+                                        const { data: { session: s } } = await supabase.auth.getSession();
+                                        if (!s) { showToast('Please log in first', 'error'); return; }
+                                        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                        const res = await fetch(`${API_BASE}/api/background-project`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' }, body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectMaxSteps }) });
+                                        const data = await res.json();
+                                        if (data.ok) { setBgProjectJobId(data.jobId); showToast('🏗️ Job started!', 'success'); }
+                                        else showToast(data.error || 'Failed to start job', 'error');
+                                    } catch { showToast('Failed to start job', 'error'); }
+                                }} style={{ width: '100%', padding: '12px', background: bgProjectGoal.trim() ? 'var(--accent)' : 'var(--bg-elevated)', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: bgProjectGoal.trim() ? 'pointer' : 'default', fontFamily: 'DM Sans, sans-serif', opacity: bgProjectGoal.trim() ? 1 : 0.5 }}>
+                                    🚀 Start Background Job
+                                </button>
+                            </div>
+                        )}
+
+                        {bgProjectQueue.length > 0 && (
+                            <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '12px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>📋 Queue ({bgProjectQueue.length})</div>
+                                {bgProjectQueue.map((item, i) => (
+                                    <div key={item.position} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', background: 'var(--bg-elevated)', borderRadius: '6px', marginBottom: '4px' }}>
+                                        <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 700, minWidth: '20px' }}>#{i + 1}</span>
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.projectGoal}</span>
+                                        <button type="button" onClick={() => setBgProjectQueue(prev => prev.filter(q => q.position !== item.position))} style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}>✕</button>
+                                    </div>
+                                ))}
+                                {!bgProjectJobId && (
+                                    <button type="button" onClick={async () => {
+                                        const { data: { session: s } } = await supabase.auth.getSession();
+                                        if (!s) return;
+                                        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                        const res = await fetch(`${API_BASE}/api/background-project/queue/start`, { method: 'POST', headers: { 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' } });
+                                        const d = await res.json();
+                                        if (d.ok) setBgProjectJobId(d.jobId);
+                                    }} style={{ width: '100%', marginTop: '8px', padding: '8px', background: '#7c3aed', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                        ▶ Start Next Job
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>+ Add to Queue</div>
+                            <textarea value={bgProjectQueueInput} onChange={e => setBgProjectQueueInput(e.target.value)} placeholder="Queue a follow-up job..."
+                                style={{ width: '100%', minHeight: '70px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical' }} />
+                            <button type="button" onClick={() => {
+                                if (!bgProjectQueueInput.trim()) return;
+                                setBgProjectQueue(prev => [...prev, { position: Date.now(), projectGoal: bgProjectQueueInput, domain: bgProjectDomain, maxSteps: bgProjectMaxSteps }]);
+                                setBgProjectQueueInput('');
+                                showToast('Added to queue', 'success');
+                            }} style={{ padding: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                + Queue
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: bgProjectSelfFeed ? 'rgba(139,92,246,0.08)' : 'var(--bg-secondary)', border: `1px solid ${bgProjectSelfFeed ? 'rgba(139,92,246,0.3)' : 'var(--border-default)'}`, borderRadius: '10px', padding: '12px' }}>
+                            <div>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: bgProjectSelfFeed ? '#a78bfa' : 'var(--text-primary)' }}>🤖 Autopilot</div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Auto-queues next improvement after each job</div>
+                            </div>
+                            <button type="button" onClick={async () => {
+                                const newVal = !bgProjectSelfFeed;
+                                setBgProjectSelfFeed(newVal);
+                                try {
+                                    const { data: { session: s } } = await supabase.auth.getSession();
+                                    if (!s) return;
+                                    const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                    await fetch(`${API_BASE}/api/background-project/selffeed`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123', 'Authorization': `Bearer ${s.access_token}` }, body: JSON.stringify({ enabled: newVal }) });
+                                } catch { }
+                            }} style={{ padding: '6px 14px', borderRadius: '20px', border: `1px solid ${bgProjectSelfFeed ? '#8b5cf6' : 'var(--border-default)'}`, background: bgProjectSelfFeed ? '#8b5cf6' : 'var(--bg-elevated)', color: bgProjectSelfFeed ? '#fff' : 'var(--text-muted)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                {bgProjectSelfFeed ? '✅ ON' : 'OFF'}
+                            </button>
+                        </div>
+
+                        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '12px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>📋 Recent Jobs</div>
+                            {bgJobHistory.length === 0 ? (
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>No jobs yet</div>
+                            ) : bgJobHistory.slice(0, 5).map((job, i) => (
+                                <div key={job.jobId || i} onClick={async () => {
+                                    if (!job.conversationId) return;
+                                    setMobileTab('chat');
+                                    router.push(`/?c=${encodeURIComponent(job.conversationId)}`);
+                                    setActiveId(job.conversationId);
+                                    setMessages([]);
+                                    try { const r = await getMessages(job.conversationId); if (r.ok) setMessages(r.data.messages ?? []); } catch { }
+                                }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', borderRadius: '6px', background: 'var(--bg-elevated)', marginBottom: '4px', cursor: job.conversationId ? 'pointer' : 'default' }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.projectGoal}</div>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{job.step ?? '?'}/{job.maxSteps ?? '?'} steps · {job.domain}</div>
+                                    </div>
+                                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '10px', background: job.status === 'done' ? 'rgba(74,222,128,0.1)' : 'rgba(249,115,22,0.1)', color: job.status === 'done' ? '#4ade80' : 'var(--accent)', fontWeight: 600, flexShrink: 0 }}>{job.status ?? 'running'}</span>
+                                </div>
+                            ))}
+                            <button type="button" onClick={() => void (async () => {
+                                const { data: { session: s } } = await supabase.auth.getSession();
+                                if (!s) return;
+                                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                const res = await fetch(`${API_BASE}/api/bg-projects/history`, { headers: { 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' } });
+                                const data = await res.json();
+                                if (data.history) setBgJobHistory(data.history);
+                            })()} style={{ width: '100%', marginTop: '6px', padding: '6px', background: 'none', border: '1px solid var(--border-default)', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '11px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                ↺ Refresh History
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* ── BOTTOM TAB BAR ── */}
                 <div style={{
                     display: 'flex',
@@ -3569,6 +3713,7 @@ Project description: ${newProjectPrompt.trim()}`
                     {([
                         { id: 'chat', icon: '💬', label: 'Chat' },
                         { id: 'code', icon: '⌨️', label: 'Code' },
+                        { id: 'background', icon: '🏗️', label: 'Build' },
                         { id: 'projects', icon: '📁', label: 'Projects' },
                         { id: 'sessions', icon: '☰', label: 'Sessions' },
                     ] as const).map(tab => (
