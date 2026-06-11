@@ -3614,7 +3614,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'DM Sans, sans-serif' }}>
                                         {['Next.js TypeScript','React TypeScript','Python','Pine Script','Unity C#','MQL5'].map(d => <option key={d}>{d}</option>)}
                                     </select>
-                                    <input type="number" value={bgProjectMaxSteps} onChange={e => setBgProjectMaxSteps(Number(e.target.value))} min={1} max={40}
+                                    <input type="number" value={bgProjectSteps} onChange={e => setBgProjectSteps(Number(e.target.value))} min={1} max={40}
                                         style={{ width: '60px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', textAlign: 'center', fontFamily: 'DM Sans, sans-serif' }} />
                                 </div>
                                 <button type="button" disabled={!bgProjectGoal.trim()} onClick={async () => {
@@ -3622,7 +3622,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         const { data: { session: s } } = await supabase.auth.getSession();
                                         if (!s) { showToast('Please log in first', 'error'); return; }
                                         const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
-                                        const res = await fetch(`${API_BASE}/api/background-project`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' }, body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectMaxSteps }) });
+                                        const res = await fetch(`${API_BASE}/api/background-project`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' }, body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps }) });
                                         const data = await res.json();
                                         if (data.ok) { setBgProjectJobId(data.jobId); showToast('🏗️ Job started!', 'success'); }
                                         else showToast(data.error || 'Failed to start job', 'error');
@@ -3664,7 +3664,7 @@ Project description: ${newProjectPrompt.trim()}`
                                 style={{ width: '100%', minHeight: '70px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical' }} />
                             <button type="button" onClick={() => {
                                 if (!bgProjectQueueInput.trim()) return;
-                                setBgProjectQueue(prev => [...prev, { position: Date.now(), projectGoal: bgProjectQueueInput, domain: bgProjectDomain, maxSteps: bgProjectMaxSteps }]);
+                                setBgProjectQueue(prev => [...prev, { position: Date.now(), projectGoal: bgProjectQueueInput, domain: bgProjectDomain, maxSteps: bgProjectSteps }]);
                                 setBgProjectQueueInput('');
                                 showToast('Added to queue', 'success');
                             }} style={{ padding: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
