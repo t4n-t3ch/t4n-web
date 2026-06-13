@@ -3725,8 +3725,8 @@ Project description: ${newProjectPrompt.trim()}`
                                     ].map(({ label, val, set, has, placeholder }) => (
                                         <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                             <div style={{ fontSize: '11px', color: has ? '#4ade80' : 'var(--text-muted)', fontWeight: 600 }}>{has ? `✅ ${label}` : label}</div>
-                                            <input type="password" value={val} onChange={e => set(e.target.value)} placeholder={has ? '••••• (update)' : placeholder}
-                                                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'monospace', width: '100%', boxSizing: 'border-box' }} />
+                                            <input type="text" autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} value={val} onChange={e => set(e.target.value)} placeholder={has ? '••••• (update)' : placeholder}
+                                                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px', color: 'var(--text-primary)', fontSize: '16px', fontFamily: 'monospace', width: '100%', boxSizing: 'border-box' }} />
                                         </div>
                                     ))}
                                     <button type="button" onClick={() => void saveIntegrationTokens()} disabled={savingTokens}
