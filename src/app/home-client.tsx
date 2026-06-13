@@ -323,6 +323,7 @@ const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
     // Integration tokens
     const [integrationTokens, setIntegrationTokens] = useState<{ hasGithub?: boolean; hasVercel?: boolean; hasRender?: boolean }>({});
     const [integrationsOpen, setIntegrationsOpen] = useState(false);
+    const [mobileIntegrationsOpen, setMobileIntegrationsOpen] = useState(false);
     const [githubTokenInput, setGithubTokenInput] = useState('');
     const [vercelTokenInput, setVercelTokenInput] = useState('');
     const [renderTokenInput, setRenderTokenInput] = useState('');
@@ -3700,7 +3701,7 @@ Project description: ${newProjectPrompt.trim()}`
 
                         {/* 🔗 Integrations */}
                         <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px', overflow: 'hidden' }}>
-                            <button type="button" onClick={() => setIntegrationsOpen(v => !v)}
+                            <button type="button" onClick={() => setMobileIntegrationsOpen(v => !v)}
                                 style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
                                 <div>
                                     <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', textAlign: 'left', display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -3711,9 +3712,9 @@ Project description: ${newProjectPrompt.trim()}`
                                     </div>
                                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'left' }}>GitHub, Vercel, Render, Railway</div>
                                 </div>
-                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{integrationsOpen ? '▲' : '▼'}</span>
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{mobileIntegrationsOpen ? '▲' : '▼'}</span>
                             </button>
-                            {integrationsOpen && (
+                            {mobileIntegrationsOpen && (
                                 <div style={{ padding: '12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                     {/* Token inputs */}
                                     {[
