@@ -3700,7 +3700,7 @@ Project description: ${newProjectPrompt.trim()}`
                         </div>
 
                         {/* 🔗 Integrations */}
-                        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px', overflow: 'hidden' }}>
+                        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px' }}>
                             <button type="button" onClick={() => setMobileIntegrationsOpen(v => !v)}
                                 style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
                                 <div>
