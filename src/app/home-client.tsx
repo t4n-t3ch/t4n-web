@@ -3582,16 +3582,6 @@ Project description: ${newProjectPrompt.trim()}`
                     </div>
                 )}
 
-                {/* ── BACKGROUND TAB ── */}
-                {mobileTab === 'background' && (
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '10px', borderBottom: '1px solid var(--border-subtle)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ fontSize: '20px' }}>🏗️</span>
-                                <span style={{ fontWeight: 700, fontSize: '16px', color: 'var(--text-primary)' }}>Background Agent</span>
-                            </div>
-                            {bgProjectJobId && <span style={{ fontSize: '11px', background: 'rgba(249,115,22,0.15)', color: 'var(--accent)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '12px', padding: '3px 10px', fontWeight: 600 }}>⚡ Running</span>}
-                        </div>
 
                         {bgProjectJobId && (
                             <div style={{ background: 'var(--bg-secondary)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '10px', padding: '12px' }}>
@@ -4008,59 +3998,7 @@ Project description: ${newProjectPrompt.trim()}`
                     </div>
                 )}
 
-                {/* Results modal — mobile */}
-                {bgJobResultsOpen && bgJobResults && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={() => setBgJobResultsOpen(false)}>
-                        <div style={{ width: '100%', maxWidth: '480px', maxHeight: '85dvh', overflowY: 'auto', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid rgba(74,222,128,0.3)', boxShadow: '0 24px 80px rgba(0,0,0,0.8)' }} onMouseDown={e => e.stopPropagation()}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid rgba(74,222,128,0.15)' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ fontSize: '18px' }}>✅</span>
-                                    <div>
-                                        <div style={{ fontSize: '14px', fontWeight: 700, color: '#4ade80' }}>Job Complete!</div>
-                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{bgJobResults.projectName} · {bgJobResults.step}/{bgJobResults.maxSteps} steps</div>
-                                    </div>
-                                </div>
-                                <button type="button" onClick={() => setBgJobResultsOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}>✕</button>
-                            </div>
-                            {bgJobResults.builtFiles.length > 0 && (
-                                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
-                                    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>📁 Files Built ({bgJobResults.builtFiles.length})</div>
-                                    <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                        {bgJobResults.builtFiles.map((f, i) => (
-                                            <div key={i} style={{ fontSize: '12px', color: '#4ade80', fontFamily: 'monospace' }}>✓ {f}</div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {bgJobResults.railwayDashboard && (
-                                    <a href={bgJobResults.railwayDashboard} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', color: '#c084fc', textDecoration: 'none', padding: '10px', background: 'rgba(192,132,252,0.08)', border: '1px solid rgba(192,132,252,0.2)', borderRadius: '8px', fontWeight: 600 }}>
-                                        🚂 View on Railway →
-                                    </a>
-                                )}
-                                {bgJobResults.conversationId && (
-                                    <button type="button" onClick={async () => {
-                                        if (!bgJobResults.conversationId) return;
-                                        setBgJobResultsOpen(false);
-                                        setMobileTab('chat');
-                                        router.push(`/?c=${encodeURIComponent(bgJobResults.conversationId)}`);
-                                        setActiveId(bgJobResults.conversationId);
-                                        setMessages([]);
-                                        try { const r = await getMessages(bgJobResults.conversationId); if (r.ok) setMessages(r.data.messages ?? []); } catch { }
-                                    }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', color: '#60a5fa', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: '8px', padding: '10px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>
-                                        💬 View Build Conversation
-                                    </button>
-                                )}
-                                <button type="button" onClick={() => { setBgProjectGoal(`Fix any errors and improve: ${bgJobResults.projectName || 'project'}.`); setBgJobResultsOpen(false); setMobileTab('background'); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', color: 'var(--accent)', background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '8px', padding: '10px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>
-                                    🔁 Submit Fix / Improve Job
-                                </button>
-                                <button type="button" onClick={() => setBgJobResultsOpen(false)} style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', fontFamily: 'DM Sans, sans-serif' }}>Dismiss</button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* ── BOTTOM TAB BAR ── */}
+                 {/* ── BOTTOM TAB BAR ── */}
                 <div style={{
                     display: 'flex',
                     borderTop: '1px solid var(--border-subtle)',
