@@ -3540,10 +3540,8 @@ Project description: ${newProjectPrompt.trim()}`
                                     disabled={loading || !input.trim()}>Send</button>
                             )}
                         </div>
-                    </div>
                 </div>
                 )}
-                </div>
 
                 {/* ── PROJECTS TAB ── */}
                 {mobileTab === 'projects' && (
