@@ -3725,6 +3725,341 @@ Project description: ${newProjectPrompt.trim()}`
                     </div>
                 )}
 
+                {/* ── BACKGROUND TAB ── */}
+                {mobileTab === 'background' && (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+
+                        {/* Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '10px', borderBottom: '1px solid var(--border-subtle)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '20px' }}>🏗️</span>
+                                <span style={{ fontWeight: 700, fontSize: '16px', color: 'var(--text-primary)' }}>Background Agent</span>
+                            </div>
+                            {bgProjectJobId && <span style={{ fontSize: '11px', background: 'rgba(249,115,22,0.15)', color: 'var(--accent)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '12px', padding: '3px 10px', fontWeight: 600 }}>⚡ Running</span>}
+                        </div>
+
+                        {/* Active job */}
+                        {bgProjectJobId && (
+                            <div style={{ background: 'var(--bg-secondary)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '10px', padding: '12px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent)', marginBottom: '6px' }}>🔴 Active Job</div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>{bgProjectGoal?.slice(0, 80)}...</div>
+                                <div style={{ height: '4px', background: 'var(--bg-elevated)', borderRadius: '4px', overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', background: 'var(--accent)', borderRadius: '4px', width: '60%' }} />
+                                </div>
+                                <button type="button" onClick={() => setBgProjectJobId(null)} style={{ marginTop: '8px', fontSize: '11px', color: '#f87171', background: 'none', border: '1px solid rgba(248,113,113,0.3)', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Cancel</button>
+                            </div>
+                        )}
+
+                        {/* Submit job */}
+                        {!bgProjectJobId && (
+                            <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>+ Submit Job</div>
+                                <textarea value={bgProjectGoal} onChange={e => setBgProjectGoal(e.target.value)} placeholder="Describe what you want to build or improve..."
+                                    style={{ width: '100%', minHeight: '100px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '10px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical' }} />
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <select value={bgProjectDomain} onChange={e => setBgProjectDomain(e.target.value)}
+                                        style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'DM Sans, sans-serif' }}>
+                                        {['Next.js TypeScript','React TypeScript','Python','Pine Script','Unity C#','MQL5'].map(d => <option key={d}>{d}</option>)}
+                                    </select>
+                                    <input type="number" value={bgProjectSteps} onChange={e => setBgProjectSteps(Number(e.target.value))} min={1} max={15}
+                                        style={{ width: '60px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', textAlign: 'center', fontFamily: 'DM Sans, sans-serif' }} />
+                                </div>
+                                <button type="button" disabled={!bgProjectGoal.trim()} onClick={async () => {
+                                    try {
+                                        const { data: { session: s } } = await supabase.auth.getSession();
+                                        if (!s) { showToast('Please log in first', 'error'); return; }
+                                        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                        const res = await fetch(`${API_BASE}/api/background-project`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' }, body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps }) });
+                                        const data = await res.json();
+                                        if (data.ok) { setBgProjectJobId(data.jobId); showToast('🏗️ Job started!', 'success'); }
+                                        else showToast(data.error || 'Failed to start job', 'error');
+                                    } catch { showToast('Failed to start job', 'error'); }
+                                }} style={{ width: '100%', padding: '12px', background: bgProjectGoal.trim() ? 'var(--accent)' : 'var(--bg-elevated)', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: bgProjectGoal.trim() ? 'pointer' : 'default', fontFamily: 'DM Sans, sans-serif', opacity: bgProjectGoal.trim() ? 1 : 0.5 }}>
+                                    🚀 Start Background Job
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Queue */}
+                        {bgProjectQueue.length > 0 && (
+                            <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '12px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>📋 Queue ({bgProjectQueue.length})</div>
+                                {bgProjectQueue.map((item, i) => (
+                                    <div key={item.position} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', background: 'var(--bg-elevated)', borderRadius: '6px', marginBottom: '4px' }}>
+                                        <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 700, minWidth: '20px' }}>#{i + 1}</span>
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.projectGoal}</span>
+                                        <button type="button" onClick={() => setBgProjectQueue(prev => prev.filter(q => q.position !== item.position))} style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}>✕</button>
+                                    </div>
+                                ))}
+                                {!bgProjectJobId && (
+                                    <button type="button" onClick={async () => {
+                                        const { data: { session: s } } = await supabase.auth.getSession();
+                                        if (!s) return;
+                                        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                        const res = await fetch(`${API_BASE}/api/background-project/queue/start`, { method: 'POST', headers: { 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' } });
+                                        const d = await res.json();
+                                        if (d.ok) setBgProjectJobId(d.jobId);
+                                    }} style={{ width: '100%', marginTop: '8px', padding: '8px', background: '#7c3aed', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                        ▶ Start Next Job
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Add to queue */}
+                        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>+ Add to Queue</div>
+                            <textarea value={bgProjectQueueInput} onChange={e => setBgProjectQueueInput(e.target.value)} placeholder="Queue a follow-up job..."
+                                style={{ width: '100%', minHeight: '70px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical' }} />
+                            <button type="button" onClick={() => {
+                                if (!bgProjectQueueInput.trim()) return;
+                                setBgProjectQueue(prev => [...prev, { position: Date.now(), projectGoal: bgProjectQueueInput, domain: bgProjectDomain, maxSteps: bgProjectSteps }]);
+                                setBgProjectQueueInput('');
+                                showToast('Added to queue', 'success');
+                            }} style={{ padding: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                + Queue
+                            </button>
+                        </div>
+
+                        {/* Autopilot */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: bgProjectSelfFeed ? 'rgba(139,92,246,0.08)' : 'var(--bg-secondary)', border: `1px solid ${bgProjectSelfFeed ? 'rgba(139,92,246,0.3)' : 'var(--border-default)'}`, borderRadius: '10px', padding: '12px' }}>
+                            <div>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: bgProjectSelfFeed ? '#a78bfa' : 'var(--text-primary)' }}>🤖 Autopilot</div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Auto-queues next improvement after each job</div>
+                            </div>
+                            <button type="button" onClick={async () => {
+                                const newVal = !bgProjectSelfFeed;
+                                setBgProjectSelfFeed(newVal);
+                                try {
+                                    const { data: { session: s } } = await supabase.auth.getSession();
+                                    if (!s) return;
+                                    const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                    await fetch(`${API_BASE}/api/background-project/selffeed`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123', 'Authorization': `Bearer ${s.access_token}` }, body: JSON.stringify({ enabled: newVal }) });
+                                } catch { }
+                            }} style={{ padding: '6px 14px', borderRadius: '20px', border: `1px solid ${bgProjectSelfFeed ? '#8b5cf6' : 'var(--border-default)'}`, background: bgProjectSelfFeed ? '#8b5cf6' : 'var(--bg-elevated)', color: bgProjectSelfFeed ? '#fff' : 'var(--text-muted)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                {bgProjectSelfFeed ? '✅ ON' : 'OFF'}
+                            </button>
+                        </div>
+
+                        {/* 🔗 Integrations */}
+                        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px', overflow: 'hidden' }}>
+                            <button type="button" onClick={() => setIntegrationsOpen(v => !v)}
+                                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                <div>
+                                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', textAlign: 'left', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                        🔗 Integrations
+                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>
+                                            {[integrationTokens.hasGithub && 'GitHub', integrationTokens.hasVercel && 'Vercel', integrationTokens.hasRender && 'Render'].filter(Boolean).join(' · ') || 'None connected'}
+                                        </span>
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'left' }}>GitHub, Vercel, Render, Railway</div>
+                                </div>
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{integrationsOpen ? '▲' : '▼'}</span>
+                            </button>
+                            {integrationsOpen && (
+                                <div style={{ padding: '12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {/* Token inputs */}
+                                    {[
+                                        { label: 'GitHub Token', val: githubTokenInput, set: setGithubTokenInput, has: integrationTokens.hasGithub, placeholder: 'ghp_...' },
+                                        { label: 'Vercel Token', val: vercelTokenInput, set: setVercelTokenInput, has: integrationTokens.hasVercel, placeholder: 'vercel token...' },
+                                        { label: 'Render Token', val: renderTokenInput, set: setRenderTokenInput, has: integrationTokens.hasRender, placeholder: 'render api key...' },
+                                        { label: 'Railway Token', val: railwayTokenInput, set: setRailwayTokenInput, has: false, placeholder: 'railway token...' },
+                                    ].map(({ label, val, set, has, placeholder }) => (
+                                        <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <div style={{ fontSize: '11px', color: has ? '#4ade80' : 'var(--text-muted)', fontWeight: 600 }}>{has ? `✅ ${label}` : label}</div>
+                                            <input type="password" value={val} onChange={e => set(e.target.value)} placeholder={has ? '••••• (update)' : placeholder}
+                                                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'monospace', width: '100%', boxSizing: 'border-box' }} />
+                                        </div>
+                                    ))}
+                                    <button type="button" onClick={() => void saveIntegrationTokens()} disabled={savingTokens}
+                                        style={{ padding: '10px', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                        {savingTokens ? 'Saving...' : '💾 Save Tokens'}
+                                    </button>
+
+                                    {/* Auto-deploy toggles */}
+                                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
+                                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>Auto-deploy after job</div>
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                            {[
+                                                { label: 'Vercel', val: autoDeployVercel, set: setAutoDeployVercel, color: '#60a5fa' },
+                                                { label: 'Render', val: autoDeployRender, set: setAutoDeployRender, color: '#a78bfa' },
+                                                { label: 'Railway', val: autoDeployRailway, set: setAutoDeployRailway, color: '#c084fc' },
+                                            ].map(({ label, val, set, color }) => (
+                                                <button key={label} type="button" onClick={() => set((v: boolean) => !v)}
+                                                    style={{ padding: '6px 14px', borderRadius: '20px', border: `1px solid ${val ? color : 'var(--border-default)'}`, background: val ? `${color}22` : 'none', color: val ? color : 'var(--text-muted)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                                    {val ? '✅' : '○'} {label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        {autoDeployVercel && (
+                                            <input value={vercelDeployHook} onChange={e => setVercelDeployHook(e.target.value)} placeholder="Vercel deploy hook URL..."
+                                                style={{ marginTop: '6px', width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px', color: 'var(--text-primary)', fontSize: '11px', fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                                        )}
+                                        {autoDeployRender && (
+                                            <input value={renderDeployHook} onChange={e => setRenderDeployHook(e.target.value)} placeholder="Render deploy hook URL..."
+                                                style={{ marginTop: '6px', width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px', color: 'var(--text-primary)', fontSize: '11px', fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                                        )}
+                                    </div>
+
+                                    {/* Railway provision */}
+                                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
+                                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#c084fc', marginBottom: '8px' }}>🚂 Provision Railway Project</div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                            <input value={railwayProjectName} onChange={e => setRailwayProjectName(e.target.value)} placeholder="Project name (e.g. t4n-ads)"
+                                                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                                            <input value={railwayGithubRepo} onChange={e => setRailwayGithubRepo(e.target.value)} placeholder="GitHub repo (e.g. t4n-t3ch/t4n-ads)"
+                                                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                                            <button type="button" disabled={railwayProvisioning || !railwayProjectName.trim() || !railwayTokenInput.trim()}
+                                                onClick={async () => {
+                                                    setRailwayProvisioning(true); setRailwayResult(null);
+                                                    try {
+                                                        const { data: { session: s } } = await supabase.auth.getSession();
+                                                        if (!s) return;
+                                                        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                                        const res = await fetch(`${API_BASE}/api/integrations/railway/provision`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123', 'Authorization': `Bearer ${s.access_token}` }, body: JSON.stringify({ railwayToken: railwayTokenInput, projectName: railwayProjectName, githubRepo: railwayGithubRepo }) });
+                                                        const data = await res.json();
+                                                        if (data.ok) { setRailwayResult(data); showToast('🚂 Railway project created!', 'success'); }
+                                                        else showToast(data.error || 'Failed', 'error');
+                                                    } catch { showToast('Railway provision failed', 'error'); } finally { setRailwayProvisioning(false); }
+                                                }}
+                                                style={{ padding: '10px', borderRadius: '8px', border: 'none', background: '#c084fc', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', opacity: (!railwayProjectName.trim() || !railwayTokenInput.trim()) ? 0.5 : 1 }}>
+                                                {railwayProvisioning ? '⏳ Provisioning...' : '🚂 Provision Railway Project'}
+                                            </button>
+                                            {railwayResult && (
+                                                <div style={{ fontSize: '11px', color: '#4ade80', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                    <div>✅ Project created!</div>
+                                                    {railwayResult.deploymentUrl && <a href={railwayResult.deploymentUrl} target="_blank" rel="noreferrer" style={{ color: '#60a5fa' }}>🌐 {railwayResult.deploymentUrl}</a>}
+                                                    {railwayResult.railwayDashboard && <a href={railwayResult.railwayDashboard} target="_blank" rel="noreferrer" style={{ color: '#c084fc' }}>📊 Railway Dashboard</a>}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Vercel deploy */}
+                                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
+                                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#60a5fa', marginBottom: '8px' }}>▲ Deploy to Vercel Now</div>
+                                        <button type="button" onClick={async () => {
+                                            if (!vercelDeployHook) { showToast('Add Vercel deploy hook URL first', 'error'); return; }
+                                            const { data: { session: s } } = await supabase.auth.getSession();
+                                            if (!s) return;
+                                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                            const res = await fetch(`${API_BASE}/api/integrations/vercel/deploy`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123', 'Authorization': `Bearer ${s.access_token}` }, body: JSON.stringify({ deployHookUrl: vercelDeployHook }) });
+                                            const data = await res.json();
+                                            if (data.ok) showToast('🚀 Vercel deploy triggered!', 'success');
+                                            else showToast(data.error || 'Deploy failed', 'error');
+                                        }} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.3)', background: 'rgba(96,165,250,0.08)', color: '#60a5fa', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                            🚀 Trigger Vercel Deploy
+                                        </button>
+                                    </div>
+
+                                    {/* Render deploy */}
+                                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
+                                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#a78bfa', marginBottom: '8px' }}>⚙️ Deploy to Render Now</div>
+                                        <button type="button" onClick={async () => {
+                                            if (!renderDeployHook) { showToast('Add Render deploy hook URL first', 'error'); return; }
+                                            const { data: { session: s } } = await supabase.auth.getSession();
+                                            if (!s) return;
+                                            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                            const res = await fetch(`${API_BASE}/api/integrations/render/deploy`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123', 'Authorization': `Bearer ${s.access_token}` }, body: JSON.stringify({ deployHookUrl: renderDeployHook }) });
+                                            const data = await res.json();
+                                            if (data.ok) showToast('🚀 Render deploy triggered!', 'success');
+                                            else showToast(data.error || 'Deploy failed', 'error');
+                                        }} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid rgba(167,139,250,0.3)', background: 'rgba(167,139,250,0.08)', color: '#a78bfa', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                            🚀 Trigger Render Deploy
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Recent Jobs */}
+                        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '12px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>📋 Recent Jobs</div>
+                            {bgJobHistory.length === 0 ? (
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>No jobs yet</div>
+                            ) : bgJobHistory.slice(0, 5).map((job, i) => (
+                                <div key={job.jobId || i} onClick={async () => {
+                                    if (!job.conversationId) return;
+                                    setMobileTab('chat');
+                                    router.push(`/?c=${encodeURIComponent(job.conversationId)}`);
+                                    setActiveId(job.conversationId);
+                                    setMessages([]);
+                                    try { const r = await getMessages(job.conversationId); if (r.ok) setMessages(r.data.messages ?? []); } catch { }
+                                }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', borderRadius: '6px', background: 'var(--bg-elevated)', marginBottom: '4px', cursor: job.conversationId ? 'pointer' : 'default' }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.projectGoal}</div>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{job.step ?? '?'}/{job.maxSteps ?? '?'} steps · {job.domain}</div>
+                                    </div>
+                                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '10px', background: job.status === 'done' ? 'rgba(74,222,128,0.1)' : 'rgba(249,115,22,0.1)', color: job.status === 'done' ? '#4ade80' : 'var(--accent)', fontWeight: 600, flexShrink: 0 }}>{job.status ?? 'running'}</span>
+                                </div>
+                            ))}
+                            <button type="button" onClick={() => void (async () => {
+                                const { data: { session: s } } = await supabase.auth.getSession();
+                                if (!s) return;
+                                const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+                                const res = await fetch(`${API_BASE}/api/bg-projects/history`, { headers: { 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' } });
+                                const data = await res.json();
+                                if (data.history) setBgJobHistory(data.history);
+                            })()} style={{ width: '100%', marginTop: '6px', padding: '6px', background: 'none', border: '1px solid var(--border-default)', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '11px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                ↺ Refresh History
+                            </button>
+                        </div>
+
+                    </div>
+                )}
+
+                {/* Results modal — mobile */}
+                {bgJobResultsOpen && bgJobResults && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={() => setBgJobResultsOpen(false)}>
+                        <div style={{ width: '100%', maxWidth: '480px', maxHeight: '85dvh', overflowY: 'auto', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid rgba(74,222,128,0.3)', boxShadow: '0 24px 80px rgba(0,0,0,0.8)' }} onMouseDown={e => e.stopPropagation()}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid rgba(74,222,128,0.15)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '18px' }}>✅</span>
+                                    <div>
+                                        <div style={{ fontSize: '14px', fontWeight: 700, color: '#4ade80' }}>Job Complete!</div>
+                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{bgJobResults.projectName} · {bgJobResults.step}/{bgJobResults.maxSteps} steps</div>
+                                    </div>
+                                </div>
+                                <button type="button" onClick={() => setBgJobResultsOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+                            </div>
+                            {bgJobResults.builtFiles.length > 0 && (
+                                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>📁 Files Built ({bgJobResults.builtFiles.length})</div>
+                                    <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                        {bgJobResults.builtFiles.map((f, i) => (
+                                            <div key={i} style={{ fontSize: '12px', color: '#4ade80', fontFamily: 'monospace' }}>✓ {f}</div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {bgJobResults.railwayDashboard && (
+                                    <a href={bgJobResults.railwayDashboard} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', color: '#c084fc', textDecoration: 'none', padding: '10px', background: 'rgba(192,132,252,0.08)', border: '1px solid rgba(192,132,252,0.2)', borderRadius: '8px', fontWeight: 600 }}>
+                                        🚂 View on Railway →
+                                    </a>
+                                )}
+                                {bgJobResults.conversationId && (
+                                    <button type="button" onClick={async () => {
+                                        if (!bgJobResults.conversationId) return;
+                                        setBgJobResultsOpen(false);
+                                        setMobileTab('chat');
+                                        router.push(`/?c=${encodeURIComponent(bgJobResults.conversationId)}`);
+                                        setActiveId(bgJobResults.conversationId);
+                                        setMessages([]);
+                                        try { const r = await getMessages(bgJobResults.conversationId); if (r.ok) setMessages(r.data.messages ?? []); } catch { }
+                                    }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', color: '#60a5fa', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: '8px', padding: '10px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>
+                                        💬 View Build Conversation
+                                    </button>
+                                )}
+                                <button type="button" onClick={() => { setBgProjectGoal(`Fix any errors and improve: ${bgJobResults.projectName || 'project'}.`); setBgJobResultsOpen(false); setMobileTab('background'); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', color: 'var(--accent)', background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '8px', padding: '10px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}>
+                                    🔁 Submit Fix / Improve Job
+                                </button>
+                                <button type="button" onClick={() => setBgJobResultsOpen(false)} style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', fontFamily: 'DM Sans, sans-serif' }}>Dismiss</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* ── BOTTOM TAB BAR ── */}
                 <div style={{
                     display: 'flex',
