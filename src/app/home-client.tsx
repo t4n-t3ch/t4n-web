@@ -323,15 +323,16 @@ const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
     // Integration tokens
     const [integrationTokens, setIntegrationTokens] = useState<{ hasGithub?: boolean; hasVercel?: boolean; hasRender?: boolean }>({});
     const [integrationsOpen, setIntegrationsOpen] = useState(false);
-    const [mobileIntegrationsOpen, setMobileIntegrationsOpen] = useState(false);
     const [githubTokenInput, setGithubTokenInput] = useState('');
     const [vercelTokenInput, setVercelTokenInput] = useState('');
     const [renderTokenInput, setRenderTokenInput] = useState('');
     const [savingTokens, setSavingTokens] = useState(false);
-    const [autoDeployVercel, setAutoDeployVercel] = useState(false);
-    const [vercelDeployHook, setVercelDeployHook] = useState('');
-    const [autoDeployRender, setAutoDeployRender] = useState(false);
-    const [renderDeployHook, setRenderDeployHook] = useState('');
+    const [tokensSaved, setTokensSaved] = useState(false);
+    const [siteUrl, setSiteUrl] = useState('');
+    const [autoDeployVercel, setAutoDeployVercel] = useState(() => { try { return localStorage.getItem('t4n_auto_deploy_vercel') === 'true'; } catch { return false; } });
+    const [vercelDeployHook, setVercelDeployHook] = useState(() => { try { return localStorage.getItem('t4n_vercel_hook') || ''; } catch { return ''; } });
+    const [autoDeployRender, setAutoDeployRender] = useState(() => { try { return localStorage.getItem('t4n_auto_deploy_render') === 'true'; } catch { return false; } });
+    const [renderDeployHook, setRenderDeployHook] = useState(() => { try { return localStorage.getItem('t4n_render_hook') || ''; } catch { return ''; } });
 
     // Railway
     const [railwayTokenInput, setRailwayTokenInput] = useState('');
@@ -1438,6 +1439,12 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         } catch { }
     }
 
+    // Persist deploy settings to localStorage
+    React.useEffect(() => { try { localStorage.setItem('t4n_auto_deploy_vercel', String(autoDeployVercel)); } catch {} }, [autoDeployVercel]);
+    React.useEffect(() => { try { localStorage.setItem('t4n_vercel_hook', vercelDeployHook); } catch {} }, [vercelDeployHook]);
+    React.useEffect(() => { try { localStorage.setItem('t4n_auto_deploy_render', String(autoDeployRender)); } catch {} }, [autoDeployRender]);
+    React.useEffect(() => { try { localStorage.setItem('t4n_render_hook', renderDeployHook); } catch {} }, [renderDeployHook]);
+
     async function loadIntegrations() {
         if (!session) return;
         try {
@@ -1458,7 +1465,9 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
             await fetch(`${API_BASE}/api/integrations/tokens`, { method: 'POST', headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ github: githubTokenInput || undefined, vercel: vercelTokenInput || undefined, render: renderTokenInput || undefined }) });
             await loadIntegrations();
             setGithubTokenInput(''); setVercelTokenInput(''); setRenderTokenInput('');
-            showToast('Tokens saved!', 'success');
+            setTokensSaved(true);
+            setTimeout(() => setTokensSaved(false), 3000);
+            showToast('✅ Tokens saved!', 'success');
         } catch { showToast('Failed to save tokens', 'error'); } finally { setSavingTokens(false); }
     }
 
@@ -3700,8 +3709,8 @@ Project description: ${newProjectPrompt.trim()}`
                         </div>
 
                         {/* 🔗 Integrations */}
-                        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px' }}>
-                            <button type="button" onClick={() => setMobileIntegrationsOpen(v => !v)}
+                        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px', overflow: 'hidden' }}>
+                            <button type="button" onClick={() => setIntegrationsOpen(v => !v)}
                                 style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
                                 <div>
                                     <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', textAlign: 'left', display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -3712,9 +3721,9 @@ Project description: ${newProjectPrompt.trim()}`
                                     </div>
                                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'left' }}>GitHub, Vercel, Render, Railway</div>
                                 </div>
-                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{mobileIntegrationsOpen ? '▲' : '▼'}</span>
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{integrationsOpen ? '▲' : '▼'}</span>
                             </button>
-                            {mobileIntegrationsOpen && (
+                            {integrationsOpen && (
                                 <div style={{ padding: '12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                     {/* Token inputs */}
                                     {[
@@ -3730,9 +3739,24 @@ Project description: ${newProjectPrompt.trim()}`
                                         </div>
                                     ))}
                                     <button type="button" onClick={() => void saveIntegrationTokens()} disabled={savingTokens}
-                                        style={{ padding: '10px', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                                        {savingTokens ? 'Saving...' : '💾 Save Tokens'}
+                                        style={{ padding: '10px', borderRadius: '8px', border: 'none', background: tokensSaved ? '#22c55e' : 'var(--accent)', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.3s' }}>
+                                        {savingTokens ? 'Saving...' : tokensSaved ? '✅ Saved!' : '💾 Save Tokens'}
                                     </button>
+
+                                    {/* Site URL */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>Your Site URL</div>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                            <input type="url" value={siteUrl} onChange={e => setSiteUrl(e.target.value)} placeholder="https://t4n-ads.onrender.com"
+                                                style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px', color: 'var(--text-primary)', fontSize: '14px', fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                                            {siteUrl && (
+                                                <a href={siteUrl} target="_blank" rel="noreferrer"
+                                                    style={{ padding: '8px 12px', borderRadius: '6px', background: '#22c55e', color: '#fff', fontSize: '13px', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
+                                                    🌐 See Site
+                                                </a>
+                                            )}
+                                        </div>
+                                    </div>
 
                                     {/* Auto-deploy toggles */}
                                     <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
