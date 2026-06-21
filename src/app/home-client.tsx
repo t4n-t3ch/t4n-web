@@ -1440,10 +1440,10 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     }
 
     // Persist deploy settings to localStorage
-    React.useEffect(() => { try { localStorage.setItem('t4n_auto_deploy_vercel', String(autoDeployVercel)); } catch {} }, [autoDeployVercel]);
-    React.useEffect(() => { try { localStorage.setItem('t4n_vercel_hook', vercelDeployHook); } catch {} }, [vercelDeployHook]);
-    React.useEffect(() => { try { localStorage.setItem('t4n_auto_deploy_render', String(autoDeployRender)); } catch {} }, [autoDeployRender]);
-    React.useEffect(() => { try { localStorage.setItem('t4n_render_hook', renderDeployHook); } catch {} }, [renderDeployHook]);
+    useEffect(() => { try { localStorage.setItem('t4n_auto_deploy_vercel', String(autoDeployVercel)); } catch {} }, [autoDeployVercel]);
+    useEffect(() => { try { localStorage.setItem('t4n_vercel_hook', vercelDeployHook); } catch {} }, [vercelDeployHook]);
+    useEffect(() => { try { localStorage.setItem('t4n_auto_deploy_render', String(autoDeployRender)); } catch {} }, [autoDeployRender]);
+    useEffect(() => { try { localStorage.setItem('t4n_render_hook', renderDeployHook); } catch {} }, [renderDeployHook]);
 
     async function loadIntegrations() {
         if (!session) return;
