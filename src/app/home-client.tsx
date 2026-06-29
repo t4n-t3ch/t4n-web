@@ -317,6 +317,7 @@ const [bgProjectQueue, setBgProjectQueue] = useState<{ position: number; project
 const [bgProjectQueueLoading, setBgProjectQueueLoading] = useState(false);
 const [bgProjectAddToQueue, setBgProjectAddToQueue] = useState(false);
 const [bgProjectQueueInput, setBgProjectQueueInput] = useState('');
+const [bgProjectGithubRepo, setBgProjectGithubRepo] = useState('');
 const [bgProjectSelfFeed, setBgProjectSelfFeed] = useState(false);
 const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
 
@@ -1450,7 +1451,8 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     useEffect(() => { try { if (renderDeployHook) localStorage.setItem('t4n_render_hook', renderDeployHook); } catch {} }, [renderDeployHook]);
     useEffect(() => { try { localStorage.setItem('t4n_auto_vercel', String(autoDeployVercel)); } catch {} }, [autoDeployVercel]);
     useEffect(() => { try { localStorage.setItem('t4n_auto_render', String(autoDeployRender)); } catch {} }, [autoDeployRender]);
-    useEffect(() => { try { const v = localStorage.getItem('t4n_vercel_hook'); if (v) setVercelDeployHook(v); const r = localStorage.getItem('t4n_render_hook'); if (r) setRenderDeployHook(r); const av = localStorage.getItem('t4n_auto_vercel'); if (av === 'true') setAutoDeployVercel(true); const ar = localStorage.getItem('t4n_auto_render'); if (ar === 'true') setAutoDeployRender(true); } catch {} }, []);
+    useEffect(() => { try { const v = localStorage.getItem('t4n_vercel_hook'); if (v) setVercelDeployHook(v); const r = localStorage.getItem('t4n_render_hook'); if (r) setRenderDeployHook(r); const av = localStorage.getItem('t4n_auto_vercel'); if (av === 'true') setAutoDeployVercel(true); const ar = localStorage.getItem('t4n_auto_render'); if (ar === 'true') setAutoDeployRender(true); const gr = localStorage.getItem('t4n_github_repo'); if (gr) setBgProjectGithubRepo(gr); } catch {} }, []);
+    useEffect(() => { try { if (bgProjectGithubRepo) localStorage.setItem('t4n_github_repo', bgProjectGithubRepo); } catch {} }, [bgProjectGithubRepo]);
 
     async function loadIntegrations() {
         if (!session) return;
@@ -3637,6 +3639,11 @@ Project description: ${newProjectPrompt.trim()}`
                                 <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>+ Submit Job</div>
                                 <textarea value={bgProjectGoal} onChange={e => setBgProjectGoal(e.target.value)} placeholder="Describe what you want to build or improve..."
                                     style={{ width: '100%', minHeight: '100px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '10px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical' }} />
+                                <div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>GitHub Repo (cloud — no bridge needed)</div>
+                                    <input type="text" value={bgProjectGithubRepo} onChange={e => setBgProjectGithubRepo(e.target.value)} placeholder="e.g. t4n-t3ch/t4n-ads"
+                                        style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '14px', fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                                </div>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <select value={bgProjectDomain} onChange={e => setBgProjectDomain(e.target.value)}
                                         style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'DM Sans, sans-serif' }}>
@@ -3650,7 +3657,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         const { data: { session: s } } = await supabase.auth.getSession();
                                         if (!s) { showToast('Please log in first', 'error'); return; }
                                         const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
-                                        const res = await fetch(`${API_BASE}/api/background-project`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' }, body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps }) });
+                                        const res = await fetch(`${API_BASE}/api/background-project`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' }, body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, githubRepo: bgProjectGithubRepo || undefined }) });
                                         const data = await res.json();
                                         if (data.ok) { setBgProjectJobId(data.jobId); showToast('🏗️ Job started!', 'success'); }
                                         else showToast(data.error || 'Failed to start job', 'error');
