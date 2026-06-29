@@ -304,7 +304,7 @@ export default function HomeClient() {
 const [bgProjectModal, setBgProjectModal] = useState(false);
 const [bgProjectGoal, setBgProjectGoal] = useState('');
 const [bgProjectDomain, setBgProjectDomain] = useState('Next.js TypeScript');
-const [bgProjectSteps, setBgProjectSteps] = useState(50);
+const [bgProjectSteps, setBgProjectSteps] = useState(10);
 const [bgProjectLoading, setBgProjectLoading] = useState(false);
 const [bgProjectJobId, setBgProjectJobId] = useState<string | null>(null);
 const [bgProjectEditMode, setBgProjectEditMode] = useState(false);
@@ -331,6 +331,12 @@ const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
     const [vercelDeployHook, setVercelDeployHook] = useState('');
     const [autoDeployRender, setAutoDeployRender] = useState(false);
     const [renderDeployHook, setRenderDeployHook] = useState('');
+    const [mobileIntegrationsOpen, setMobileIntegrationsOpen] = useState(false);
+    const [siteUrl, setSiteUrl] = useState('');
+    const [tokensSaved, setTokensSaved] = useState(false);
+    const [mobileLogs, setMobileLogs] = useState<string[]>([]);
+    const [mobileStep, setMobileStep] = useState(0);
+    const [mobileMaxSteps, setMobileMaxSteps] = useState(0);
 
     // Railway
     const [railwayTokenInput, setRailwayTokenInput] = useState('');
@@ -483,9 +489,6 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
     const [bgJobHistory, setBgJobHistory] = useState<{ jobId: string; conversationId?: string; projectName: string; projectGoal: string; domain: string; maxSteps: string; maxsteps?: string; startedAt: string; step?: string; status?: string; projectFolderName?: string }[]>([]);
     const [bgJobHistoryLoading, setBgJobHistoryLoading] = useState(false);
     const [bgJobHistoryOpen, setBgJobHistoryOpen] = useState(false);
-    const [mobileLogs, setMobileLogs] = useState<string[]>([]);
-    const [mobileStep, setMobileStep] = useState(0);
-    const [mobileMaxSteps, setMobileMaxSteps] = useState(0);
     const [bgJobResults, setBgJobResults] = useState<{ jobId: string; status: string; step: number; maxSteps: number; projectName: string; projectFolderName: string; conversationId: string | null; builtFiles: string[]; railwayDashboard: string | null; hasVercel: boolean; hasRender: boolean; hasRailway: boolean; completedAt: string | null } | null>(null);
     const [bgJobResultsOpen, setBgJobResultsOpen] = useState(false);
     const monacoEditorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -1353,7 +1356,6 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
                     if (data.step) setMobileStep(data.step);
                     if (data.maxSteps) setMobileMaxSteps(data.maxSteps);
                     if (data.currentTask) setMobileLogs(prev => { const entry = `Step ${data.step}: ${data.currentTask}`; if (prev[prev.length-1] === entry) return prev; return [...prev.slice(-49), entry]; });
-                    if (data.builtFiles) { try { const files = JSON.parse(data.builtFiles); if (Array.isArray(files)) setMobileLogs(prev => { const last = `✓ ${files[files.length-1]}`; if (!last || prev[prev.length-1] === last) return prev; return [...prev.slice(-49), last]; }); } catch {} }
                 }
 
                 if (data.status === 'done' || data.status === 'failed') {
@@ -1444,6 +1446,12 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         } catch { }
     }
 
+    useEffect(() => { try { if (vercelDeployHook) localStorage.setItem('t4n_vercel_hook', vercelDeployHook); } catch {} }, [vercelDeployHook]);
+    useEffect(() => { try { if (renderDeployHook) localStorage.setItem('t4n_render_hook', renderDeployHook); } catch {} }, [renderDeployHook]);
+    useEffect(() => { try { localStorage.setItem('t4n_auto_vercel', String(autoDeployVercel)); } catch {} }, [autoDeployVercel]);
+    useEffect(() => { try { localStorage.setItem('t4n_auto_render', String(autoDeployRender)); } catch {} }, [autoDeployRender]);
+    useEffect(() => { try { const v = localStorage.getItem('t4n_vercel_hook'); if (v) setVercelDeployHook(v); const r = localStorage.getItem('t4n_render_hook'); if (r) setRenderDeployHook(r); const av = localStorage.getItem('t4n_auto_vercel'); if (av === 'true') setAutoDeployVercel(true); const ar = localStorage.getItem('t4n_auto_render'); if (ar === 'true') setAutoDeployRender(true); } catch {} }, []);
+
     async function loadIntegrations() {
         if (!session) return;
         try {
@@ -1464,7 +1472,8 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
             await fetch(`${API_BASE}/api/integrations/tokens`, { method: 'POST', headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ github: githubTokenInput || undefined, vercel: vercelTokenInput || undefined, render: renderTokenInput || undefined }) });
             await loadIntegrations();
             setGithubTokenInput(''); setVercelTokenInput(''); setRenderTokenInput('');
-            showToast('Tokens saved!', 'success');
+            setTokensSaved(true); setTimeout(() => setTokensSaved(false), 3000);
+            showToast('✅ Tokens saved!', 'success');
         } catch { showToast('Failed to save tokens', 'error'); } finally { setSavingTokens(false); }
     }
 
@@ -3610,15 +3619,11 @@ Project description: ${newProjectPrompt.trim()}`
                                     {mobileStep > 0 && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Step {mobileStep}/{mobileMaxSteps || '?'}</div>}
                                 </div>
                                 <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{bgProjectGoal?.slice(0, 80)}...</div>
-                                {/* Progress bar */}
                                 <div style={{ height: '4px', background: 'var(--bg-elevated)', borderRadius: '4px', overflow: 'hidden' }}>
                                     <div style={{ height: '100%', background: 'var(--accent)', borderRadius: '4px', width: mobileMaxSteps > 0 ? `${Math.round((mobileStep/mobileMaxSteps)*100)}%` : '10%', transition: 'width 0.5s ease' }} />
                                 </div>
-                                {/* Live logs */}
-                                <div style={{ background: 'var(--bg-primary)', borderRadius: '6px', padding: '8px', maxHeight: '180px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                    {mobileLogs.length === 0 ? (
-                                        <div style={{ color: 'var(--text-muted)' }}>Waiting for agent...</div>
-                                    ) : mobileLogs.map((log, i) => (
+                                <div style={{ background: 'var(--bg-primary)', borderRadius: '6px', padding: '8px', maxHeight: '160px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                    {mobileLogs.length === 0 ? <div style={{ color: 'var(--text-muted)' }}>Waiting for agent...</div> : mobileLogs.map((log, i) => (
                                         <div key={i} style={{ color: log.startsWith('✓') ? '#4ade80' : log.startsWith('❌') ? '#f87171' : 'var(--text-muted)', lineHeight: '1.4' }}>{log}</div>
                                     ))}
                                 </div>
@@ -3647,7 +3652,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
                                         const res = await fetch(`${API_BASE}/api/background-project`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' }, body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps }) });
                                         const data = await res.json();
-                                        if (data.ok) { setBgProjectJobId(data.jobId); setMobileLogs([]); setMobileStep(0); showToast('🏗️ Job started!', 'success'); }
+                                        if (data.ok) { setBgProjectJobId(data.jobId); showToast('🏗️ Job started!', 'success'); }
                                         else showToast(data.error || 'Failed to start job', 'error');
                                     } catch { showToast('Failed to start job', 'error'); }
                                 }} style={{ width: '100%', padding: '12px', background: bgProjectGoal.trim() ? 'var(--accent)' : 'var(--bg-elevated)', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: bgProjectGoal.trim() ? 'pointer' : 'default', fontFamily: 'DM Sans, sans-serif', opacity: bgProjectGoal.trim() ? 1 : 0.5 }}>
@@ -3718,8 +3723,8 @@ Project description: ${newProjectPrompt.trim()}`
                         </div>
 
                         {/* 🔗 Integrations */}
-                        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px', overflow: 'hidden' }}>
-                            <button type="button" onClick={() => setIntegrationsOpen(v => !v)}
+                        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px' }}>
+                            <button type="button" onClick={() => setMobileIntegrationsOpen(v => !v)}
                                 style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
                                 <div>
                                     <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', textAlign: 'left', display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -3730,9 +3735,9 @@ Project description: ${newProjectPrompt.trim()}`
                                     </div>
                                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'left' }}>GitHub, Vercel, Render, Railway</div>
                                 </div>
-                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{integrationsOpen ? '▲' : '▼'}</span>
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{mobileIntegrationsOpen ? '▲' : '▼'}</span>
                             </button>
-                            {integrationsOpen && (
+                            {mobileIntegrationsOpen && (
                                 <div style={{ padding: '12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                     {/* Token inputs */}
                                     {[
@@ -3743,13 +3748,13 @@ Project description: ${newProjectPrompt.trim()}`
                                     ].map(({ label, val, set, has, placeholder }) => (
                                         <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                             <div style={{ fontSize: '11px', color: has ? '#4ade80' : 'var(--text-muted)', fontWeight: 600 }}>{has ? `✅ ${label}` : label}</div>
-                                            <input type="password" value={val} onChange={e => set(e.target.value)} placeholder={has ? '••••• (update)' : placeholder}
-                                                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'monospace', width: '100%', boxSizing: 'border-box' }} />
+                                            <input type="text" autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} value={val} onChange={e => set(e.target.value)} placeholder={has ? '••••• (update)' : placeholder}
+                                                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px', color: 'var(--text-primary)', fontSize: '16px', fontFamily: 'monospace', width: '100%', boxSizing: 'border-box' }} />
                                         </div>
                                     ))}
                                     <button type="button" onClick={() => void saveIntegrationTokens()} disabled={savingTokens}
-                                        style={{ padding: '10px', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                                        {savingTokens ? 'Saving...' : '💾 Save Tokens'}
+                                        style={{ padding: '10px', borderRadius: '8px', border: 'none', background: tokensSaved ? '#22c55e' : 'var(--accent)', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.3s' }}>
+                                        {savingTokens ? 'Saving...' : tokensSaved ? '✅ Saved!' : '💾 Save Tokens'}
                                     </button>
 
                                     {/* Auto-deploy toggles */}
