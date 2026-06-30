@@ -8719,6 +8719,16 @@ Project description: ${newProjectPrompt.trim()}`
                         />
                     </div>
                 </div>
+                <div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>GitHub Repo (cloud execution — no bridge needed)</div>
+                    <input
+                        type="text"
+                        value={bgProjectGithubRepo}
+                        onChange={e => setBgProjectGithubRepo(e.target.value)}
+                        placeholder="e.g. t4n-t3ch/t4n-ads — leave blank to use local bridge instead"
+                        style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'monospace', boxSizing: 'border-box' }}
+                    />
+                </div>
                 {bgProjectJobId && (
                     <div style={{ padding: '12px 14px', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '8px', fontSize: '12px', color: '#a78bfa' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -8930,7 +8940,7 @@ Project description: ${newProjectPrompt.trim()}`
                                 const res = await fetch(`${API_BASE}/api/background-project`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
-                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: bgProjectEditMode, existingFiles, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '' }),
+                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: bgProjectEditMode, existingFiles, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '', githubRepo: bgProjectGithubRepo || undefined }),
                                 });
                                 const data = await res.json();
                                 if (data.jobId) {
