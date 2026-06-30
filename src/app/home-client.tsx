@@ -304,10 +304,9 @@ export default function HomeClient() {
 const [bgProjectModal, setBgProjectModal] = useState(false);
 const [bgProjectGoal, setBgProjectGoal] = useState('');
 const [bgProjectDomain, setBgProjectDomain] = useState('Next.js TypeScript');
-const [bgProjectSteps, setBgProjectSteps] = useState(10);
-const [bgProjectGithubRepo, setBgProjectGithubRepo] = useState('');
+const [bgProjectSteps, setBgProjectSteps] = useState(50);
 const [bgProjectLoading, setBgProjectLoading] = useState(false);
-const [bgProjectJobId, setBgProjectJobId] = useState<string | null>(null);
+const [bgProjectJobId, setBgProjectJobId] = useState<string | null>(() => { try { return localStorage.getItem('t4n_active_job_id') || null; } catch { return null; } });
 const [bgProjectEditMode, setBgProjectEditMode] = useState(false);
 const [bgProjectEditProjectId, setBgProjectEditProjectId] = useState<string | null>(null);
 const [bgProjectLocalFolder, setBgProjectLocalFolder] = useState('');
@@ -1681,7 +1680,23 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
                 if (res.ok) {
                     const data = await res.json();
                     if (data.plan) {
-                        setUserPlan(data.plan);
+                        setUserPlan(prev => {
+                            // Only show upgrade toast if this is a real upgrade (free → pro)
+                            // not just a reload where plan was already pro
+                            if (prev === 'free' && data.plan === 'pro') {
+                                try {
+                                    const wasAlreadyPro = localStorage.getItem('t4n_was_pro') === 'true';
+                                    if (!wasAlreadyPro) {
+                                        showToast('🎉 You are now Pro!', 'success');
+                                    }
+                                    localStorage.setItem('t4n_was_pro', 'true');
+                                } catch { /* ignore */ }
+                            }
+                            if (data.plan !== 'pro') {
+                                try { localStorage.removeItem('t4n_was_pro'); } catch { /* ignore */ }
+                            }
+                            return data.plan;
+                        });
                         if (data.usage) setDailyUsage({ used: data.usage.events_used ?? 0, limit: data.usage.events_limit ?? 100, resetAt: data.usage.reset_at ?? null });
                         return;
                     }
@@ -1714,6 +1729,14 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
     }, [session]);
+
+    // Persist active job ID to localStorage so it survives page reloads (e.g. Stripe redirect)
+    useEffect(() => {
+        try {
+            if (bgProjectJobId) localStorage.setItem('t4n_active_job_id', bgProjectJobId);
+            else localStorage.removeItem('t4n_active_job_id');
+        } catch { /* ignore */ }
+    }, [bgProjectJobId]);
 
     // Close access dropdown on click outside
     useEffect(() => {
@@ -3614,11 +3637,6 @@ Project description: ${newProjectPrompt.trim()}`
                                 <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>+ Submit Job</div>
                                 <textarea value={bgProjectGoal} onChange={e => setBgProjectGoal(e.target.value)} placeholder="Describe what you want to build or improve..."
                                     style={{ width: '100%', minHeight: '100px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '10px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical' }} />
-                                <div>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>GitHub Repo (cloud execution — no bridge needed)</div>
-                                    <input type="text" value={bgProjectGithubRepo} onChange={e => setBgProjectGithubRepo(e.target.value)} placeholder="e.g. t4n-t3ch/t4n-ads"
-                                        style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '16px', fontFamily: 'monospace', boxSizing: 'border-box' }} />
-                                </div>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <select value={bgProjectDomain} onChange={e => setBgProjectDomain(e.target.value)}
                                         style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'DM Sans, sans-serif' }}>
@@ -3632,7 +3650,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         const { data: { session: s } } = await supabase.auth.getSession();
                                         if (!s) { showToast('Please log in first', 'error'); return; }
                                         const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
-                                        const res = await fetch(`${API_BASE}/api/background-project`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' }, body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, githubRepo: bgProjectGithubRepo || undefined }) });
+                                        const res = await fetch(`${API_BASE}/api/background-project`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' }, body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps }) });
                                         const data = await res.json();
                                         if (data.ok) { setBgProjectJobId(data.jobId); showToast('🏗️ Job started!', 'success'); }
                                         else showToast(data.error || 'Failed to start job', 'error');
@@ -8719,16 +8737,6 @@ Project description: ${newProjectPrompt.trim()}`
                         />
                     </div>
                 </div>
-                <div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>GitHub Repo (cloud execution — no bridge needed)</div>
-                    <input
-                        type="text"
-                        value={bgProjectGithubRepo}
-                        onChange={e => setBgProjectGithubRepo(e.target.value)}
-                        placeholder="e.g. t4n-t3ch/t4n-ads — leave blank to use local bridge instead"
-                        style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'monospace', boxSizing: 'border-box' }}
-                    />
-                </div>
                 {bgProjectJobId && (
                     <div style={{ padding: '12px 14px', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '8px', fontSize: '12px', color: '#a78bfa' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -8940,7 +8948,7 @@ Project description: ${newProjectPrompt.trim()}`
                                 const res = await fetch(`${API_BASE}/api/background-project`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
-                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: bgProjectEditMode, existingFiles, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '', githubRepo: bgProjectGithubRepo || undefined }),
+                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: bgProjectEditMode, existingFiles, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '' }),
                                 });
                                 const data = await res.json();
                                 if (data.jobId) {
