@@ -304,7 +304,7 @@ export default function HomeClient() {
 const [bgProjectModal, setBgProjectModal] = useState(false);
 const [bgProjectGoal, setBgProjectGoal] = useState('');
 const [bgProjectDomain, setBgProjectDomain] = useState('Next.js TypeScript');
-const [bgProjectSteps, setBgProjectSteps] = useState(10);
+const [bgProjectSteps, setBgProjectSteps] = useState(50);
 const [bgProjectLoading, setBgProjectLoading] = useState(false);
 const [bgProjectJobId, setBgProjectJobId] = useState<string | null>(null);
 const [bgProjectEditMode, setBgProjectEditMode] = useState(false);
@@ -317,7 +317,6 @@ const [bgProjectQueue, setBgProjectQueue] = useState<{ position: number; project
 const [bgProjectQueueLoading, setBgProjectQueueLoading] = useState(false);
 const [bgProjectAddToQueue, setBgProjectAddToQueue] = useState(false);
 const [bgProjectQueueInput, setBgProjectQueueInput] = useState('');
-const [bgProjectGithubRepo, setBgProjectGithubRepo] = useState('');
 const [bgProjectSelfFeed, setBgProjectSelfFeed] = useState(false);
 const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
 
@@ -328,16 +327,11 @@ const [bgProjectSteerPrompt, setBgProjectSteerPrompt] = useState('');
     const [vercelTokenInput, setVercelTokenInput] = useState('');
     const [renderTokenInput, setRenderTokenInput] = useState('');
     const [savingTokens, setSavingTokens] = useState(false);
+    const [tokensSaved, setTokensSaved] = useState(false);
     const [autoDeployVercel, setAutoDeployVercel] = useState(false);
     const [vercelDeployHook, setVercelDeployHook] = useState('');
     const [autoDeployRender, setAutoDeployRender] = useState(false);
     const [renderDeployHook, setRenderDeployHook] = useState('');
-    const [mobileIntegrationsOpen, setMobileIntegrationsOpen] = useState(false);
-    const [siteUrl, setSiteUrl] = useState('');
-    const [tokensSaved, setTokensSaved] = useState(false);
-    const [mobileLogs, setMobileLogs] = useState<string[]>([]);
-    const [mobileStep, setMobileStep] = useState(0);
-    const [mobileMaxSteps, setMobileMaxSteps] = useState(0);
 
     // Railway
     const [railwayTokenInput, setRailwayTokenInput] = useState('');
@@ -1354,9 +1348,6 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
                 // Job resumed after top-up — clear the banner
                 if (data.status === 'running' || data.status === 'queued_next') {
                     setBgProjectPausedCredits(null);
-                    if (data.step) setMobileStep(data.step);
-                    if (data.maxSteps) setMobileMaxSteps(data.maxSteps);
-                    if (data.currentTask) setMobileLogs(prev => { const entry = `Step ${data.step}: ${data.currentTask}`; if (prev[prev.length-1] === entry) return prev; return [...prev.slice(-49), entry]; });
                 }
 
                 if (data.status === 'done' || data.status === 'failed') {
@@ -1447,13 +1438,6 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         } catch { }
     }
 
-    useEffect(() => { try { if (vercelDeployHook) localStorage.setItem('t4n_vercel_hook', vercelDeployHook); } catch {} }, [vercelDeployHook]);
-    useEffect(() => { try { if (renderDeployHook) localStorage.setItem('t4n_render_hook', renderDeployHook); } catch {} }, [renderDeployHook]);
-    useEffect(() => { try { localStorage.setItem('t4n_auto_vercel', String(autoDeployVercel)); } catch {} }, [autoDeployVercel]);
-    useEffect(() => { try { localStorage.setItem('t4n_auto_render', String(autoDeployRender)); } catch {} }, [autoDeployRender]);
-    useEffect(() => { try { const v = localStorage.getItem('t4n_vercel_hook'); if (v) setVercelDeployHook(v); const r = localStorage.getItem('t4n_render_hook'); if (r) setRenderDeployHook(r); const av = localStorage.getItem('t4n_auto_vercel'); if (av === 'true') setAutoDeployVercel(true); const ar = localStorage.getItem('t4n_auto_render'); if (ar === 'true') setAutoDeployRender(true); const gr = localStorage.getItem('t4n_github_repo'); if (gr) setBgProjectGithubRepo(gr); } catch {} }, []);
-    useEffect(() => { try { if (bgProjectGithubRepo) localStorage.setItem('t4n_github_repo', bgProjectGithubRepo); } catch {} }, [bgProjectGithubRepo]);
-
     async function loadIntegrations() {
         if (!session) return;
         try {
@@ -1471,12 +1455,13 @@ const [autoRenew, setAutoRenew] = useState<{ enabled: boolean; threshold: number
         try {
             const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
             const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
-            await fetch(`${API_BASE}/api/integrations/tokens`, { method: 'POST', headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ github: githubTokenInput || undefined, vercel: vercelTokenInput || undefined, render: renderTokenInput || undefined }) });
+            const res = await fetch(`${API_BASE}/api/integrations/tokens`, { method: 'POST', headers: { 'x-api-key': API_KEY, 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ github: githubTokenInput || undefined, vercel: vercelTokenInput || undefined, render: renderTokenInput || undefined }) });
+            const data = await res.json();
+            if (!res.ok || !data.ok) throw new Error(data.error || `Save failed (${res.status})`);
             await loadIntegrations();
-            setGithubTokenInput(''); setVercelTokenInput(''); setRenderTokenInput('');
             setTokensSaved(true); setTimeout(() => setTokensSaved(false), 3000);
             showToast('✅ Tokens saved!', 'success');
-        } catch { showToast('Failed to save tokens', 'error'); } finally { setSavingTokens(false); }
+        } catch (e: any) { showToast(`❌ Failed to save tokens: ${e.message}`, 'error'); } finally { setSavingTokens(false); }
     }
 
     async function loadAutopilotSchedule() {
@@ -3613,23 +3598,15 @@ Project description: ${newProjectPrompt.trim()}`
                             {bgProjectJobId && <span style={{ fontSize: '11px', background: 'rgba(249,115,22,0.15)', color: 'var(--accent)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '12px', padding: '3px 10px', fontWeight: 600 }}>⚡ Running</span>}
                         </div>
 
-                        {/* Active job with live logs */}
+                        {/* Active job */}
                         {bgProjectJobId && (
-                            <div style={{ background: 'var(--bg-secondary)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent)' }}>🔴 Active Job</div>
-                                    {mobileStep > 0 && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Step {mobileStep}/{mobileMaxSteps || '?'}</div>}
-                                </div>
-                                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{bgProjectGoal?.slice(0, 80)}...</div>
+                            <div style={{ background: 'var(--bg-secondary)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '10px', padding: '12px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent)', marginBottom: '6px' }}>🔴 Active Job</div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>{bgProjectGoal?.slice(0, 80)}...</div>
                                 <div style={{ height: '4px', background: 'var(--bg-elevated)', borderRadius: '4px', overflow: 'hidden' }}>
-                                    <div style={{ height: '100%', background: 'var(--accent)', borderRadius: '4px', width: mobileMaxSteps > 0 ? `${Math.round((mobileStep/mobileMaxSteps)*100)}%` : '10%', transition: 'width 0.5s ease' }} />
+                                    <div style={{ height: '100%', background: 'var(--accent)', borderRadius: '4px', width: '60%' }} />
                                 </div>
-                                <div style={{ background: 'var(--bg-primary)', borderRadius: '6px', padding: '8px', maxHeight: '160px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                    {mobileLogs.length === 0 ? <div style={{ color: 'var(--text-muted)' }}>Waiting for agent...</div> : mobileLogs.map((log, i) => (
-                                        <div key={i} style={{ color: log.startsWith('✓') ? '#4ade80' : log.startsWith('❌') ? '#f87171' : 'var(--text-muted)', lineHeight: '1.4' }}>{log}</div>
-                                    ))}
-                                </div>
-                                <button type="button" onClick={() => setBgProjectJobId(null)} style={{ fontSize: '11px', color: '#f87171', background: 'none', border: '1px solid rgba(248,113,113,0.3)', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', alignSelf: 'flex-start' }}>Cancel</button>
+                                <button type="button" onClick={() => setBgProjectJobId(null)} style={{ marginTop: '8px', fontSize: '11px', color: '#f87171', background: 'none', border: '1px solid rgba(248,113,113,0.3)', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Cancel</button>
                             </div>
                         )}
 
@@ -3639,11 +3616,6 @@ Project description: ${newProjectPrompt.trim()}`
                                 <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>+ Submit Job</div>
                                 <textarea value={bgProjectGoal} onChange={e => setBgProjectGoal(e.target.value)} placeholder="Describe what you want to build or improve..."
                                     style={{ width: '100%', minHeight: '100px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '10px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical' }} />
-                                <div>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>GitHub Repo (cloud — no bridge needed)</div>
-                                    <input type="text" value={bgProjectGithubRepo} onChange={e => setBgProjectGithubRepo(e.target.value)} placeholder="e.g. t4n-t3ch/t4n-ads"
-                                        style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '14px', fontFamily: 'monospace', boxSizing: 'border-box' }} />
-                                </div>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <select value={bgProjectDomain} onChange={e => setBgProjectDomain(e.target.value)}
                                         style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'DM Sans, sans-serif' }}>
@@ -3657,7 +3629,7 @@ Project description: ${newProjectPrompt.trim()}`
                                         const { data: { session: s } } = await supabase.auth.getSession();
                                         if (!s) { showToast('Please log in first', 'error'); return; }
                                         const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
-                                        const res = await fetch(`${API_BASE}/api/background-project`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' }, body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, githubRepo: bgProjectGithubRepo || undefined }) });
+                                        const res = await fetch(`${API_BASE}/api/background-project`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' }, body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps }) });
                                         const data = await res.json();
                                         if (data.ok) { setBgProjectJobId(data.jobId); showToast('🏗️ Job started!', 'success'); }
                                         else showToast(data.error || 'Failed to start job', 'error');
@@ -3730,8 +3702,8 @@ Project description: ${newProjectPrompt.trim()}`
                         </div>
 
                         {/* 🔗 Integrations */}
-                        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px' }}>
-                            <button type="button" onClick={() => setMobileIntegrationsOpen(v => !v)}
+                        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '10px', overflow: 'hidden' }}>
+                            <button type="button" onClick={() => setIntegrationsOpen(v => !v)}
                                 style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
                                 <div>
                                     <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', textAlign: 'left', display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -3742,9 +3714,9 @@ Project description: ${newProjectPrompt.trim()}`
                                     </div>
                                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'left' }}>GitHub, Vercel, Render, Railway</div>
                                 </div>
-                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{mobileIntegrationsOpen ? '▲' : '▼'}</span>
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{integrationsOpen ? '▲' : '▼'}</span>
                             </button>
-                            {mobileIntegrationsOpen && (
+                            {integrationsOpen && (
                                 <div style={{ padding: '12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                     {/* Token inputs */}
                                     {[
@@ -3755,13 +3727,13 @@ Project description: ${newProjectPrompt.trim()}`
                                     ].map(({ label, val, set, has, placeholder }) => (
                                         <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                             <div style={{ fontSize: '11px', color: has ? '#4ade80' : 'var(--text-muted)', fontWeight: 600 }}>{has ? `✅ ${label}` : label}</div>
-                                            <input type="text" autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} value={val} onChange={e => set(e.target.value)} placeholder={has ? '••••• (update)' : placeholder}
-                                                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px', color: 'var(--text-primary)', fontSize: '16px', fontFamily: 'monospace', width: '100%', boxSizing: 'border-box' }} />
+                                            <input type="password" value={val} onChange={e => set(e.target.value)} placeholder={has ? '••••• (update)' : placeholder}
+                                                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'monospace', width: '100%', boxSizing: 'border-box' }} />
                                         </div>
                                     ))}
                                     <button type="button" onClick={() => void saveIntegrationTokens()} disabled={savingTokens}
-                                        style={{ padding: '10px', borderRadius: '8px', border: 'none', background: tokensSaved ? '#22c55e' : 'var(--accent)', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', transition: 'background 0.3s' }}>
-                                        {savingTokens ? 'Saving...' : tokensSaved ? '✅ Saved!' : '💾 Save Tokens'}
+                                        style={{ padding: '10px', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                                        {savingTokens ? 'Saving...' : '💾 Save Tokens'}
                                     </button>
 
                                     {/* Auto-deploy toggles */}
