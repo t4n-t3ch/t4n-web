@@ -306,6 +306,33 @@ const [bgProjectGoal, setBgProjectGoal] = useState('');
 const [bgProjectDomain, setBgProjectDomain] = useState('Next.js TypeScript');
 const [bgProjectSteps, setBgProjectSteps] = useState(10);
 const [bgProjectGithubRepo, setBgProjectGithubRepo] = useState<string>(() => { try { return localStorage.getItem('t4n_github_repo') || ''; } catch { return ''; } });
+const [githubRepoCheck, setGithubRepoCheck] = useState<{ status: 'idle' | 'checking' | 'ok' | 'error'; message?: string; canPush?: boolean }>({ status: 'idle' });
+const verifyGithubRepo = async () => {
+    const repo = bgProjectGithubRepo?.trim();
+    if (!repo) { setGithubRepoCheck({ status: 'error', message: 'Enter a repo first (e.g. owner/repo)' }); return; }
+    if (!repo.includes('/') || repo.split('/').length !== 2) { setGithubRepoCheck({ status: 'error', message: 'Format must be owner/repo' }); return; }
+    setGithubRepoCheck({ status: 'checking' });
+    try {
+        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+        const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123';
+        const { data: { session: s } } = await supabase.auth.getSession();
+        if (!s) { setGithubRepoCheck({ status: 'error', message: 'Not logged in' }); return; }
+        const res = await fetch(`${API_BASE}/api/integrations/github/verify-repo`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
+            body: JSON.stringify({ repo }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+            try { localStorage.setItem('t4n_github_repo', repo); } catch {}
+            setGithubRepoCheck({ status: 'ok', message: data.canPush ? 'Connected — push access confirmed' : 'Connected — but token has no push access', canPush: !!data.canPush });
+        } else {
+            setGithubRepoCheck({ status: 'error', message: data.error || 'Repo not found or not accessible' });
+        }
+    } catch (e) {
+        setGithubRepoCheck({ status: 'error', message: e instanceof Error ? e.message : 'Check failed' });
+    }
+};
 const [bgProjectLoading, setBgProjectLoading] = useState(false);
 const [bgProjectJobId, setBgProjectJobId] = useState<string | null>(null);
 const [bgProjectEditMode, setBgProjectEditMode] = useState(false);
@@ -3616,8 +3643,20 @@ Project description: ${newProjectPrompt.trim()}`
                                     style={{ width: '100%', minHeight: '100px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '10px', color: 'var(--text-primary)', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical' }} />
                                 <div>
                                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>GitHub Repo <span style={{ color: 'var(--accent)' }}>(cloud — no bridge needed)</span></div>
-                                    <input type="text" value={bgProjectGithubRepo} onChange={e => { setBgProjectGithubRepo(e.target.value); try { localStorage.setItem('t4n_github_repo', e.target.value); } catch {} }} placeholder="e.g. t4n-t3ch/t4n-ads"
-                                        style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '16px', fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                        <input type="text" value={bgProjectGithubRepo} onChange={e => { setBgProjectGithubRepo(e.target.value); setGithubRepoCheck({ status: 'idle' }); try { localStorage.setItem('t4n_github_repo', e.target.value); } catch {} }} placeholder="e.g. t4n-t3ch/t4n-ads"
+                                            style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '16px', fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                                        <button type="button" disabled={githubRepoCheck.status === 'checking' || !bgProjectGithubRepo?.trim()} onClick={verifyGithubRepo}
+                                            style={{ padding: '8px 12px', fontSize: '12px', fontWeight: 600, borderRadius: '8px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', cursor: githubRepoCheck.status === 'checking' || !bgProjectGithubRepo?.trim() ? 'not-allowed' : 'pointer', opacity: githubRepoCheck.status === 'checking' || !bgProjectGithubRepo?.trim() ? 0.6 : 1, fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}>
+                                            {githubRepoCheck.status === 'checking' ? '…' : '💾 Save'}
+                                        </button>
+                                    </div>
+                                    {githubRepoCheck.status === 'ok' && (
+                                        <div style={{ marginTop: '4px', fontSize: '11px', color: githubRepoCheck.canPush ? '#4ade80' : '#facc15' }}>{githubRepoCheck.canPush ? '✅' : '⚠️'} {githubRepoCheck.message}</div>
+                                    )}
+                                    {githubRepoCheck.status === 'error' && (
+                                        <div style={{ marginTop: '4px', fontSize: '11px', color: '#f87171' }}>❌ {githubRepoCheck.message}</div>
+                                    )}
                                 </div>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <select value={bgProjectDomain} onChange={e => setBgProjectDomain(e.target.value)}
@@ -8725,13 +8764,29 @@ Project description: ${newProjectPrompt.trim()}`
                 </div>
                 <div>
                     <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>GitHub Repo <span style={{ color: 'var(--accent)', fontWeight: 400 }}>(cloud execution — no bridge needed)</span></div>
-                    <input
-                        type="text"
-                        value={bgProjectGithubRepo}
-                        onChange={e => { setBgProjectGithubRepo(e.target.value); try { localStorage.setItem('t4n_github_repo', e.target.value); } catch {} }}
-                        placeholder="e.g. t4n-t3ch/t4n-ads — leave blank to use local bridge"
-                        style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'monospace', boxSizing: 'border-box' }}
-                    />
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                            type="text"
+                            value={bgProjectGithubRepo}
+                            onChange={e => { setBgProjectGithubRepo(e.target.value); setGithubRepoCheck({ status: 'idle' }); try { localStorage.setItem('t4n_github_repo', e.target.value); } catch {} }}
+                            placeholder="e.g. t4n-t3ch/t4n-ads — leave blank to use local bridge"
+                            style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'monospace', boxSizing: 'border-box' }}
+                        />
+                        <button type="button" disabled={githubRepoCheck.status === 'checking' || !bgProjectGithubRepo?.trim()} onClick={verifyGithubRepo}
+                            style={{ padding: '8px 14px', fontSize: '12px', fontWeight: 600, borderRadius: '6px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', cursor: githubRepoCheck.status === 'checking' || !bgProjectGithubRepo?.trim() ? 'not-allowed' : 'pointer', opacity: githubRepoCheck.status === 'checking' || !bgProjectGithubRepo?.trim() ? 0.6 : 1, fontFamily: 'DM Sans, sans-serif', whiteSpace: 'nowrap' }}>
+                            {githubRepoCheck.status === 'checking' ? 'Checking…' : '💾 Save'}
+                        </button>
+                    </div>
+                    {githubRepoCheck.status === 'ok' && (
+                        <div style={{ marginTop: '6px', fontSize: '11px', color: githubRepoCheck.canPush ? '#4ade80' : '#facc15' }}>
+                            {githubRepoCheck.canPush ? '✅' : '⚠️'} {githubRepoCheck.message}
+                        </div>
+                    )}
+                    {githubRepoCheck.status === 'error' && (
+                        <div style={{ marginTop: '6px', fontSize: '11px', color: '#f87171' }}>
+                            ❌ {githubRepoCheck.message}
+                        </div>
+                    )}
                 </div>
                 {bgProjectJobId && (
                     <div style={{ padding: '12px 14px', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '8px', fontSize: '12px', color: '#a78bfa' }}>
