@@ -8813,7 +8813,7 @@ Project description: ${newProjectPrompt.trim()}`
                                     const res = await fetch(`${API_BASE}/api/background-project/queue`, {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
-                                        body: JSON.stringify({ projectGoal: bgProjectSteerPrompt, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: true, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '' }),
+                                        body: JSON.stringify({ projectGoal: bgProjectSteerPrompt, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: true, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '', githubRepo: bgProjectGithubRepo || undefined }),
                                     });
                                     const data = await res.json();
                                     if (data.ok) {
@@ -8878,7 +8878,7 @@ Project description: ${newProjectPrompt.trim()}`
                                 const res = await fetch(`${API_BASE}/api/background-project/queue`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
-                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: bgProjectEditMode, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '' }),
+                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: bgProjectEditMode, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '', githubRepo: bgProjectGithubRepo || undefined }),
                                 });
                                 const data = await res.json();
                                 if (data.ok) {
