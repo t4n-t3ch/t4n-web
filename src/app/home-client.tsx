@@ -304,7 +304,8 @@ export default function HomeClient() {
 const [bgProjectModal, setBgProjectModal] = useState(false);
 const [bgProjectGoal, setBgProjectGoal] = useState('');
 const [bgProjectDomain, setBgProjectDomain] = useState('Next.js TypeScript');
-const [bgProjectSteps, setBgProjectSteps] = useState(50);
+const [bgProjectSteps, setBgProjectSteps] = useState(10);
+const [bgProjectGithubRepo, setBgProjectGithubRepo] = useState<string>(() => { try { return localStorage.getItem('t4n_github_repo') || ''; } catch { return ''; } });
 const [bgProjectLoading, setBgProjectLoading] = useState(false);
 const [bgProjectJobId, setBgProjectJobId] = useState<string | null>(null);
 const [bgProjectEditMode, setBgProjectEditMode] = useState(false);
