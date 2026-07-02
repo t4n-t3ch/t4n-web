@@ -305,6 +305,7 @@ const [bgProjectModal, setBgProjectModal] = useState(false);
 const [bgProjectGoal, setBgProjectGoal] = useState('');
 const [bgProjectDomain, setBgProjectDomain] = useState('Next.js TypeScript');
 const [bgProjectSteps, setBgProjectSteps] = useState(10);
+const [bgProjectAutoSteps, setBgProjectAutoSteps] = useState(true); // default to letting the AI decide
 const [bgProjectGithubRepo, setBgProjectGithubRepo] = useState<string>(() => { try { return localStorage.getItem('t4n_github_repo') || ''; } catch { return ''; } });
 const [githubRepoCheck, setGithubRepoCheck] = useState<{ status: 'idle' | 'checking' | 'ok' | 'error'; message?: string; canPush?: boolean }>({ status: 'idle' });
 const verifyGithubRepo = async () => {
@@ -3658,13 +3659,18 @@ Project description: ${newProjectPrompt.trim()}`
                                         <div style={{ marginTop: '4px', fontSize: '11px', color: '#f87171' }}>❌ {githubRepoCheck.message}</div>
                                     )}
                                 </div>
-                                <div style={{ display: 'flex', gap: '8px' }}>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                     <select value={bgProjectDomain} onChange={e => setBgProjectDomain(e.target.value)}
                                         style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'DM Sans, sans-serif' }}>
                                         {['Next.js TypeScript','React TypeScript','Python','Pine Script','Unity C#','MQL5'].map(d => <option key={d}>{d}</option>)}
                                     </select>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                        <input type="checkbox" checked={bgProjectAutoSteps} onChange={e => setBgProjectAutoSteps(e.target.checked)} />
+                                        Auto
+                                    </label>
                                     <input type="number" value={bgProjectSteps} onChange={e => setBgProjectSteps(Number(e.target.value))} min={1} max={15}
-                                        style={{ width: '60px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', textAlign: 'center', fontFamily: 'DM Sans, sans-serif' }} />
+                                        disabled={bgProjectAutoSteps}
+                                        style={{ width: '60px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', textAlign: 'center', fontFamily: 'DM Sans, sans-serif', opacity: bgProjectAutoSteps ? 0.5 : 1 }} />
                                 </div>
                                 <button type="button" disabled={!bgProjectGoal.trim()} onClick={async () => {
                                     try {
@@ -3675,7 +3681,7 @@ Project description: ${newProjectPrompt.trim()}`
                                     const { data: { session: s } } = await supabase.auth.getSession();
                                         if (!s) { showToast('Please log in first', 'error'); return; }
                                         const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
-                                        const res = await fetch(`${API_BASE}/api/background-project`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' }, body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, githubRepo: bgProjectGithubRepo || undefined }) });
+                                        const res = await fetch(`${API_BASE}/api/background-project`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.access_token}`, 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'dev-key-123' }, body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectAutoSteps ? 0 : bgProjectSteps, githubRepo: bgProjectGithubRepo || undefined }) });
                                         const data = await res.json();
                                         if (data.ok) { setBgProjectJobId(data.jobId); showToast('🏗️ Job started!', 'success'); }
                                         else showToast(data.error || 'Failed to start job', 'error');
@@ -3719,7 +3725,7 @@ Project description: ${newProjectPrompt.trim()}`
                                 style={{ width: '100%', minHeight: '70px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '8px', padding: '8px', color: 'var(--text-primary)', fontSize: '12px', boxSizing: 'border-box', fontFamily: 'DM Sans, sans-serif', resize: 'vertical' }} />
                             <button type="button" onClick={() => {
                                 if (!bgProjectQueueInput.trim()) return;
-                                setBgProjectQueue(prev => [...prev, { position: Date.now(), projectGoal: bgProjectQueueInput, domain: bgProjectDomain, maxSteps: bgProjectSteps }]);
+                                setBgProjectQueue(prev => [...prev, { position: Date.now(), projectGoal: bgProjectQueueInput, domain: bgProjectDomain, maxSteps: bgProjectAutoSteps ? 0 : bgProjectSteps }]);
                                 setBgProjectQueueInput('');
                                 showToast('Added to queue', 'success');
                             }} style={{ padding: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
@@ -8419,7 +8425,9 @@ Project description: ${newProjectPrompt.trim()}`
                                     <option>Next.js TypeScript</option><option>Pine Script</option><option>Python</option><option>React TypeScript</option><option>Node.js TypeScript</option><option>Unity C#</option><option>MQL5</option><option>General</option>
                                 </select>
                                 <input type="number" min={1} max={50} value={bgProjectSteps} onChange={e => setBgProjectSteps(Math.min(50, Math.max(1, Number(e.target.value))))}
-                                    style={{ width: '64px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '6px 8px', color: 'var(--text-primary)', fontSize: '11px', fontFamily: 'DM Sans, sans-serif' }} />
+                                    disabled={bgProjectAutoSteps}
+                                    title={bgProjectAutoSteps ? 'Uncheck "Let AI decide" above to set manually' : 'Max steps'}
+                                    style={{ width: '64px', background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '6px 8px', color: 'var(--text-primary)', fontSize: '11px', fontFamily: 'DM Sans, sans-serif', opacity: bgProjectAutoSteps ? 0.5 : 1 }} />
                                 <button type="button" disabled={!bgProjectSteerPrompt?.trim()}
                                     onClick={async () => {
                                         if (!bgProjectSteerPrompt?.trim()) return;
@@ -8431,7 +8439,7 @@ Project description: ${newProjectPrompt.trim()}`
                                             const res = await fetch(`${API_BASE}/api/background-project/queue`, {
                                                 method: 'POST',
                                                 headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
-                                                body: JSON.stringify({ projectGoal: bgProjectSteerPrompt, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: true, localFolderPath: bgProjectLocalFolder }),
+                                                body: JSON.stringify({ projectGoal: bgProjectSteerPrompt, domain: bgProjectDomain, maxSteps: bgProjectAutoSteps ? 0 : bgProjectSteps, editMode: true, localFolderPath: bgProjectLocalFolder }),
                                             });
                                             const data = await res.json();
                                             if (data.ok) {
@@ -8751,14 +8759,19 @@ Project description: ${newProjectPrompt.trim()}`
                             <option>General</option>
                         </select>
                     </div>
-                    <div style={{ width: '100px' }}>
+                    <div style={{ width: '140px' }}>
                         <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>Max Steps</div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={bgProjectAutoSteps} onChange={e => setBgProjectAutoSteps(e.target.checked)} />
+                            Let AI decide
+                        </label>
                         <input
                             type="number"
                             min={1} max={100}
                             value={bgProjectSteps}
+                            disabled={bgProjectAutoSteps}
                             onChange={e => setBgProjectSteps(Math.min(100, Math.max(1, Number(e.target.value))))}
-                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif' }}
+                            style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: '6px', padding: '8px 10px', color: bgProjectAutoSteps ? 'var(--text-muted)' : 'var(--text-primary)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif', opacity: bgProjectAutoSteps ? 0.5 : 1 }}
                         />
                     </div>
                 </div>
@@ -8868,7 +8881,7 @@ Project description: ${newProjectPrompt.trim()}`
                                     const res = await fetch(`${API_BASE}/api/background-project/queue`, {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
-                                        body: JSON.stringify({ projectGoal: bgProjectSteerPrompt, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: true, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '', githubRepo: bgProjectGithubRepo || undefined }),
+                                        body: JSON.stringify({ projectGoal: bgProjectSteerPrompt, domain: bgProjectDomain, maxSteps: bgProjectAutoSteps ? 0 : bgProjectSteps, editMode: true, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '', githubRepo: bgProjectGithubRepo || undefined }),
                                     });
                                     const data = await res.json();
                                     if (data.ok) {
@@ -8933,7 +8946,7 @@ Project description: ${newProjectPrompt.trim()}`
                                 const res = await fetch(`${API_BASE}/api/background-project/queue`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${s.access_token}` },
-                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: bgProjectEditMode, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '', githubRepo: bgProjectGithubRepo || undefined }),
+                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectAutoSteps ? 0 : bgProjectSteps, editMode: bgProjectEditMode, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '', githubRepo: bgProjectGithubRepo || undefined }),
                                 });
                                 const data = await res.json();
                                 if (data.ok) {
@@ -9003,7 +9016,7 @@ Project description: ${newProjectPrompt.trim()}`
                                 const res = await fetch(`${API_BASE}/api/background-project`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'Authorization': `Bearer ${token}` },
-                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectSteps, editMode: bgProjectEditMode, existingFiles, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '', githubRepo: bgProjectGithubRepo || undefined }),
+                                    body: JSON.stringify({ projectGoal: bgProjectGoal, domain: bgProjectDomain, maxSteps: bgProjectAutoSteps ? 0 : bgProjectSteps, editMode: bgProjectEditMode, existingFiles, localFolderPath: bgProjectEditSource === 'local' ? bgProjectLocalFolder : '', githubRepo: bgProjectGithubRepo || undefined }),
                                 });
                                 const data = await res.json();
                                 if (data.jobId) {
